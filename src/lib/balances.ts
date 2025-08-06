@@ -1,29 +1,31 @@
-// lib/balances.ts
-import { ethers } from 'ethers'
-import { optimism, base } from '@reown/appkit/networks'
+import { publicOptimism, publicBase } from './clients'
+import {  Abi, encodeFunctionData } from 'viem'
+import {erc20Abi} from 'viem' // ['function balanceOf(address) view returns (uint256)']
 
 export async function getBalance(
-  token: string,
-  user: string,
+  token: `0x${string}`,
+  user: `0x${string}`,
   chain: 'optimism' | 'base',
-  provider: ethers.providers.Provider
 ) {
-  // native ETH balance? -> provider.getBalance()
-  // otherwise call ERC20 balanceOf
-  const erc20 = new ethers.Contract(token, ['function balanceOf(address)(uint256)'], provider)
-  const bal   = await erc20.balanceOf(user)
-  return bal   // BigNumber (v5) or bigint (v6)
+  const client = chain === 'optimism' ? publicOptimism : publicBase
+  const bal = await client.readContract( {
+    address: token,
+    abi: erc20Abi as Abi,
+    functionName: 'balanceOf',
+    args: [user],
+  }) as bigint
+
+  return bal;
+  
 }
 
 export async function getDualBalances(
-  tokenAddr: { optimism: string; base: string },
-  user: string,
-  provOptimism: ethers.providers.Provider,
-  provBase: ethers.providers.Provider,
+  tokenAddr: { optimism: `0x${string}`; base: `0x${string}` },
+  user: `0x${string}`,
 ) {
-  const [opBal, baseBal] = await Promise.all([
-    getBalance(tokenAddr.optimism, user, 'optimism', provOptimism),
-    getBalance(tokenAddr.base,     user, 'base',     provBase),
+  const [opBal, baBal]  = await Promise.all([
+    getBalance(tokenAddr.optimism, user, 'optimism'),
+    getBalance(tokenAddr.base,     user, 'base'),
   ])
-  return { opBal, baseBal }
+  return { opBal, baBal }
 }

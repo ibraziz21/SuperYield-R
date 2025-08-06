@@ -1,27 +1,38 @@
-import { Hop, TChain } from '@hop-protocol/sdk'
-import type { Signer } from 'ethers'
+import { Hop } from '@hop-protocol/sdk'
+import { ethers } from 'ethers'
+import { erc20Abi, WalletClient } from 'viem'
+import { TokenAddresses } from './constants'
+import type { TokenSymbol } from './constants'
 
 const hop = new Hop('mainnet')
 
-/**
- * Bridge via Hop Protocol
- * @param token   Symbol e.g. 'USDC','USDT','USDC.e','USDT.e'
- * @param amount  Raw smallest-unit string, e.g. '1000000' for 1 USDC
- * @param from    'optimism' | 'base'
- * @param to      'optimism' | 'base'
- * @param signer  ethers.Signer
- */
 export async function bridgeTokens(
-  token: string,
-  amount: string,
+  token: TokenSymbol,
+  amount: bigint,
   from: 'optimism' | 'base',
   to: 'optimism' | 'base',
-  signer: Signer,
+  walletClient: WalletClient,
 ) {
-  const bridge = hop.connect(signer).bridge(token)
-  const recipient = await signer.getAddress()
-  
+  const signer = new ethers.providers.Web3Provider(
+    walletClient.transport as any,
+  ).getSigner()
 
-  const tx = await bridge.send( amount, from, recipient )
+  const bridge = hop.connect(signer).bridge(token)
+  const spender     =  bridge.getSendApprovalAddress(from)
+  const userAddress = signer.getAddress()
+  const tokenAddr : `0x${string}` = TokenAddresses[token][from] 
+
+  /* 2️⃣  check / ensure allowance */
+  const erc20 = new ethers.Contract(tokenAddr, erc20Abi, signer)
+  const currentAllowance: bigint = await erc20
+    .allowance(userAddress, spender)
+    .then((x: ethers.BigNumber) => BigInt(x.toString()))
+
+  if (currentAllowance < amount) {
+    const approveTx = await erc20.approve(spender, amount.toString())
+    await approveTx.wait()
+
+  const tx = await bridge.send(amount.toString(), from, to)
   return tx.wait()
+}
 }

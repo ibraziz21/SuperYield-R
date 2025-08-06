@@ -1,33 +1,27 @@
-// lib/smartBridge.ts
-import { BigNumber, ethers } from 'ethers'
-import { bridgeTokens } from './bridge'          // your Hop wrapper
 import { getDualBalances } from './balances'
 import { TokenAddresses } from './constants'
+import { bridgeTokens } from './bridge'
+import { WalletClient } from 'viem'
 
 export async function ensureLiquidity(
   symbol: keyof typeof TokenAddresses,
-  amount: BigNumber,
+  amount: bigint,
   target: 'optimism' | 'base',
-  signer: ethers.Signer,
-  provOptimism: ethers.providers.Provider,
-  provBase: ethers.providers.Provider,
+  wallet: WalletClient,
 ) {
-  const user = await signer.getAddress()
-  const { opBal, baseBal } = await getDualBalances(
-    TokenAddresses[symbol],
-    user,
-    provOptimism,
-    provBase,
-  )
+  /* 1 — definite user address */
+  const user = wallet.account?.address as `0x${string}`
 
-  const have = target === 'optimism' ? opBal : baseBal
-  if (have.gte(amount)) {
-    // already enough on target chain
-    return
-  }
+  /* 2 — read both balances */
+  const { opBal, baBal } = await getDualBalances(TokenAddresses[symbol], user)
 
-  // need to bridge missingAmount from the other chain
-  const missing = amount.sub(have)
+  /* 3 — decide if bridging is needed */
+  const have = target === 'optimism' ? opBal : baBal
+  if (have >= amount) return
+
+  const missing = amount - have           // bigint − bigint ➜ bigint
+
+  /* 4 — bridge the shortfall */
   const from = target === 'optimism' ? 'base' : 'optimism'
-  await bridgeTokens(String(symbol), missing.toString(), from, target, signer)
+  await bridgeTokens(symbol, missing, from, target, wallet)
 }

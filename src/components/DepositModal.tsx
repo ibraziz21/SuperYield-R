@@ -1,16 +1,31 @@
 'use client'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { providerBase, providerOptimism } from '@/lib/rpc'
-import { getBalance } from '@/lib/balances'
+
+import { getDualBalances } from '@/lib/balances'
 import { ensureLiquidity } from '@/lib/smartbridge'
 import { depositToPool } from '@/lib/depositor'
 import { TokenAddresses } from '@/lib/constants'
 import type { YieldSnapshot } from '@/hooks/useYields'
-import { FC, useEffect, useState } from 'react'
-import {  ethers } from 'ethers'
-import { useAppKitProvider } from '@reown/appkit/react'
+
+import { useEffect, useState, FC } from 'react'
+import { useAppKitProvider, useAppKit } from '@reown/appkit/react'
+
+import {
+  createWalletClient,
+  custom,
+  parseUnits,
+  formatUnits,
+} from 'viem'
+import { optimism, base } from 'viem/chains'
+import { BigNumber } from 'ethers'
+import { useWalletClient } from 'wagmi'
 
 interface Props {
   open: boolean
@@ -19,61 +34,84 @@ interface Props {
 }
 
 export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
-  const { walletProvider } = useAppKitProvider('eip155')
+  const { open: openModal } = useAppKit()
+  const { data: walletClient } = useWalletClient()
 
   const [amount, setAmount] = useState('')
-  const [opBal, setOpBal]   = useState<ethers.BigNumber | null>(null)
-  const [baBal, setBaBal]   = useState<ethers.BigNumber | null>(null)
-  const [busy, setBusy]     = useState(false)
-  const [error, setError]   = useState<string | null>(null)
+  const [opBal, setOpBal] = useState<bigint | null>(null)
+  const [baBal, setBaBal] = useState<bigint | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  /* fetch balances whenever modal opens */
+  /* fetch balances whenever the modal opens */
   useEffect(() => {
-    if (!open || !walletProvider) return
+    if (!open || !walletClient) return          // <- guard
+  
+    const user = walletClient.account.address  
+    console.log(user) // 0x… string
+  
+    const { optimism: tokOP, base: tokBA } = TokenAddresses[snap.token]
+  
     ;(async () => {
-      const provider = new ethers.providers.Web3Provider(walletProvider as any)
-      const user     = await provider.getSigner().getAddress()
-      const tokAddr  = TokenAddresses[snap.token]
-      const [op, ba] = await Promise.all([
-        getBalance(tokAddr.optimism, user, 'optimism', providerOptimism),
-        getBalance(tokAddr.base,     user, 'base',     providerBase),
-      ])
-      setOpBal(op); setBaBal(ba)
+      const { opBal, baBal } = await getDualBalances(
+        { optimism: tokOP, base: tokBA },
+        user as `0x${string}`,
+      )
+      setOpBal(opBal)
+      setBaBal(baBal)
+      console.log(opBal, baBal);
     })()
-  }, [open, walletProvider, snap.token])
+  }, [open, walletClient, snap.token])
 
   async function handleConfirm() {
-    if (!walletProvider) return
-    const provider = new ethers.providers.Web3Provider(walletProvider as any)
-    const signer   = provider.getSigner()
-
+    if (!walletClient) {            // user not connected
+      openModal()                   // open Reown modal
+      return
+    }
+  
     try {
-      setBusy(true); setError(null)
-      const amt = ethers.utils.parseUnits(amount, 6)
+      setBusy(true)
+      setError(null)
+  
+      /* amount as bigint */
+      const amt  = parseUnits(amount as `${number}`, 6)
       const dest = snap.chain as 'optimism' | 'base'
-
-      await ensureLiquidity(snap.token, amt, dest, signer, providerOptimism, providerBase)
-      await depositToPool(snap, amt, signer)
-
+  
+      /* bridge if needed, then deposit */
+      await ensureLiquidity(snap.token, amt, dest, walletClient)
+      await depositToPool(snap, amt, walletClient)
+  
       onClose()
       alert(`✅ Deposited ${amount} ${snap.token}`)
     } catch (e: any) {
-      setError(e.message || 'Tx failed')
-    } finally { setBusy(false) }
+      setError(e.shortMessage ?? e.message ?? 'Tx failed')
+    } finally {
+      setBusy(false)
+    }
   }
+  
 
+  /* ---------- render ---------- */
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle className="text-lg">Deposit {snap.token}</DialogTitle>
+          <DialogTitle className="text-lg">
+            Deposit {snap.token}
+          </DialogTitle>
         </DialogHeader>
 
         {/* balances */}
         <div className="space-y-1 text-sm">
           <p>Balances:</p>
-          <p>Optimism: {opBal ? ethers.utils.formatUnits(opBal, 6) : '…'} {snap.token}</p>
-          <p>Base:      {baBal ? ethers.utils.formatUnits(baBal, 6) : '…'} {snap.token}</p>
+          <p>
+            Optimism:{' '}
+            {opBal !== null ? formatUnits(opBal, 6) : '…'} {snap.token}
+          </p>
+          <p>
+            Base:{' '}
+            {baBal !== null ? formatUnits(baBal, 6) : '…'} {snap.token}
+          </p>
         </div>
 
         {/* amount input */}
@@ -87,9 +125,13 @@ export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
         {error && <p className="text-xs text-red-500">{error}</p>}
 
         {/* actions */}
-        <div className="flex justify-end gap-2 pt-4">
-          <Button variant="secondary" onClick={onClose} title={'Cancel'}>Cancel</Button>
-          <Button disabled={busy || !amount} onClick={handleConfirm} title={busy ? 'Processing…' : 'Confirm'}>
+        <div className="flex justify-end gap-3 pt-4">
+          <Button variant="secondary" onClick={onClose} title={'Cancel'}>
+            Cancel
+          </Button>
+          <Button
+                      disabled={busy || !amount}
+                      onClick={handleConfirm} title={busy ? 'Processing…' : 'Confirm'}          >
             {busy ? 'Processing…' : 'Confirm'}
           </Button>
         </div>

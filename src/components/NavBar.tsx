@@ -2,10 +2,19 @@ import { Button } from '@/components/ui/button'
 import { useAppKit } from '@reown/appkit/react'
 import { useAppKitAccount } from '@reown/appkit/react'
 import Link from 'next/link'
+import { useState } from 'react'
+import { useDisconnect } from 'wagmi'
 
 export const Navbar = () => {
     const { open } = useAppKit()
     const { address } = useAppKitAccount()
+
+    const { disconnect } = useDisconnect()
+
+    const [menu, setMenu] = useState(false)
+    const short = address
+    ? `${address.slice(0, 6)}…${address.slice(-4)}`
+    : ''
     return (
   <header className="mb-10 flex flex-wrap items-center justify-between gap-4">
     <h1 className="text-3xl font-extrabold tracking-tight text-secondary-foreground">
@@ -20,13 +29,49 @@ export const Navbar = () => {
       <Link href="#" className="opacity-80 hover:opacity-100">
         Docs
       </Link>
-      {address ? (
-        <span className="truncate text-xs">{address.slice(0, 6)}…{address.slice(-4)}</span>
-      ) : (
-        <Button onClick={open} className="px-4 py-2 text-xs" title={'Connect wallet'}>
-          Connect Wallet
-        </Button>
-      )}
+    
+      {!address ? (
+          <Button onClick={open} className="px-4 py-2 text-xs" title={'Connect Wallet'}>
+            Connect Wallet
+          </Button>
+        ) : (
+          <>
+            {/* address pill */}
+            <button
+              onClick={() => setMenu((m) => !m)}
+              className="rounded-full bg-secondary/10 px-3 py-1 text-xs font-semibold"
+            >
+              {short}
+            </button>
+
+            {/* dropdown */}
+            {menu && (
+              <div
+                className="absolute right-0 top-9 w-40 rounded-md border border-secondary/20
+                           bg-white p-2 text-sm shadow-lg"
+              >
+                <button
+                  className="block w-full rounded px-3 py-2 text-left hover:bg-secondary/10"
+                  onClick={() => {
+                    setMenu(false)
+                    open() /* reopen Reown modal to switch */
+                  }}
+                >
+                  Switch wallet
+                </button>
+                <button
+                  className="mt-1 block w-full rounded px-3 py-2 text-left text-red-600 hover:bg-red-50"
+                  onClick={() => {
+                    setMenu(false)
+                    disconnect()
+                  }}
+                >
+                  Disconnect
+                </button>
+              </div>
+            )}
+          </>
+        )}
     </nav>
   </header>
     

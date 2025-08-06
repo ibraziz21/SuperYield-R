@@ -1,80 +1,91 @@
-import { ethers } from 'ethers'
+import { WalletClient } from 'viem'
+import { optimism, base } from 'viem/chains'
+import { TokenAddresses, AAVE_POOL, COMET_POOLS, type TokenSymbol } from './constants'
+import { erc20Abi }  from 'viem'
+import aaveAbi  from './abi/aavePool.json'
+import cometAbi from './abi/comet.json'
+import { publicOptimism, publicBase } from './clients'
 import type { YieldSnapshot } from '@/hooks/useYields'
-import { TokenAddresses } from './constants'
 
-// lib/depositor.ts
-const aaveAbi = [
-  'function supply(address asset,uint256 amount,address onBehalfOf,uint16 referralCode)',
-]
-
-const cTokenAbi = [
-  'function mint(uint256 mintAmount) returns (uint256)',
-]
-
-const erc20Abi = [
-  'function approve(address spender,uint256 amount) returns (bool)',
-  'function allowance(address owner,address spender) view returns (uint256)',
-]
-
-
-export async function depositToPool(
-  snap: YieldSnapshot,
-  amount: ethers.BigNumber,
-  signer: ethers.Signer,
+/* helper */
+function pub(chain: 'optimism' | 'base') {
+  return chain === 'optimism' ? publicOptimism : publicBase
+}
+async function ensureAllowance(
+  token: `0x${string}`,
+  spender: `0x${string}`,
+  amt: bigint,
+  wallet: WalletClient,
+  chain: 'optimism' | 'base',
 ) {
-  const user = await signer.getAddress()
+  const owner = wallet.account
+  if (owner == undefined)return;
+  const allowance = await pub(chain).readContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: [owner.address, spender],
+  }) as bigint
 
-  switch (snap.protocolKey) {
-    case 'aave-v3': {
-      const pool = new ethers.Contract(snap.poolAddress, aaveAbi, signer)
-
-      const tokenAddr = TokenAddresses[snap.token][snap.chain]
-      await ensureAllowance(tokenAddr, snap.poolAddress, amount, signer)
-
-      await (await pool.supply(tokenAddr, amount, user, 0)).wait()
-      break
-    }
-
-    case 'compound-v3': {
-      const cToken = new ethers.Contract(snap.poolAddress, cTokenAbi, signer)
-      await ensureAllowance(
-        TokenAddresses[snap.token][snap.chain],
-        snap.poolAddress,
-        amount,
-        signer,
-      )
-      await (await cToken.mint(amount)).wait()
-      break
-    }
-
-    case 'sonne-finance':
-    case 'moonwell-lending': {
-      // both are Compound-forks (CToken mint)
-      const cToken = new ethers.Contract(snap.poolAddress, cTokenAbi, signer)
-      await ensureAllowance(
-        TokenAddresses[snap.token][snap.chain],
-        snap.poolAddress,
-        amount,
-        signer,
-      )
-      await (await cToken.mint(amount)).wait()
-      break
-    }
-
-    default:
-      throw new Error(`Unsupported protocol ${snap.protocolKey}`)
-  }
+  if (allowance >= amt) return
+  await wallet.writeContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: 'approve',
+    args: [spender, amt],
+    chain: chain === 'optimism' ? optimism : base,
+    account: owner.address,
+  })
 }
 
-async function ensureAllowance(
-  token: string,
-  spender: string,
-  amt: ethers.BigNumber,
-  signer: ethers.Signer,
+/* -------- main -------- */
+export async function depositToPool(
+  snap: YieldSnapshot,
+  amount: bigint,
+  wallet: WalletClient,
 ) {
-  const erc20   = new ethers.Contract(token, erc20Abi, signer)
-  const user    = await signer.getAddress()
-  const current = await erc20.allowance(user, spender)
-  if (current.gte(amt)) return
-  await (await erc20.approve(spender, amt)).wait()
+  const chain  = snap.chain as 'optimism' | 'base'
+  const token  = snap.token as TokenSymbol    // 'USDC' | 'USDT'
+  const owner = wallet.account
+  if (owner == undefined)return;
+  const tokenAddr = TokenAddresses[token][chain]
+
+  /* pick the **real** supply contract from constants */
+  let poolAddr: `0x${string}`
+
+
+
+  if (snap.protocolKey === 'aave-v3') {
+    poolAddr = AAVE_POOL[chain]
+    await ensureAllowance(tokenAddr, poolAddr, amount, wallet, chain)
+
+    console.log(poolAddr, tokenAddr, )
+
+    await wallet.writeContract({
+      address: poolAddr,
+      abi: aaveAbi,
+      functionName: 'supply',
+      args: [tokenAddr, amount, owner.address, 0],
+      chain: chain === 'optimism' ? optimism : base,
+      account: owner.address,
+    })
+    return
+  }
+
+  if (snap.protocolKey === 'compound-v3') {
+    poolAddr = COMET_POOLS[chain][token]
+    await ensureAllowance(tokenAddr, poolAddr, amount, wallet, chain)
+
+    await wallet.writeContract({
+      address: poolAddr,
+      abi: cometAbi,
+      functionName: 'supply',
+      args: [tokenAddr, amount],
+      chain: chain === 'optimism' ? optimism : base,
+      account: owner.address,
+    })
+    return
+  }
+
+  throw new Error(`Unsupported protocol ${snap.protocolKey}`)
 }
