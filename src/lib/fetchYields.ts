@@ -5,7 +5,7 @@ const LLAMA_ENDPOINT = 'https://yields.llama.fi/pools'
 const CHAINS = ['Optimism', 'Base'] as const
 const TOKENS  = ['USDC', 'USDT', 'USDC.E', 'USDT.E'] as const
 const CHAIN_MAP = { Optimism: 'optimism', Base: 'base' } as const
-const ALLOWED = ['aave-v3', 'compound-v3', 'sonne-finance', 'moonwell-lending'] as const
+const ALLOWED = ['aave-v3', 'compound-v3'] as const
 
 export async function fetchYields(): Promise<YieldSnapshot[]> {
   const res = await fetch(LLAMA_ENDPOINT, { cache: 'no-store' })

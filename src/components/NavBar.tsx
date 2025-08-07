@@ -23,7 +23,7 @@ export const Navbar = () => {
       </span>
     </h1>
     <nav className="flex items-center gap-4 text-sm font-medium">
-      <Link href="#" className="opacity-80 hover:opacity-100">
+      <Link href="/" className="opacity-80 hover:opacity-100">
         Dashboard
       </Link>
       <Link href="#" className="opacity-80 hover:opacity-100">

@@ -1,44 +1,74 @@
 'use client'
-import { usePositions } from '@/hooks/usePositions'
-import { formatUnits } from 'viem'
+import { usePositions }    from '@/hooks/usePositions'
+import { usePortfolioApy } from '@/hooks/usePortfolioApy'
+import { rewardForecast }  from '@/lib/rewardForecast'
+import { Loader2 }         from 'lucide-react'
+
+import { StatCard }        from '@/components/PositionsDashboard'
 import { Card, CardContent } from '@/components/ui/Card'
-import { Loader2 } from 'lucide-react'
 
 export const PositionsGrid = () => {
-  const { data, isLoading } = usePositions()
+  /* ----- data hooks ----- */
+  const { data: positions, isLoading } = usePositions()
+  const {
+    apy: portfolioApy,
+    loading: apyLoading,
+    totalUsd,
+  } = usePortfolioApy()
 
-  if (!isLoading && (!data || data.length === 0))
-    return <p className="text-center text-sm opacity-70">No active positions.</p>
+  const forecast = !apyLoading ? rewardForecast(totalUsd!, portfolioApy) : null
 
+  /* ----- loading / empty states ----- */
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center gap-6 py-10">
+        <Loader2 className="animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">
+          Fetching on-chain balances…
+        </p>
+      </div>
+    )
+  }
+
+  if (!positions || positions.length === 0) {
+    return (
+      <p className="text-center text-sm opacity-60">No active positions.</p>
+    )
+  }
+
+  /* ----- UI ----- */
   return (
-    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-      {isLoading && (
-        <div className="col-span-full flex justify-center py-8">
-          <Loader2 className="animate-spin" />
-        </div>
-      )}
+    <div className="space-y-12 mx-auto w-full max-w-6xl">
+      {/* headline stats */}
+      <div className="grid gap-6 sm:grid-cols-3">
+        <StatCard
+          title="Total Supplied"
+          value={`$${totalUsd!.toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+          })}`}
+        />
 
-      {data?.map((p, i) => (
-        <Card
-          key={i}
-          className="relative overflow-hidden rounded-2xl bg-secondary/10 p-5 backdrop-blur-sm"
-        >
-          {/* neon gradient edge */}
-          <span className="pointer-events-none absolute inset-0 rounded-2xl border border-primary/20" />
+        <StatCard
+          title="Total APY"
+          value={apyLoading ? '—' : `${portfolioApy.toFixed(2)} %`}
+          sub={apyLoading ? 'fetching…' : undefined}
+        />
 
-          <CardContent className="z-10 flex flex-col gap-2">
-            <span className="text-xs uppercase text-secondary-foreground/70">
-              {p.protocol} · {p.chain}
-            </span>
-            <div className="flex items-baseline gap-1">
-              <span className="text-3xl font-extrabold tracking-tight">
-                {formatUnits(p.amount, 6)}
-              </span>
-              <span className="font-semibold">{p.token}</span>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+        <StatCard
+          title="Forecast (yr)"
+          value={
+            apyLoading
+              ? '—'
+              : `≈ $${forecast!.yearly.toLocaleString(undefined, {
+                  maximumFractionDigits: 2,
+                })}`
+          }
+          sub="at current APY"
+        />
+      </div>
+
+      {/* ---- your existing position cards go here ---- */}
+      {/* e.g. <PositionsDashboardCards positions={positions} /> */}
     </div>
   )
 }

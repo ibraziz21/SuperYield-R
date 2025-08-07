@@ -1,19 +1,23 @@
+/* src/app/page.tsx */
 'use client'
-import { YieldTable } from '@/components/YieldTable'
 import { PositionsGrid } from '@/components/PositionsGrid'
-import { AaveOverview }  from '@/components/AaveOverview'
+import { YieldTable } from '@/components/YieldTable'
+import Link from 'next/link'
 
-export default function HomePage() {
+export default function Dashboard() {
   return (
-    <main className="mx-auto max-w-7xl p-6">
-      <h1 className="text-3xl font-extrabold mb-6">SuperYield-R Live Yields</h1>
-
-      <section>
-        <h2 className="mb-4 text-2xl font-extrabold">Aave Overview</h2>
-        <AaveOverview />
-      </section>
+    <div className="space-y-12">
+       <div className="flex justify-end">
+        <Link
+          href="/positions"
+          className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+        >
+          View more →
+        </Link>
+      </div>
       <PositionsGrid />
+
       <YieldTable />
-    </main>
+    </div>
   )
 }
