@@ -20,7 +20,11 @@ export function ProtocolTabs() {
   )
 
   return (
-    <Tabs value={tab} onValueChange={setTab} className='mx-auto w-full max-w-6xl'>
+    <Tabs
+    value={tab}
+    onValueChange={(value) => setTab(value as typeof tab)}
+    className="mx-auto w-full max-w-6xl"
+  >
       {/* pill triggers */}
       <TabsList className="inline-flex rounded-full bg-gray-100 p-1 dark:bg-gray-900/40">
         {PROTOCOLS.map(({ value, label }) => (

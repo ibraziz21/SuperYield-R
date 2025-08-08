@@ -1,3 +1,5 @@
+// src/lib/depositor.ts
+
 import { WalletClient } from 'viem'
 import { optimism, base, lisk } from 'viem/chains'
 import {
@@ -53,7 +55,7 @@ export async function ensureAllowance(
     args: [owner, spender],
   })) as bigint
 
-  if (allowance >= amt) return // already approved enough
+  if (allowance >= amt) return
 
   await wallet.writeContract({
     address: token,
@@ -67,7 +69,7 @@ export async function ensureAllowance(
 
 /* ----------------------------------------------------------------------
    Main deposit dispatcher
-   --------------------------------------------------------------------*/
+---------------------------------------------------------------------*/
 export async function depositToPool(
   snap: YieldSnapshot,
   amount: bigint,
@@ -78,10 +80,12 @@ export async function depositToPool(
 
   /* ---------- Aave v3 ---------- */
   if (snap.protocolKey === 'aave-v3') {
-    const chain = snap.chain as ChainId // optimistic | base only
-    if (chain === 'lisk') throw new Error('Aave v3 not supported on Lisk')
-
-    const tokenAddr = TokenAddresses[snap.token][chain]
+    const chain = snap.chain as Extract<ChainId, 'optimism' | 'base'>
+    const tokenMap = TokenAddresses[snap.token] as Record<
+      'optimism' | 'base',
+      `0x${string}`
+    >
+    const tokenAddr = tokenMap[chain]
     const poolAddr = AAVE_POOL[chain]
 
     await ensureAllowance(tokenAddr, poolAddr, amount, wallet, chain)
@@ -99,12 +103,13 @@ export async function depositToPool(
 
   /* ---------- Compound v3 (Comet) ---------- */
   if (snap.protocolKey === 'compound-v3') {
-    const chain = snap.chain as ChainId
-    if (chain === 'lisk') throw new Error('Compound v3 not supported on Lisk')
-
-    const tokenSym = snap.token 
-    const tokenAddr = TokenAddresses[tokenSym][chain]
-    const poolAddr = COMET_POOLS[chain][tokenSym]
+    const chain = snap.chain as Extract<ChainId, 'optimism' | 'base'>
+    const tokenMap = TokenAddresses[snap.token] as Record<
+      'optimism' | 'base',
+      `0x${string}`
+    >
+    const tokenAddr = tokenMap[chain]
+    const poolAddr = COMET_POOLS[chain][snap.token as 'USDC' | 'USDT']
 
     await ensureAllowance(tokenAddr, poolAddr, amount, wallet, chain)
 
@@ -122,8 +127,11 @@ export async function depositToPool(
   /* ---------- Morpho Blue (MetaMorpho vault) ---------- */
   if (snap.protocolKey === 'morpho-blue') {
     const chain: ChainId = 'lisk'
-    const tokenAddr = TokenAddresses[snap.token as TokenSymbol][chain]
-    const poolAddr = MORPHO_POOLS[snap.pool as keyof typeof MORPHO_POOLS]
+    // use snap.poolAddress instead of nonexistent snap.pool
+    const vaultAddr = snap.poolAddress as `0x${string}`
+    const tokenMap = TokenAddresses[snap.token as TokenSymbol] as { lisk: `0x${string}` }
+    const tokenAddr = tokenMap.lisk
+    const poolAddr = MORPHO_POOLS[vaultAddr as keyof typeof MORPHO_POOLS]
 
     await ensureAllowance(tokenAddr, poolAddr, amount, wallet, chain)
 

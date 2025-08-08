@@ -6,7 +6,6 @@ import { Loader2 }         from 'lucide-react'
 
 import { StatCard }        from '@/components/PositionsDashboard'
 
-
 export const PositionsGrid = () => {
   /* ----- data hooks ----- */
   const { data: positions, isLoading } = usePositions()

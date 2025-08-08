@@ -4,6 +4,7 @@
 import { usePortfolioApy } from '@/hooks/usePortfolioApy'
 import { rewardForecast } from '@/lib/rewardForecast'
 import { DollarSign, LineChart, Coins } from 'lucide-react'
+import { ReactNode } from 'react'
 
 export function MetricBar() {
   const { totalUsd, apy, loading } = usePortfolioApy()
@@ -30,7 +31,7 @@ export function MetricBar() {
       tooltip: `≈ $${forecast.daily.toFixed(2)} per day`,
     },
   ].filter(Boolean) as {
-    icon: JSX.Element
+    icon: ReactNode
     label: string
     value: string
     tooltip?: string

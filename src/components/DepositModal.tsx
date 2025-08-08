@@ -15,10 +15,9 @@ import { TokenAddresses } from '@/lib/constants'
 import type { YieldSnapshot } from '@/hooks/useYields'
 
 import { useEffect, useState, FC } from 'react'
-import {  useAppKit } from '@reown/appkit/react'
+import { useAppKit } from '@reown/appkit/react'
 
 import {
- 
   parseUnits,
   formatUnits,
 } from 'viem'
@@ -44,12 +43,19 @@ export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
   /* fetch balances whenever the modal opens */
   useEffect(() => {
     if (!open || !walletClient) return          // <- guard
-  
+
     const user = walletClient.account.address  
-    console.log(user) // 0x… string
-  
-    const { optimism: tokOP, base: tokBA } = TokenAddresses[snap.token]
-  
+    console.log('Current user:', user)
+
+    // We know for this modal snap.token is USDC or USDT,
+    // so it definitely has .optimism & .base in TokenAddresses:
+    const tokenMap = TokenAddresses[snap.token] as {
+      optimism: `0x${string}`
+      base:     `0x${string}`
+    }
+    const tokOP = tokenMap.optimism
+    const tokBA = tokenMap.base
+
     ;(async () => {
       const { opBal, baBal } = await getDualBalances(
         { optimism: tokOP, base: tokBA },
@@ -57,37 +63,38 @@ export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
       )
       setOpBal(opBal)
       setBaBal(baBal)
-      console.log(opBal, baBal);
+      console.log('Balances → OP:', opBal, 'BA:', baBal)
     })()
   }, [open, walletClient, snap.token])
 
   async function handleConfirm() {
-    if (!walletClient) {            // user not connected
-      openModal()                   // open Reown modal
+    if (!walletClient) {
+      openModal()
       return
     }
-  
+
     try {
       setBusy(true)
       setError(null)
-  
-      /* amount as bigint */
-      const amt  = parseUnits(amount as `${number}`, 6)
-      const dest = snap.chain as 'optimism' | 'base'
-  
-      /* bridge if needed, then deposit */
+
+      const amt  = parseUnits(amount, 6)              // amount is a string
+      const dest = snap.chain as 'optimism' | 'base'  // this modal only handles these
+
       await ensureLiquidity(snap.token, amt, dest, walletClient)
       await depositToPool(snap, amt, walletClient)
-  
+
       onClose()
       alert(`✅ Deposited ${amount} ${snap.token}`)
-    } catch (e: any) {
-      setError(e.shortMessage ?? e.message ?? 'Tx failed')
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        setError(e.message)
+      } else {
+        setError(String(e))
+      }
     } finally {
       setBusy(false)
     }
   }
-  
 
   /* ---------- render ---------- */
   return (
@@ -124,12 +131,14 @@ export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
 
         {/* actions */}
         <div className="flex justify-end gap-3 pt-4">
-          <Button variant="secondary" onClick={onClose} title={'Cancel'}>
+          <Button variant="secondary" onClick={onClose} title="Cancel">
             Cancel
           </Button>
           <Button
-                      disabled={busy || !amount}
-                      onClick={handleConfirm} title={busy ? 'Processing…' : 'Confirm'}          >
+            disabled={busy || !amount}
+            onClick={handleConfirm}
+            title={busy ? 'Processing…' : 'Confirm'}
+          >
             {busy ? 'Processing…' : 'Confirm'}
           </Button>
         </div>

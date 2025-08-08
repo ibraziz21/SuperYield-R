@@ -7,7 +7,7 @@ export interface YieldSnapshot {
   protocol: string
   protocolKey: 'aave-v3' | 'compound-v3' | 'morpho-blue' | 'moonwell-lending'
   poolAddress: string
-  token: 'USDC' | 'USDT' | 'WETH' | 'USDT0' | 'USDC.e'
+  token: 'USDC' | 'USDT' | 'WETH' | 'USDT0' | 'USDCe'
   apy: number
   tvlUSD: number
   updatedAt: string
