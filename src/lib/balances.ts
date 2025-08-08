@@ -1,5 +1,5 @@
 import { publicOptimism, publicBase } from './clients'
-import {  Abi, encodeFunctionData } from 'viem'
+import {  Abi } from 'viem'
 import {erc20Abi} from 'viem' // ['function balanceOf(address) view returns (uint256)']
 
 export async function getBalance(

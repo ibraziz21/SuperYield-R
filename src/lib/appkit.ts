@@ -1,5 +1,4 @@
 import { createAppKit } from '@reown/appkit/react'
-import { EthersAdapter } from '@reown/appkit-adapter-ethers'
 import { optimism, base } from '@reown/appkit/networks'
 import { wagmiAdapter, projectId } from '@/config'
 

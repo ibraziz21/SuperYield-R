@@ -15,16 +15,14 @@ import { TokenAddresses } from '@/lib/constants'
 import type { YieldSnapshot } from '@/hooks/useYields'
 
 import { useEffect, useState, FC } from 'react'
-import { useAppKitProvider, useAppKit } from '@reown/appkit/react'
+import {  useAppKit } from '@reown/appkit/react'
 
 import {
-  createWalletClient,
-  custom,
+ 
   parseUnits,
   formatUnits,
 } from 'viem'
-import { optimism, base } from 'viem/chains'
-import { BigNumber } from 'ethers'
+
 import { useWalletClient } from 'wagmi'
 
 interface Props {

@@ -1,12 +1,6 @@
 /* components/dashboard/MetricBar.tsx */
 'use client'
 
-import {
-  Tooltip,
-  TooltipProvider,
-  TooltipTrigger,
-  TooltipContent,
-} from '@/components/ui/tooltip'
 import { usePortfolioApy } from '@/hooks/usePortfolioApy'
 import { rewardForecast } from '@/lib/rewardForecast'
 import { DollarSign, LineChart, Coins } from 'lucide-react'

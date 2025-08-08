@@ -1,6 +1,6 @@
 /* src/components/positions/PositionCard.tsx */
 'use client'
-import { FC, useState } from 'react'
+import { FC } from 'react'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/button'
 import { formatUnits } from 'viem'

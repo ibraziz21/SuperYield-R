@@ -5,7 +5,7 @@ import { rewardForecast }  from '@/lib/rewardForecast'
 import { Loader2 }         from 'lucide-react'
 
 import { StatCard }        from '@/components/PositionsDashboard'
-import { Card, CardContent } from '@/components/ui/Card'
+
 
 export const PositionsGrid = () => {
   /* ----- data hooks ----- */

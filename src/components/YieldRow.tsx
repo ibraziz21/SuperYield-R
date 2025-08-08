@@ -5,18 +5,14 @@ import { TokenBadge } from './TokenBadge'
 import { DepositModal } from './DepositModal'
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { Button } from './ui/button'
-import { useAppKitAccount, useAppKitProvider, useAppKit } from '@reown/appkit/react'
-import { bridgeTokens } from '@/lib/bridge'
-import { ethers } from 'ethers'
-import { depositToPool } from '@/lib/depositor'
-import { providerOptimism, providerBase } from '@/lib/rpc'
+import { useAppKitAccount, useAppKit } from '@reown/appkit/react'
+
 
 export const YieldRow: FC<{ snap: YieldSnapshot }> = ({ snap }) => {
     const { address } = useAppKitAccount()
-    const { walletProvider } = useAppKitProvider('eip155')
+
     const { open } = useAppKit()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [busy] = useState(false)
   const [show, setShow] = useState(false)
 
    function openModal() {

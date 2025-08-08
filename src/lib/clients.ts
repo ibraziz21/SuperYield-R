@@ -1,6 +1,6 @@
 // lib/clients.ts
-import { http, createPublicClient, createWalletClient } from 'viem'
-import { optimism, base } from 'viem/chains'
+import { http, createPublicClient } from 'viem'
+import { optimism, base, lisk } from 'viem/chains'
 
 export const publicOptimism = createPublicClient({
   chain: optimism,
@@ -9,6 +9,11 @@ export const publicOptimism = createPublicClient({
 
 export const publicBase = createPublicClient({
   chain: base,
+  transport: http(),
+})
+
+export const publicLisk = createPublicClient({
+  chain: lisk,
   transport: http(),
 })
 

@@ -3,11 +3,11 @@ import useSWR from 'swr'
 export interface YieldSnapshot {
   underlying: unknown
   id: string
-  chain: 'optimism' | 'base'
+  chain: 'optimism' | 'base' | 'lisk'
   protocol: string
-  protocolKey: 'aave-v3' | 'compound-v3' | 'sonne-finance' | 'moonwell-lending'
+  protocolKey: 'aave-v3' | 'compound-v3' | 'morpho-blue' | 'moonwell-lending'
   poolAddress: string
-  token: 'USDC' | 'USDT'
+  token: 'USDC' | 'USDT' | 'WETH' | 'USDT0' | 'USDC.e'
   apy: number
   tvlUSD: number
   updatedAt: string

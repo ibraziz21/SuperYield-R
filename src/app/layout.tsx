@@ -2,7 +2,6 @@
 
 import '@/app/globals.css'
 import { ReactNode } from 'react'
-import { createContext, useState } from 'react'
 import { WagmiProvider, cookieToInitialState } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 

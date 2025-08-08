@@ -10,8 +10,7 @@ import { rewardForecast } from '@/lib/rewardForecast'
 // shadcn/ui components
 import { Card, CardContent } from '@/components/ui/Card'
 import { Loader2 } from 'lucide-react'
-import { Separator } from '@/components/ui/separator'
-import { Skeleton } from '@/components/ui/skeleton'
+
 
 // charts
 import {

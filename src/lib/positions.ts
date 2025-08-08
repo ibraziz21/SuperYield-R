@@ -1,14 +1,13 @@
-import { WalletClient, PublicClient } from 'viem'
-import { optimism, base } from 'viem/chains'
+
 import { publicOptimism, publicBase } from './clients'
 import {
   AAVE_POOL,
   COMET_POOLS,
-  TokenAddresses,
+  
   type TokenSymbol,
 } from './constants'
-import { erc20Abi } from 'viem'
- import aaveAbi  from './abi/aavePool.json'
+
+import aaveAbi  from './abi/aavePool.json'
 import cometAbi from './abi/comet.json'
 
 function pub(chain: 'optimism' | 'base') {
