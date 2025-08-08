@@ -2,9 +2,9 @@
 
 import { FC, useMemo } from 'react'
 import { usePositions } from '@/hooks/usePositions'
-import { formatUnits } from 'viem'
 import { usePortfolioApy } from '@/hooks/usePortfolioApy'
 import { rewardForecast } from '@/lib/rewardForecast'
+import { formatUnits } from 'viem'
 
 import { Card, CardContent } from '@/components/ui/Card'
 import { Loader2 } from 'lucide-react'
@@ -20,47 +20,56 @@ import {
 import type { Position } from '@/lib/positions'
 import { TokenAddresses, COMET_POOLS } from '@/lib/constants'
 import { useApy } from '@/hooks/useAPY'
-import { Button } from './ui/button'
+import { Button } from '@/components/ui/button'
 
 // ─────── Constants ───────────────────────────────────────────────────────────
 
 const PIE_COLORS = ['#16a34a', '#7c3aed', '#f97316', '#38bdf8', '#ef4444']
 
 const DECIMALS: Record<Position['protocol'], number> = {
-  'Aave v3':      8,
-  'Compound v3':  6,
+  'Aave v3': 8,
+  'Compound v3': 6,
 }
 
-// convert bigint to number with decimals
+// helper to convert bigint → number given decimals
 const bnToNum = (bn: bigint, decimals: number) => Number(bn) / 10 ** decimals
 
 // ─────── Main Dashboard ──────────────────────────────────────────────────────
 
 export const PositionsDashboard: FC = () => {
   const { data, isLoading } = usePositions()
-  const { apy: portfolioApy, loading: apyLoading, totalUsd } = usePortfolioApy()
+  const {
+    apy: portfolioApy,
+    loading: apyLoading,
+    totalUsd,
+  } = usePortfolioApy()
 
-  const forecast = !apyLoading && totalUsd != null
-    ? rewardForecast(totalUsd, portfolioApy)
-    : null
+  const forecast =
+    !apyLoading && totalUsd != null
+      ? rewardForecast(totalUsd, portfolioApy)
+      : null
 
   // aggregate totals & pie data
   const { totalSupplied, protocolTotals, pieData } = useMemo(() => {
     if (!data) {
-      return { totalSupplied: 0, protocolTotals: {} as Record<string, number>, pieData: [] }
+      return {
+        totalSupplied: 0,
+        protocolTotals: {} as Record<string, number>,
+        pieData: [] as { name: string; value: number }[],
+      }
     }
-
-    const protoTotals: Record<string, number> = {}
-    let total = 0
-
+    const totals: Record<string, number> = {}
+    let sum = 0
     data.forEach((p) => {
       const num = bnToNum(p.amount, DECIMALS[p.protocol])
-      protoTotals[p.protocol] = (protoTotals[p.protocol] ?? 0) + num
-      total += num
+      totals[p.protocol] = (totals[p.protocol] ?? 0) + num
+      sum += num
     })
-
-    const pie = Object.entries(protoTotals).map(([name, value]) => ({ name, value }))
-    return { totalSupplied: total, protocolTotals: protoTotals, pieData: pie }
+    return {
+      totalSupplied: sum,
+      protocolTotals: totals,
+      pieData: Object.entries(totals).map(([name, value]) => ({ name, value })),
+    }
   }, [data])
 
   if (isLoading) {
@@ -76,9 +85,7 @@ export const PositionsDashboard: FC = () => {
 
   if (!data || data.length === 0) {
     return (
-      <p className="text-center text-sm opacity-60">
-        No active positions.
-      </p>
+      <p className="text-center text-sm opacity-60">No active positions.</p>
     )
   }
 
@@ -95,9 +102,7 @@ export const PositionsDashboard: FC = () => {
         <StatCard
           title="Total APY"
           value={
-            apyLoading
-              ? '—'
-              : `${portfolioApy.toFixed(2)}%`
+            apyLoading ? '—' : `${portfolioApy.toFixed(2)}%`
           }
           sub={apyLoading ? 'fetching…' : undefined}
         />
@@ -140,8 +145,8 @@ export const PositionsDashboard: FC = () => {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value) =>
-                    `$${Number(value).toLocaleString(undefined, {
+                  formatter={(v: number) =>
+                    `$${v.toLocaleString(undefined, {
                       maximumFractionDigits: 2,
                     })}`
                   }
@@ -154,56 +159,29 @@ export const PositionsDashboard: FC = () => {
 
       {/* per-protocol breakdown */}
       <div className="space-y-8">
-        {Object.entries(protocolTotals).map(([protocol, total]) => (
+        {Object.entries(protocolTotals).map(([protocol, _]) => (
           <div key={protocol} className="space-y-4">
             <h3 className="text-lg font-semibold tracking-tight">
               {protocol}
             </h3>
             <p className="text-sm text-muted-foreground">
-              ${total.toLocaleString(undefined, { maximumFractionDigits: 2 })} supplied
+              $
+              {protocolTotals[protocol].toLocaleString(undefined, {
+                maximumFractionDigits: 2,
+              })}{' '}
+              supplied
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {data
                 .filter((p) => p.protocol === protocol)
-                .map((p, idx) => {
-                  // --- derive correct Aave asset address ---
-                  let assetAddress: `0x${string}` | undefined
-                  if (
-                    p.protocol === 'Aave v3' &&
-                    (p.token === 'USDC' || p.token === 'USDT')
-                  ) {
-                    const tokenMap = TokenAddresses[p.token] as {
-                      optimism: `0x${string}`
-                      base:     `0x${string}`
-                    }
-                    assetAddress = tokenMap[p.chain]
-                  }
-
-                  // --- derive correct Compound v3 pool address ---
-                  let cometAddress: `0x${string}` | undefined
-                  if (
-                    p.protocol === 'Compound v3' &&
-                    (p.token === 'USDC' || p.token === 'USDT')
-                  ) {
-                    cometAddress = COMET_POOLS[p.chain][p.token]
-                  }
-
-                  const { data: apy } = useApy(p.protocol, {
-                    chain: p.chain,
-                    asset: assetAddress,
-                    comet: cometAddress,
-                  })
-
-                  return (
-                    <AssetCard
-                      key={idx}
-                      p={p}
-                      apy={Number(apy)}
-                      onSupply={() => {}}
-                      onWithdraw={() => {}}
-                    />
-                  )
-                })}
+                .map((p, idx) => (
+                  <AssetCard
+                    key={idx}
+                    p={p}
+                    onSupply={() => {}}
+                    onWithdraw={() => {}}
+                  />
+                ))}
             </div>
           </div>
         ))}
@@ -212,14 +190,13 @@ export const PositionsDashboard: FC = () => {
   )
 }
 
-// ─────── Sub-components ───────────────────────────────────────────────────────
+// ─────── sub-components ──────────────────────────────────────────────────────
 
 interface StatProps {
   title: string
   value: string
   sub?: string
 }
-
 export const StatCard: FC<StatProps> = ({ title, value, sub }) => (
   <Card className="rounded-2xl bg-card p-6">
     <CardContent className="space-y-1">
@@ -234,14 +211,41 @@ export const StatCard: FC<StatProps> = ({ title, value, sub }) => (
 
 interface AssetCardProps {
   p: Position
-  apy?: number | null
   onSupply?: (p: Position) => void
   onWithdraw?: (p: Position) => void
 }
-
-const AssetCard: FC<AssetCardProps> = ({ p, apy, onSupply, onWithdraw }) => {
+const AssetCard: FC<AssetCardProps> = ({ p, onSupply, onWithdraw }) => {
+  // format amount
   const decimals = DECIMALS[p.protocol]
   const amt = formatUnits(p.amount, decimals)
+
+  // derive Aave asset address if needed
+  let assetAddress: `0x${string}` | undefined
+  if (p.protocol === 'Aave v3') {
+    const map = TokenAddresses[p.token] as {
+      optimism: `0x${string}`
+      base: `0x${string}`
+    }
+    assetAddress = map[p.chain]
+  }
+
+  // derive Comet pool address if needed
+   // --- derive correct Compound v3 pool address ---
+   let cometAddress: `0x${string}` | undefined
+   if (
+     p.protocol === 'Compound v3' &&
+     (p.token === 'USDC' || p.token === 'USDT')
+   ) {
+     cometAddress = COMET_POOLS[p.chain][p.token]
+   }
+
+  // --- *** HERE *** --- useApy at top‐level of this component
+  const { data: apyData } = useApy(p.protocol, {
+    chain: p.chain,
+    asset: assetAddress,
+    comet: cometAddress,
+  })
+  const apy = apyData ?? 0
 
   return (
     <Card className="relative overflow-hidden rounded-2xl bg-secondary/10 p-5 backdrop-blur-sm">
@@ -254,11 +258,9 @@ const AssetCard: FC<AssetCardProps> = ({ p, apy, onSupply, onWithdraw }) => {
           <span className="text-2xl font-bold tracking-tight">{amt}</span>
           <span className="font-semibold">{p.token}</span>
         </div>
-        {typeof apy === 'number' && (
-          <span className="text-xs text-primary/80">
-            {apy.toFixed(2)}% APY
-          </span>
-        )}
+        <span className="text-xs text-primary/80">
+          {apy.toFixed(2)}% APY
+        </span>
         <div className="mt-4 flex gap-2">
           {onSupply && (
             <Button
@@ -285,3 +287,6 @@ const AssetCard: FC<AssetCardProps> = ({ p, apy, onSupply, onWithdraw }) => {
     </Card>
   )
 }
+
+
+
