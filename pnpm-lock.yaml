@@ -50,6 +50,9 @@ importers:
       autoprefixer:
         specifier: ^10.4.21
         version: 10.4.21(postcss@8.5.6)
+      class-variance-authority:
+        specifier: ^0.7.1
+        version: 0.7.1
       ethers:
         specifier: ^5
         version: 5.8.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
@@ -2145,6 +2148,9 @@ packages:
   cipher-base@1.0.6:
     resolution: {integrity: sha512-3Ek9H3X6pj5TgenXYtNWdaBon1tgYCaebd+XPg0keyjEbEfkD4KkmAxkQ/i1vYvxdcT5nscLBfq9VJRmCBcFSw==}
     engines: {node: '>= 0.10'}
+
+  class-variance-authority@0.7.1:
+    resolution: {integrity: sha512-Ka+9Trutv7G8M6WT6SeiRWz792K5qEqIGEGzXKhAE6xOWAY6pPH8U+9IY3oCMv6kqTmLsv7Xh/2w2RigkePMsg==}
 
   clean-stack@2.2.0:
     resolution: {integrity: sha512-4diC9HaTE+KRAMWhDhrGOECgWZxoevMc5TlkObMqNSsVU62PYzXZ/SMTjzyGAFF1YusgxGcSWTEXBhp0CPwQ1A==}
@@ -8355,6 +8361,10 @@ snapshots:
       inherits: 2.0.4
       safe-buffer: 5.2.1
     optional: true
+
+  class-variance-authority@0.7.1:
+    dependencies:
+      clsx: 2.1.1
 
   clean-stack@2.2.0: {}
 

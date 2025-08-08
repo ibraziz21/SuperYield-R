@@ -23,6 +23,7 @@
     "@wagmi/connectors": "^5.9.1",
     "@wagmi/core": "^2.18.1",
     "autoprefixer": "^10.4.21",
+    "class-variance-authority": "^0.7.1",
     "ethers": "^5",
     "lucide-react": "^0.536.0",
     "networks": "link:@reown/appkit/networks",
