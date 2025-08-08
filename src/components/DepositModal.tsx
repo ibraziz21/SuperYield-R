@@ -1,4 +1,7 @@
+// src/components/DepositModal.tsx
+
 'use client'
+
 import {
   Dialog,
   DialogContent,
@@ -16,13 +19,10 @@ import type { YieldSnapshot } from '@/hooks/useYields'
 
 import { useEffect, useState, FC } from 'react'
 import { useAppKit } from '@reown/appkit/react'
+import { useWalletClient, useChainId, useSwitchChain } from 'wagmi'
 
-import {
-  parseUnits,
-  formatUnits,
-} from 'viem'
-
-import { useWalletClient } from 'wagmi'
+import { parseUnits, formatUnits } from 'viem'
+import { optimism, base } from 'viem/chains'
 
 interface Props {
   open: boolean
@@ -33,6 +33,12 @@ interface Props {
 export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
   const { open: openModal } = useAppKit()
   const { data: walletClient } = useWalletClient()
+  const currentChainId = useChainId()
+  const {
+    switchChainAsync,
+    isPending: isSwitching,
+    error: switchError,
+  } = useSwitchChain()
 
   const [amount, setAmount] = useState('')
   const [opBal, setOpBal] = useState<bigint | null>(null)
@@ -40,18 +46,15 @@ export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  /* fetch balances whenever the modal opens */
+  // Fetch balances whenever modal opens
   useEffect(() => {
-    if (!open || !walletClient) return          // <- guard
+    if (!open || !walletClient) return
 
-    const user = walletClient.account.address  
-    console.log('Current user:', user)
-
-    // We know for this modal snap.token is USDC or USDT,
-    // so it definitely has .optimism & .base in TokenAddresses:
+    const user = walletClient.account.address
+    // TokenAddresses has optimism & base for USDC/USDT
     const tokenMap = TokenAddresses[snap.token] as {
       optimism: `0x${string}`
-      base:     `0x${string}`
+      base: `0x${string}`
     }
     const tokOP = tokenMap.optimism
     const tokBA = tokenMap.base
@@ -59,11 +62,10 @@ export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
     ;(async () => {
       const { opBal, baBal } = await getDualBalances(
         { optimism: tokOP, base: tokBA },
-        user as `0x${string}`,
+        user as `0x${string}`
       )
       setOpBal(opBal)
       setBaBal(baBal)
-      console.log('Balances → OP:', opBal, 'BA:', baBal)
     })()
   }, [open, walletClient, snap.token])
 
@@ -73,30 +75,42 @@ export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
       return
     }
 
+    setBusy(true)
+    setError(null)
+
     try {
-      setBusy(true)
-      setError(null)
+      const amt = parseUnits(amount, 6)
+      const dest = snap.chain as 'optimism' | 'base'
+      const destChainId = dest === 'optimism' ? optimism.id : base.id
 
-      const amt  = parseUnits(amount, 6)              // amount is a string
-      const dest = snap.chain as 'optimism' | 'base'  // this modal only handles these
-
+      // 1️⃣ ensure liquidity (bridging if needed)
       await ensureLiquidity(snap.token, amt, dest, walletClient)
+
+      // 2️⃣ if wallet is on wrong chain, switch it
+      if (currentChainId !== destChainId && switchChainAsync) {
+        await switchChainAsync({chainId: destChainId})
+        setError(
+          `Switched your wallet to ${
+            dest === 'optimism' ? 'Optimism' : 'Base'
+          }. Please click Confirm again to complete the deposit.`
+        )
+        setBusy(false)
+        return
+      }
+
+      // 3️⃣ deposit once on correct chain
       await depositToPool(snap, amt, walletClient)
 
       onClose()
       alert(`✅ Deposited ${amount} ${snap.token}`)
     } catch (e: unknown) {
-      if (e instanceof Error) {
-        setError(e.message)
-      } else {
-        setError(String(e))
-      }
+      if (e instanceof Error) setError(e.message)
+      else setError(String(e))
     } finally {
       setBusy(false)
     }
   }
 
-  /* ---------- render ---------- */
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
@@ -106,7 +120,7 @@ export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
           </DialogTitle>
         </DialogHeader>
 
-        {/* balances */}
+        {/* Balances */}
         <div className="space-y-1 text-sm">
           <p>Balances:</p>
           <p>
@@ -119,7 +133,7 @@ export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
           </p>
         </div>
 
-        {/* amount input */}
+        {/* Amount input */}
         <Input
           type="number"
           placeholder="Amount"
@@ -128,18 +142,33 @@ export const DepositModal: FC<Props> = ({ open, onClose, snap }) => {
         />
 
         {error && <p className="text-xs text-red-500">{error}</p>}
+        {switchError && (
+          <p className="text-xs text-red-500">
+            Switch error: {switchError.message}
+          </p>
+        )}
 
-        {/* actions */}
+        {/* Actions */}
         <div className="flex justify-end gap-3 pt-4">
           <Button variant="secondary" onClick={onClose} title="Cancel">
             Cancel
           </Button>
           <Button
-            disabled={busy || !amount}
+            disabled={busy || !amount || isSwitching}
             onClick={handleConfirm}
-            title={busy ? 'Processing…' : 'Confirm'}
+            title={
+              isSwitching
+                ? 'Switching network…'
+                : busy
+                ? 'Processing…'
+                : 'Confirm'
+            }
           >
-            {busy ? 'Processing…' : 'Confirm'}
+            {isSwitching
+              ? 'Switching…'
+              : busy
+              ? 'Processing…'
+              : 'Confirm'}
           </Button>
         </div>
       </DialogContent>
