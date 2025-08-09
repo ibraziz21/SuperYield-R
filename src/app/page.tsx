@@ -1,23 +1,29 @@
-/* src/app/page.tsx */
+// src/app/page.tsx
 'use client'
-import { PositionsGrid } from '@/components/PositionsGrid'
-import { YieldTable } from '@/components/YieldTable'
+
 import Link from 'next/link'
+import { PositionsGrid } from '@/components/PositionsGrid'
+import { TopYields } from '@/components/TopYields'
 
 export default function Dashboard() {
   return (
-    <div className="space-y-12">
-       <div className="flex justify-end">
-        <Link
-          href="/positions"
-          className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-        >
-          View more →
-        </Link>
-      </div>
+    <div className="space-y-10">
+      {/* Positions snapshot + metrics */}
       <PositionsGrid />
 
-      <YieldTable />
+      {/* Compact markets preview */}
+      <section className="mx-auto w-full max-w-6xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-semibold tracking-tight">Top yields</h2>
+          <Link
+            href="/positions"
+            className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            See all markets →
+          </Link>
+        </div>
+        <TopYields limit={5} />
+      </section>
     </div>
   )
 }
