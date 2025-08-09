@@ -141,7 +141,7 @@ async function resolveAaveUnderlying(
         let score = 1
         if (desired === 'USDC') {
           if (s === 'usdc') score = 3
-          else if (s === 'usdbc') score = 2
+          else if (s === 'USDbC') score = 2
         } else if (desired === 'USDT') {
           if (s === 'usdt') score = 3
         }
