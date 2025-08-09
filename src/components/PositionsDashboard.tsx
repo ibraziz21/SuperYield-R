@@ -237,15 +237,20 @@ const AssetCard: FC<AssetCardProps> = ({ p, onSupply, onWithdraw }) => {
     cometAddress = COMET_POOLS[p.chain][p.token]
   }
 
-  // APY only for Aave/Compound; Morpho Blue APY handled elsewhere (yields fetch)
-  const { data: apyMaybe } =
-    p.protocol === 'Morpho Blue'
-      ? { data: undefined as number | undefined }
-      : useApy(p.protocol, {
-          chain: isOpBase(p.chain) ? p.chain : 'optimism', // value ignored when asset/comet undefined
-          asset: assetAddress,
-          comet: cometAddress,
-        })
+  /** 
+   * Always call the hook in the same order.
+   * For Morpho Blue (or unsupported combos), we pass a dummy protocol/chain and keep `enabled` false internally
+   * because `assetAddress`/`cometAddress` will be `undefined`.
+   */
+  const normalizedProtocolForHook: 'Aave v3' | 'Compound v3' =
+    p.protocol === 'Compound v3' ? 'Compound v3' : 'Aave v3'
+  const chainForHook: 'optimism' | 'base' = isOpBase(p.chain) ? p.chain : 'optimism'
+
+  const { data: apyMaybe } = useApy(normalizedProtocolForHook, {
+    chain: chainForHook,
+    asset: assetAddress,
+    comet: cometAddress,
+  })
 
   const apy = typeof apyMaybe === 'number' ? apyMaybe : null
 
