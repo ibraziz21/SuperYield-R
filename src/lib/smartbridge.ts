@@ -1,23 +1,41 @@
+// src/lib/smartbridge.ts
+
 import { publicOptimism, publicBase, publicLisk } from './clients'
 import { erc20Abi } from 'viem'
 import { TokenAddresses, type ChainId, type TokenSymbol } from './constants'
-import { bridgeTokens } from './bridge'
 import type { WalletClient } from 'viem'
 
-/**
- * Fetch ERC-20 balance of user on a given chain
- */
-async function getBalanceOnChain(
-  chain: ChainId,
+type EvmChain = ChainId
+
+function clientFor(chain: EvmChain) {
+  return chain === 'optimism' ? publicOptimism : chain === 'base' ? publicBase : publicLisk
+}
+
+/** Token address resolver – maps USDC/USDT to USDCe/USDT0 on Lisk */
+export function addressFor(
+  chain: EvmChain,
+  symbol: TokenSymbol,
+): `0x${string}` | null {
+  if (chain === 'optimism' || chain === 'base') {
+    if (symbol === 'USDC' || symbol === 'USDT')
+      return TokenAddresses[symbol][chain] as `0x${string}`
+    return null
+  }
+  // lisk
+  if (symbol === 'USDC') return TokenAddresses.USDCe.lisk
+  if (symbol === 'USDT') return TokenAddresses.USDT0.lisk
+  if (symbol === 'WETH') return TokenAddresses.WETH.lisk
+  if (symbol === 'USDCe') return TokenAddresses.USDCe.lisk
+  if (symbol === 'USDT0') return TokenAddresses.USDT0.lisk
+  return null
+}
+
+async function erc20Balance(
+  chain: EvmChain,
   token: `0x${string}`,
   user: `0x${string}`
 ): Promise<bigint> {
-  const client =
-    chain === 'optimism'
-      ? publicOptimism
-      : chain === 'base'
-      ? publicBase
-      : publicLisk
+  const client = clientFor(chain)
   return client.readContract({
     address: token,
     abi: erc20Abi,
@@ -27,54 +45,59 @@ async function getBalanceOnChain(
 }
 
 /**
- * Ensure the user has enough token on the target chain,
- * bridging a shortfall from another chain if needed.
+ * Ensure the user has `amount` of `symbol` on the `target` chain.
+ * Will bridge only the shortfall. Valid routes:
+ *  - OP ⇄ Base
+ *  - OP/Base → Lisk
  */
 export async function ensureLiquidity(
   symbol: TokenSymbol,
   amount: bigint,
-  target: ChainId,
+  target: EvmChain,
   wallet: WalletClient,
 ) {
-  // 1 — require connected wallet
   const user = wallet.account?.address as `0x${string}`
   if (!user) throw new Error('Wallet not connected')
 
-  // 2 — compute balances across all chains
-  const tokenMap = TokenAddresses[symbol] as unknown as Record<ChainId, `0x${string}`>
-  const balances: Record<ChainId, bigint> = {
+  // resolve per-chain token addresses (including Lisk aliases)
+  const tokens: Partial<Record<EvmChain, `0x${string}`>> = {}
+  for (const chain of ['optimism', 'base', 'lisk'] as const) {
+    const addr = addressFor(chain, symbol)
+    if (addr) tokens[chain] = addr
+  }
+
+  // read balances where token exists
+  const balances: Record<EvmChain, bigint> = {
     optimism: BigInt(0),
     base: BigInt(0),
     lisk: BigInt(0),
   }
-  for (const chain of Object.keys(balances) as ChainId[]) {
-    if (tokenMap[chain]) {
-      balances[chain] = await getBalanceOnChain(
-        chain,
-        tokenMap[chain],
-        user,
-      )
-    }
-  }
-
-  // 3 — if already enough on target, nothing to do
-  if (balances[target] >= amount) return
-
-  // 4 — amount missing
-  const missing = amount - balances[target]
-
-  // 5 — pick a source chain with sufficient balance
-  const sourceChains = (['optimism', 'base', 'lisk'] as ChainId[]).filter(
-    (c) => c !== target,
+  await Promise.all(
+    (Object.keys(balances) as EvmChain[]).map(async (c) => {
+      const addr = tokens[c]
+      if (addr) balances[c] = await erc20Balance(c, addr, user)
+    })
   )
-  const from = sourceChains.find((c) => balances[c] >= missing)
+
+  const destBal = balances[target]
+  if (destBal >= amount) return // already enough
+
+  const missing = amount - destBal
+
+  // choose routes
+  const candidates: EvmChain[] =
+    target === 'lisk' ? ['optimism', 'base']
+    : target === 'optimism' ? ['base']
+    : ['optimism']
+
+  const from = candidates.find((c) => balances[c] >= missing)
   if (!from) {
     throw new Error(
-      `Insufficient liquidity: need ${missing} ${symbol} on ${target},` +
-        ` but no other chain has enough`,
+      `Insufficient liquidity: need ${missing} ${symbol} on ${target}, but no source chain has enough`
     )
   }
 
-  // 6 — perform bridge
+  // Perform the bridge (your bridgeTokens should understand the aliasing on Lisk)
+  const { bridgeTokens } = await import('./bridge')
   await bridgeTokens(symbol, missing, from, target, wallet)
 }

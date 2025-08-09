@@ -2,12 +2,12 @@ import { http } from 'viem'
 import { cookieStorage, createStorage } from '@wagmi/core'
 import { injected, walletConnect } from '@wagmi/connectors'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
-import { optimism, base } from '@reown/appkit/networks'
+import { optimism, base, lisk } from '@reown/appkit/networks'
 
 export const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID!
 if (!projectId) throw new Error('REOWN project id missing')
 
-export const networks = [optimism, base]
+export const networks = [optimism, base, lisk]
 
 /**  WagmiAdapter builds the wagmi config for us  */
 export const wagmiAdapter = new WagmiAdapter({
@@ -18,6 +18,7 @@ export const wagmiAdapter = new WagmiAdapter({
   transports: {
     [optimism.id]: http(),
     [base.id]:     http(),
+    [lisk.id]:     http(),
   },
 
   // wallet connectors

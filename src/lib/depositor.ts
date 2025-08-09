@@ -6,22 +6,25 @@ import {
   TokenAddresses,
   AAVE_POOL,
   COMET_POOLS,
-  MORPHO_POOLS,
   type TokenSymbol,
 } from './constants'
 import { erc20Abi } from 'viem'
 import aaveAbi from './abi/aavePool.json'
 import cometAbi from './abi/comet.json'
+// This ABI should include standard ERC-4626 functions: deposit, mint, previewDeposit
+// If your existing morphoLisk.json already has them, keep using it.
+// Otherwise replace import below with an ERC-4626 ABI file.
 import morphoAbi from './abi/morphoLisk.json'
+
 import { publicOptimism, publicBase, publicLisk } from './clients'
 import type { YieldSnapshot } from '@/hooks/useYields'
 
-/** ----------------------------------------------------------------------
+/* ----------------------------------------------------------------------
  * Types
  * ---------------------------------------------------------------------*/
 export type ChainId = 'optimism' | 'base' | 'lisk'
 
-/** ----------------------------------------------------------------------
+/* ----------------------------------------------------------------------
  * Public client picker
  * ---------------------------------------------------------------------*/
 function pub(chain: ChainId) {
@@ -35,7 +38,7 @@ function pub(chain: ChainId) {
   }
 }
 
-/** ----------------------------------------------------------------------
+/* ----------------------------------------------------------------------
  * Allowance helper – checks & approves if necessary
  * ---------------------------------------------------------------------*/
 export async function ensureAllowance(
@@ -68,8 +71,18 @@ export async function ensureAllowance(
 }
 
 /* ----------------------------------------------------------------------
-   Main deposit dispatcher
----------------------------------------------------------------------*/
+ * Helper: map UI token → Lisk underlying for MetaMorpho vaults
+ * (USDC → USDCe, USDT → USDT0, WETH → WETH)
+ * ---------------------------------------------------------------------*/
+function morphoUnderlyingOnLisk(sym: YieldSnapshot['token']): TokenSymbol {
+  if (sym === 'USDC') return 'USDCe'
+  if (sym === 'USDT') return 'USDT0'
+  return 'WETH'
+}
+
+/* ----------------------------------------------------------------------
+ * Main deposit dispatcher
+ * ---------------------------------------------------------------------*/
 export async function depositToPool(
   snap: YieldSnapshot,
   amount: bigint,
@@ -81,6 +94,7 @@ export async function depositToPool(
   /* ---------- Aave v3 ---------- */
   if (snap.protocolKey === 'aave-v3') {
     const chain = snap.chain as Extract<ChainId, 'optimism' | 'base'>
+
     const tokenMap = TokenAddresses[snap.token] as Record<
       'optimism' | 'base',
       `0x${string}`
@@ -104,6 +118,7 @@ export async function depositToPool(
   /* ---------- Compound v3 (Comet) ---------- */
   if (snap.protocolKey === 'compound-v3') {
     const chain = snap.chain as Extract<ChainId, 'optimism' | 'base'>
+
     const tokenMap = TokenAddresses[snap.token] as Record<
       'optimism' | 'base',
       `0x${string}`
@@ -124,25 +139,49 @@ export async function depositToPool(
     return
   }
 
-  /* ---------- Morpho Blue (MetaMorpho vault) ---------- */
+  /* ---------- Morpho MetaMorpho v1.1 (ERC-4626 vault on Lisk) ---------- */
   if (snap.protocolKey === 'morpho-blue') {
     const chain: ChainId = 'lisk'
-    // use snap.poolAddress instead of nonexistent snap.pool
-    const vaultAddr = snap.poolAddress as `0x${string}`
-    const tokenMap = TokenAddresses[snap.token as TokenSymbol] as { lisk: `0x${string}` }
-    const tokenAddr = tokenMap.lisk
-    const poolAddr = MORPHO_POOLS[vaultAddr as keyof typeof MORPHO_POOLS]
+    const vault = snap.poolAddress as `0x${string}` // the MetaMorpho vault (ERC-4626)
 
-    await ensureAllowance(tokenAddr, poolAddr, amount, wallet, chain)
+    // Map UI fiat tokens to Lisk underlyings
+    const underlyingSymbol = morphoUnderlyingOnLisk(snap.token)
+    const tokenAddr = (TokenAddresses[underlyingSymbol] as { lisk: `0x${string}` })
+      .lisk
 
-    await wallet.writeContract({
-      address: poolAddr,
-      abi: morphoAbi,
-      functionName: 'supply',
-      args: [tokenAddr, amount, owner],
-      chain: lisk,
-      account: owner,
-    })
+    // Approve vault to pull underlying
+    await ensureAllowance(tokenAddr, vault, amount, wallet, chain)
+
+    // Prefer ERC-4626 `deposit(assets, receiver)`, else fall back to `mint(shares, receiver)`
+    try {
+      // Try deposit first (most intuitive: we have `amount` assets)
+      await wallet.writeContract({
+        address: vault,
+        abi: morphoAbi,
+        functionName: 'deposit',
+        args: [amount, owner],
+        chain: lisk,
+        account: owner,
+      })
+    } catch (depositErr) {
+      // If `deposit` not present/allowed, compute shares via preview and call mint
+      const shares = (await publicLisk.readContract({
+        address: vault,
+        abi: morphoAbi,
+        functionName: 'previewDeposit',
+        args: [amount],
+      })) as bigint
+
+      await wallet.writeContract({
+        address: vault,
+        abi: morphoAbi,
+        functionName: 'mint',
+        args: [shares, owner],
+        chain: lisk,
+        account: owner,
+      })
+    }
+
     return
   }
 
