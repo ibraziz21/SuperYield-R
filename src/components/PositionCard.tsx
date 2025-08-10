@@ -33,7 +33,7 @@ function tokenDecimals(protocol: ProtocolName, token: string): number {
   if (protocol === 'Morpho Blue') {
     return token === 'WETH' ? 18 : 6 // lisk tokens: WETH 18, USDCe/USDT0 6
   }
-  if (protocol === 'Aave v3') return 8 // aToken-style reporting (1e8 base units)
+  if (protocol === 'Aave v3') return 6 // aToken-style reporting (1e8 base units)
   return 6 // Compound v3 balances in token units (USDC/USDT)
 }
 

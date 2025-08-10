@@ -13,6 +13,9 @@ import cometAbi  from './abi/comet.json'
 import { erc20Abi } from 'viem'
 import type { Address } from 'viem'
 
+// NEW: per-asset Aave balance helper (aToken balance)
+import { getATokenAddress as _unused, getAaveATokenBalance } from './aave'
+
 /* ──────────────────────────────────────────────────────────────── */
 /* Chains & helpers                                                 */
 /* ──────────────────────────────────────────────────────────────── */
@@ -31,13 +34,6 @@ function pub(chain: EvmChain) {
 /* Types                                                            */
 /* ──────────────────────────────────────────────────────────────── */
 
-export interface AaveAccount {
-  chain:    Extract<EvmChain, 'optimism' | 'base'>
-  supplied: bigint  // 1e8 base units (see Aave v3 getUserAccountData)
-  debt:     bigint
-}
-
-/** Unified position type across protocols & chains. */
 export interface Position {
   protocol: 'Aave v3' | 'Compound v3' | 'Morpho Blue'
   chain:    EvmChain
@@ -59,7 +55,6 @@ export async function aaveSupplyApy(
   const client = pub(chain)
   const pool   = AAVE_POOL[chain]
 
-  // reserve data can be tuple or named struct (viem returns both)
   let reserve: unknown
   try {
     reserve = await client.readContract({
@@ -72,11 +67,9 @@ export async function aaveSupplyApy(
     return null
   }
 
-  // pick currentLiquidityRate (RAY)
   let liqRateRay: bigint | undefined
   if (Array.isArray(reserve)) {
-    // empirically index 2 is currentLiquidityRate in Aave v3 ReserveData
-    const v = reserve[2]
+    const v = reserve[2] // index where currentLiquidityRate commonly appears
     liqRateRay = typeof v === 'bigint' ? v : undefined
   } else if (reserve && typeof reserve === 'object' && 'currentLiquidityRate' in reserve) {
     const v = (reserve as Record<string, unknown>)['currentLiquidityRate']
@@ -85,9 +78,8 @@ export async function aaveSupplyApy(
 
   if (typeof liqRateRay !== 'bigint') return null
 
-  const bps  = (liqRateRay * BPS_MULTIPLIER) / RAY
-  const apy  = Number(bps) / 100 // % with two decimals notionally
-  return apy
+  const bps = (liqRateRay * BPS_MULTIPLIER) / RAY
+  return Number(bps) / 100 // %
 }
 
 /* ──────────────────────────────────────────────────────────────── */
@@ -112,28 +104,8 @@ export async function compoundSupplyApy(
     args: [util],
   }) as bigint
 
-  // rate is per-second (1e18), annualize (seconds per year)
+  // per-second 1e18 → annualized %
   return (Number(rate) / 1e18) * 31_536_000 * 100
-}
-
-/* ──────────────────────────────────────────────────────────────── */
-/* Aave v3 supplied balance (per chain, user)                       */
-/* ──────────────────────────────────────────────────────────────── */
-
-export async function fetchAaveAccount(
-  chain: Extract<EvmChain, 'optimism' | 'base'>,
-  user:  `0x${string}`,
-): Promise<AaveAccount> {
-  const data = await pub(chain).readContract({
-    address: AAVE_POOL[chain],
-    abi:     aaveAbi,
-    functionName: 'getUserAccountData',
-    args: [user],
-  }) as readonly [bigint, bigint, bigint, bigint, bigint, bigint]
-
-  const supplied = data[0] // Aave v3: totalCollateralBase (1e8)
-  const debt     = data[1] // totalDebtBase (1e8)
-  return { chain, supplied, debt }
 }
 
 /* ──────────────────────────────────────────────────────────────── */
@@ -175,7 +147,6 @@ const erc4626Abi = [
   },
 ] as const
 
-/** Map lisk tokens → MetaMorpho vault address */
 const MORPHO_VAULT_BY_TOKEN: Record<
   Extract<TokenSymbol, 'USDCe' | 'USDT0' | 'WETH'>,
   `0x${string}`
@@ -191,7 +162,7 @@ async function morphoSupplyLisk(
 ): Promise<bigint> {
   const vault = MORPHO_VAULT_BY_TOKEN[token]
 
-  // 1) shares = balanceOf(user) on the ERC-4626 share token (vault)
+  // shares = balanceOf(user) on the ERC-4626 share token (vault)
   const shares = await publicLisk.readContract({
     address: vault,
     abi: erc20Abi,
@@ -201,7 +172,7 @@ async function morphoSupplyLisk(
 
   if (shares === BigInt(0)) return BigInt(0)
 
-  // 2) convert shares -> underlying assets
+  // convert shares -> underlying assets
   const assets = await publicLisk.readContract({
     address: vault,
     abi: erc4626Abi,
@@ -209,7 +180,7 @@ async function morphoSupplyLisk(
     args: [shares],
   }) as bigint
 
-  return assets // underlying units: WETH 1e18, USDCe/USDT0 1e6
+  return assets // underlying units
 }
 
 /* ──────────────────────────────────────────────────────────────── */
@@ -219,16 +190,18 @@ async function morphoSupplyLisk(
 export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
   const tasks: Promise<Position>[] = []
 
-  /* AAVE v3 – chain-level "total supplied" (1e8) – bucket under USDC */
+  /* AAVE v3 – per-token balances via aToken (token units: USDC/USDT → 6) */
   for (const chain of ['optimism', 'base'] as const) {
-    tasks.push(
-      fetchAaveAccount(chain, user).then(({ supplied }) => ({
-        protocol: 'Aave v3' as const,
-        chain,
-        token: 'USDC' as const, // display under USDC bucket
-        amount: supplied,       // 1e8 units (base currency)
-      })),
-    )
+    for (const token of ['USDC', 'USDT'] as const) {
+      tasks.push(
+        getAaveATokenBalance(chain, token, user).then((amt) => ({
+          protocol: 'Aave v3' as const,
+          chain,
+          token,
+          amount: amt, // 1e6; 0 if market not listed (e.g., Base/USDT)
+        })),
+      )
+    }
   }
 
   /* COMPOUND v3 – per token (USDC/USDT) on optimism|base (1e6) */
@@ -252,7 +225,7 @@ export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
         protocol: 'Morpho Blue' as const,
         chain: 'lisk' as const,
         token,
-        amount: amt, // WETH: 1e18, USDCe/USDT0: 1e6
+        amount: amt, // WETH: 1e18, stables: 1e6
       })),
     )
   }

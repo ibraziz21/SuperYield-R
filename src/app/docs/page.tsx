@@ -22,10 +22,10 @@ export default function DocsPage() {
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             <Link href="/">
-              <Button size="sm" variant="secondary">Open App</Button>
+              <Button size="sm" variant="secondary" title={'Open App'}>Open App</Button>
             </Link>
             <a href="#getting-started">
-              <Button size="sm" variant="outline" className="bg-white/10 text-white hover:bg-white/20">
+              <Button size="sm" variant="outline" className="bg-white/10 text-white hover:bg-white/20" title={'Getting Started'}>
                 Getting Started
               </Button>
             </a>
@@ -150,10 +150,10 @@ export default function DocsPage() {
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link href="#" rel="noreferrer">
-              <Button variant="secondary">Discord</Button>
+              <Button variant="secondary" title={'Discord'}>Discord</Button>
             </Link>
             <Link href="#" rel="noreferrer">
-              <Button variant="outline">Email</Button>
+              <Button variant="outline" title={'Email'}>Email</Button>
             </Link>
           </div>
         </Section>
