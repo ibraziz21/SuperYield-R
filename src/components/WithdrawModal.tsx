@@ -109,10 +109,8 @@ interface Props {
 }
 
 /**
- * Improved UX:
- * - No alerts; fully in-modal states (idle → switching → withdrawing → success / error)
- * - Clear summaries and a success screen with optional explorer link
- * - Single "Withdraw All" action (Aave uses MAX_UINT256; Comet uses exact balance)
+ * Mobile-optimized: sticky header + footer, internal scroll,
+ * larger tap targets, safe-area insets.
  */
 export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   const { open: openConnect } = useAppKit()
@@ -239,13 +237,13 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
     status === 'withdrawing' ||
     (typeof supplied === 'bigint' && supplied === BigInt(0))
 
-  /* ─────────── UI states inside the modal ─────────── */
+  /* ─────────── Small UI helpers ─────────── */
 
   function HeaderBar() {
     return (
-      <div className="flex items-center justify-between bg-gradient-to-r from-teal-600 to-emerald-500 px-5 py-4 text-white">
+      <div className="sticky top-0 z-30 flex items-center justify-between bg-gradient-to-r from-teal-600 to-emerald-500 px-5 py-4 text-white">
         <DialogHeader>
-          <DialogTitle className="text-base font-semibold">{title}</DialogTitle>
+          <DialogTitle className="text-base font-semibold sm:text-lg">{title}</DialogTitle>
         </DialogHeader>
         <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">
           {snap.chain.toUpperCase()}
@@ -336,7 +334,6 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           <div className="flex items-center justify-between">
             <span className="text-gray-500">Amount</span>
             <span className="font-medium">
-              {/* We display the previously-read supplied amount. */}
               {suppliedPretty} {snap.token}
             </span>
           </div>
@@ -346,7 +343,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           <a
             href={`${explorerTxBaseUrl(evmChain)}${txHash}`}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:underline"
           >
             View on explorer
@@ -364,7 +361,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           <AlertTriangle className="h-5 w-5" />
           <span className="font-semibold">Withdrawal failed</span>
         </div>
-        <p className="mt-2 text-xs text-red-700 break-words">
+        <p className="mt-2 break-words text-xs text-red-700">
           {error ?? 'Unknown error'}
         </p>
       </div>
@@ -375,96 +372,146 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="w-full max-w-md overflow-hidden rounded-2xl p-0">
+      <DialogContent
+        className="
+          w-[min(100vw-1rem,40rem)] sm:w-auto sm:max-w-md
+          h-[min(90dvh,640px)] sm:h-auto
+          overflow-hidden rounded-xl sm:rounded-2xl p-0 shadow-xl
+        "
+      >
         <HeaderBar />
 
-        <div className="space-y-4 p-5">
-          <TokenCard />
+        {/* Column layout with internal scroll */}
+        <div className="flex max-h-[calc(90dvh-56px)] flex-col overflow-hidden sm:max-h-none">
+          {/* Scrollable content */}
+          <div className="flex-1 space-y-4 overflow-y-auto bg-white p-4 sm:p-5">
+            <TokenCard />
 
-          {/* Idle / Switching / Withdrawing → show live summary */}
-          {(status === 'idle' || status === 'switching' || status === 'withdrawing') && (
-            <>
-              <SummaryCard />
-              {(status === 'switching' || status === 'withdrawing') && <ProgressCard />}
-              {switchErr && (
-                <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
-                  {switchErr.message}
-                </p>
-              )}
-              {error && (
-                <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
-                  {error}
-                </p>
+            {(status === 'idle' || status === 'switching' || status === 'withdrawing') && (
+              <>
+                <SummaryCard />
+                {(status === 'switching' || status === 'withdrawing') && <ProgressCard />}
+                {switchErr && (
+                  <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
+                    {switchErr.message}
+                  </p>
+                )}
+                {error && (
+                  <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
+                    {error}
+                  </p>
+                )}
+              </>
+            )}
+
+            {status === 'success' && <SuccessCard />}
+            {status === 'error' && <ErrorCard />}
+          </div>
+
+          {/* Sticky action bar (mobile-first) */}
+          <div
+            className="sticky bottom-0 border-t bg-white px-4 py-3 sm:px-5"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+          >
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-end">
+              {status === 'idle' && (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={onClose}
+                    className="h-12 w-full rounded-full sm:h-9 sm:w-auto"
+                    title="Cancel"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleWithdrawAll}
+                    disabled={isActionDisabled}
+                    className="h-12 w-full rounded-full bg-teal-600 hover:bg-teal-500 sm:h-9 sm:w-auto"
+                    title="Withdraw All"
+                  >
+                    Withdraw All
+                  </Button>
+                </>
               )}
 
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <Button
-                  variant="secondary"
-                  onClick={onClose}
-                  className="rounded-full"
-                  title="Cancel"
-                  disabled={status === 'switching' || status === 'withdrawing'}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleWithdrawAll}
-                  disabled={isActionDisabled}
-                  title={
-                    status === 'switching'
-                      ? 'Switching…'
-                      : status === 'withdrawing'
-                      ? 'Withdrawing…'
-                      : 'Withdraw All'
-                  }
-                  className="rounded-full bg-teal-600 hover:bg-teal-500"
-                >
-                  {status === 'switching' ? (
+              {status === 'switching' && (
+                <>
+                  <Button
+                    variant="secondary"
+                    disabled
+                    className="h-12 w-full rounded-full sm:h-9 sm:w-auto"
+                    title="Switching…"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled
+                    className="h-12 w-full rounded-full bg-teal-600 sm:h-9 sm:w-auto"
+                    title="Switching…"
+                  >
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Switching…
                     </span>
-                  ) : status === 'withdrawing' ? (
+                  </Button>
+                </>
+              )}
+
+              {status === 'withdrawing' && (
+                <>
+                  <Button
+                    variant="secondary"
+                    disabled
+                    className="h-12 w-full rounded-full sm:h-9 sm:w-auto"
+                    title="Withdrawing…"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled
+                    className="h-12 w-full rounded-full bg-teal-600 sm:h-9 sm:w-auto"
+                    title="Withdrawing…"
+                  >
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Withdrawing…
                     </span>
-                  ) : (
-                    'Withdraw All'
-                  )}
-                </Button>
-              </div>
-            </>
-          )}
+                  </Button>
+                </>
+              )}
 
-          {/* Success */}
-          {status === 'success' && (
-            <>
-              <SuccessCard />
-              <div className="flex items-center justify-end pt-2">
-                <Button onClick={onClose} className="rounded-full bg-teal-600 hover:bg-teal-500" title={'Done'}>
+              {status === 'success' && (
+                <Button
+                  onClick={onClose}
+                  className="h-12 w-full rounded-full bg-teal-600 hover:bg-teal-500 sm:h-9 sm:w-auto"
+                  title="Done"
+                >
                   Done
                 </Button>
-              </div>
-            </>
-          )}
+              )}
 
-          {/* Error */}
-          {status === 'error' && (
-            <>
-              <ErrorCard />
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <Button variant="secondary" onClick={onClose} className="rounded-full" title={'Close'}>
-                  Close
-                </Button>
-                <Button
-                  onClick={handleWithdrawAll}
-                  className="rounded-full bg-teal-600 hover:bg-teal-500" title={'Try Again'}                >
-                  Try again
-                </Button>
-              </div>
-            </>
-          )}
+              {status === 'error' && (
+                <div className="flex w-full gap-2 sm:justify-end">
+                  <Button
+                    variant="secondary"
+                    onClick={onClose}
+                    className="h-12 w-full rounded-full sm:h-9 sm:w-auto"
+                    title="Close"
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    onClick={handleWithdrawAll}
+                    className="h-12 w-full rounded-full bg-teal-600 hover:bg-teal-500 sm:h-9 sm:w-auto"
+                    title="Try Again"
+                  >
+                    Try again
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

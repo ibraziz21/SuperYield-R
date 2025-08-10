@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useYields } from '@/hooks/useYields'
 import { isAaveMarketSupported } from '@/lib/tvl'
-import { Loader2 } from 'lucide-react'
 import { YieldRow } from './YieldRow'
 
 type Chain = 'optimism' | 'base' | 'lisk'
@@ -76,6 +75,7 @@ export const YieldTable: FC = () => {
       }
     })
 
+    // Keep protocol grouping stable
     return sorted.sort((a, b) => {
       const ia = PROTO_ORDER.indexOf(a.protocolKey as Proto)
       const ib = PROTO_ORDER.indexOf(b.protocolKey as Proto)
@@ -86,24 +86,24 @@ export const YieldTable: FC = () => {
   const toggleChain = (c: Chain) => setChainEnabled((prev) => ({ ...prev, [c]: !prev[c] }))
 
   return (
-    <Card className="mx-auto w-full max-w-6xl overflow-hidden">
-      {/* Top bar */}
-      <div className="flex flex-col gap-3 border-b border-border/60 bg-gradient-to-r from-white to-white/60 p-4 backdrop-blur md:flex-row md:items-center md:justify-between dark:from-white/5 dark:to-white/10">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold">Markets</h2>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+    <Card className="mx-auto w-full max-w-6xl overflow-hidden rounded-xl md:rounded-2xl">
+      {/* Top bar (sticky on mobile) */}
+      <div className="sticky top-0 z-30 flex flex-col gap-3 border-b border-border/60 bg-gradient-to-r from-white to-white/60 p-3 backdrop-blur md:static md:flex-row md:items-center md:justify-between md:p-4 dark:from-white/5 dark:to-white/10">
+        <div className="flex items-center gap-2 md:gap-3">
+          <h2 className="text-base font-semibold md:text-lg">Markets</h2>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground md:text-xs">
             {rows.length} {rows.length === 1 ? 'pool' : 'pools'}
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 md:justify-end">
-          {/* protocol filter chips */}
-          <div className="flex gap-1 rounded-full bg-muted/60 p-1">
+        <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:flex-wrap md:items-center md:justify-end">
+          {/* protocol filter chips (scrollable on mobile) */}
+          <div className="flex gap-1 overflow-x-auto rounded-full bg-muted/60 p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {(['all', ...PROTO_ORDER] as const).map((p) => (
               <button
                 key={p}
                 onClick={() => setActiveProto(p)}
-                className={`rounded-full px-3 py-1 text-xs transition ${
+                className={`rounded-full px-3 py-1 text-[11px] transition md:text-xs ${
                   activeProto === p
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:bg-muted'
@@ -124,7 +124,7 @@ export const YieldTable: FC = () => {
                 variant={chainEnabled[c] ? 'default' : 'outline'}
                 onClick={() => toggleChain(c)}
                 title={CHAIN_LABEL[c]}
-                className="h-8"
+                className="h-8 px-3 text-[11px] md:h-8 md:text-xs"
               >
                 {CHAIN_LABEL[c]}
               </Button>
@@ -132,12 +132,13 @@ export const YieldTable: FC = () => {
           </div>
 
           {/* search */}
-          <div className="w-full min-w-[200px] md:w-64">
+          <div className="w-full md:w-64">
             <Input
               placeholder="Search token, protocol, chain…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-9"
+              aria-label="Search markets"
+              className="h-9 text-sm"
             />
           </div>
 
@@ -145,6 +146,7 @@ export const YieldTable: FC = () => {
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}
+            aria-label="Sort markets"
             className="h-9 rounded-md border bg-background px-2 text-sm"
             title="Sort"
           >
@@ -157,59 +159,67 @@ export const YieldTable: FC = () => {
       </div>
 
       <CardContent className="p-0">
-        <div className="max-h-[620px] overflow-auto">
-          <table className="min-w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-secondary/10 text-xs uppercase tracking-wide backdrop-blur dark:bg-white/5">
-              <tr className="text-muted-foreground">
-                <th className="px-4 py-3 text-left font-semibold">Token</th>
-                <th className="px-4 py-3 text-left font-semibold">Chain</th>
-                <th className="px-4 py-3 text-left font-semibold">Protocol</th>
-                <th className="px-4 py-3 text-right font-semibold">APY</th>
-                <th className="px-4 py-3 text-right font-semibold">TVL&nbsp;(USD)</th>
-                <th className="px-4 py-3 text-right font-semibold">Action</th>{/* NEW */}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-secondary/30">
-              {/* loading */}
-              {isLoading && (
-                <>
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <tr key={`sk-${i}`} className="animate-pulse">
-                      <td className="px-4 py-4"><div className="h-4 w-20 rounded bg-muted" /></td>
-                      <td className="px-4 py-4"><div className="h-4 w-24 rounded bg-muted" /></td>
-                      <td className="px-4 py-4"><div className="h-4 w-28 rounded bg-muted" /></td>
-                      <td className="px-4 py-4 text-right"><div className="ml-auto h-4 w-14 rounded bg-muted" /></td>
-                      <td className="px-4 py-4 text-right"><div className="ml-auto h-4 w-24 rounded bg-muted" /></td>
-                      <td className="px-4 py-4 text-right"><div className="ml-auto h-8 w-20 rounded bg-muted" /></td>
-                    </tr>
-                  ))}
-                </>
-              )}
-
-              {/* error */}
-              {error && !isLoading && (
-                <tr>
-                  <td colSpan={6} className="py-10 text-center text-red-500">Failed to load yields</td>
+        {/* Responsive scrollers:
+            - x-axis for table width on phones
+            - y-axis for rows */}
+        <div className="w-full overflow-x-auto">
+          <div className="max-h-[70vh] overflow-y-auto">
+            <table className="min-w-[720px] text-xs sm:min-w-full sm:text-sm">
+              <thead className="sticky top-0 z-10 bg-secondary/10 uppercase tracking-wide backdrop-blur dark:bg-white/5">
+                <tr className="text-muted-foreground">
+                  <th className="px-3 py-2 text-left font-semibold md:px-4 md:py-3">Token</th>
+                  <th className="px-3 py-2 text-left font-semibold md:px-4 md:py-3">Chain</th>
+                  <th className="px-3 py-2 text-left font-semibold md:px-4 md:py-3">Protocol</th>
+                  <th className="px-3 py-2 text-right font-semibold md:px-4 md:py-3">APY</th>
+                  <th className="px-3 py-2 text-right font-semibold md:px-4 md:py-3">TVL&nbsp;(USD)</th>
+                  <th className="px-3 py-2 text-right font-semibold md:px-4 md:py-3">Action</th>
                 </tr>
-              )}
+              </thead>
 
-              {/* empty */}
-              {!isLoading && !error && rows.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-10 text-center text-muted-foreground">
-                    No pools match your filters.
-                  </td>
-                </tr>
-              )}
+              <tbody className="divide-y divide-secondary/30">
+                {/* loading */}
+                {isLoading && (
+                  <>
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <tr key={`sk-${i}`} className="animate-pulse">
+                        <td className="px-3 py-3 md:px-4 md:py-4"><div className="h-3 w-20 rounded bg-muted md:h-4" /></td>
+                        <td className="px-3 py-3 md:px-4 md:py-4"><div className="h-3 w-24 rounded bg-muted md:h-4" /></td>
+                        <td className="px-3 py-3 md:px-4 md:py-4"><div className="h-3 w-28 rounded bg-muted md:h-4" /></td>
+                        <td className="px-3 py-3 text-right md:px-4 md:py-4"><div className="ml-auto h-3 w-14 rounded bg-muted md:h-4" /></td>
+                        <td className="px-3 py-3 text-right md:px-4 md:py-4"><div className="ml-auto h-3 w-24 rounded bg-muted md:h-4" /></td>
+                        <td className="px-3 py-3 text-right md:px-4 md:py-4"><div className="ml-auto h-7 w-20 rounded bg-muted md:h-8" /></td>
+                      </tr>
+                    ))}
+                  </>
+                )}
 
-              {/* data */}
-              {!isLoading && !error && rows.map((snap) => <YieldRow key={snap.id} snap={snap} />)}
-            </tbody>
-          </table>
+                {/* error */}
+                {error && !isLoading && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-10 text-center text-red-500 md:px-4">Failed to load yields</td>
+                  </tr>
+                )}
+
+                {/* empty */}
+                {!isLoading && !error && rows.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-10 text-center text-muted-foreground md:px-4">
+                      No pools match your filters.
+                    </td>
+                  </tr>
+                )}
+
+                {/* data */}
+                {!isLoading && !error && rows.map((snap) => (
+                  <YieldRow key={snap.id} snap={snap} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {!isLoading && !error && (
-          <div className="flex items-center justify-between border-t px-4 py-3 text-xs text-muted-foreground">
+          <div className="flex items-center justify-between border-t px-3 py-3 text-[11px] text-muted-foreground md:px-4 md:text-xs">
             <span>Showing <strong>{rows.length}</strong> pool{rows.length === 1 ? '' : 's'}</span>
             <span className="hidden md:block">Tip: Filter by protocol and chain, then sort by APY or TVL.</span>
           </div>

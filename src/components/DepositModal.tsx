@@ -129,13 +129,13 @@ interface DepositModalProps {
 
 /** Visual step states */
 type FlowStep =
-  | 'idle'           // editing amount
-  | 'bridging'       // submitting bridge tx
-  | 'waitingFunds'   // polling destination balance
-  | 'switching'      // switching wallet chain
-  | 'depositing'     // approving+depositing via router
-  | 'success'        // done
-  | 'error'          // error state
+  | 'idle'
+  | 'bridging'
+  | 'waitingFunds'
+  | 'switching'
+  | 'depositing'
+  | 'success'
+  | 'error'
 
 export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => {
   const { open: openConnect } = useAppKit()
@@ -290,10 +290,6 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     })
   }, [amount, walletClient, opBal, baBal, snap.chain, snap.token, tokenDecimals])
 
-  /* -------------------------------------------------------------- */
-  /* Action handler (single flow with stepper)                       */
-  /* -------------------------------------------------------------- */
-
   async function handleConfirm() {
     if (!walletClient) {
       openConnect()
@@ -308,11 +304,9 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       const destId = chainIdOf(dest)
       const user = walletClient.account!.address as `0x${string}`
 
-      // If cross-chain, capture destination baseline first and bridge once
       if (!liquidityEnsured && route && route !== 'On-chain') {
         setStep('bridging')
 
-        // track baseline on destination (USDC→USDCe, USDT→USDT0)
         const outSymbol = mapCrossTokenForDest(snap.token, dest)
         const destToken = tokenAddrFor(outSymbol, dest)
         destStartBal.current = await readWalletBalance(dest, destToken, user)
@@ -320,22 +314,17 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
         await ensureLiquidity(snap.token, inputAmt, dest, walletClient)
         setLiquidityEnsured(true)
 
-        // wait for funds (simple: any increase from baseline)
         setStep('waitingFunds')
         await waitForFunds(dest, destToken, user, destStartBal, destCurrBal)
       } else {
         setLiquidityEnsured(true)
       }
 
-      // Switch if needed
       if (chainId !== destId && switchChainAsync) {
         setStep('switching')
         await switchChainAsync({ chainId: destId })
       }
 
-      // Decide how much to deposit:
-      // - cross-chain: deposit the delta that arrived
-      // - on-chain:    deposit the input amount (received == input)
       let toDeposit: bigint
       if (route && route !== 'On-chain') {
         const delta = destCurrBal.current - destStartBal.current
@@ -354,7 +343,6 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     }
   }
 
-  // Poll destination balance until it increases from baseline
   async function waitForFunds(
     dest: EvmChain,
     token: `0x${string}`,
@@ -362,7 +350,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     startRef: React.MutableRefObject<bigint>,
     currRef: React.MutableRefObject<bigint>,
   ) {
-    const timeoutMs = 15 * 60 * 1000 // 15 minutes
+    const timeoutMs = 15 * 60 * 1000
     const intervalMs = 10_000
     const started = Date.now()
 
@@ -402,135 +390,205 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md rounded-2xl p-0 overflow-hidden shadow-xl">
+      <DialogContent
+        // Mobile-friendly sizing: nearly full-height with internal scroller
+        className="
+          p-0 overflow-hidden shadow-xl
+          w-[min(100vw-1rem,40rem)] sm:w-auto sm:max-w-md
+          h-[min(90dvh,680px)] sm:h-auto
+          rounded-xl sm:rounded-2xl
+        "
+      >
         {/* Header */}
-        <div className="bg-gradient-to-r from-teal-600 to-cyan-500 px-6 py-4">
+        <div className="bg-gradient-to-r from-teal-600 to-cyan-500 px-5 py-4 sm:px-6">
           <DialogHeader>
-            <DialogTitle className="text-white text-lg font-semibold">
+            <DialogTitle className="text-white text-base font-semibold sm:text-lg">
               Deposit {snap.token}
             </DialogTitle>
           </DialogHeader>
         </div>
 
-        {/* Body */}
-        <div className="p-6 space-y-5 bg-white">
-          {/* ───────── Input Form (idle) ───────── */}
-          {showForm && (
-            <>
-              {/* Amount */}
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="flex items-center justify-between text-xs text-gray-500">
-                  <span>Amount</span>
-                  <span>OP: {prettyToken(opBal)} • Base: {prettyToken(baBal)}</span>
-                </div>
-                <div className="mt-2 flex items-center gap-3">
-                  <Input
-                    type="number"
-                    placeholder="0.0"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="text-2xl font-bold border-0 bg-white focus-visible:ring-0"
-                  />
-                  <span className="text-gray-600 font-semibold">{snap.token}</span>
-                </div>
-              </div>
-
-              {/* Protocol balances */}
-              {(poolOp != null || poolBa != null) && (
+        {/* Scrollable body */}
+        <div className="flex max-h-[calc(90dvh-56px)] flex-col overflow-hidden sm:max-h-none">
+          <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-6 bg-white">
+            {/* ───────── Input Form (idle) ───────── */}
+            {showForm && (
+              <>
+                {/* Amount */}
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                  <div className="text-xs text-gray-500 font-medium mb-2">Your supplied balance</div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span>Optimism</span>
-                    <span className="font-medium">{prettyPool(poolOp)} {snap.token}</span>
+                  <div className="flex flex-wrap items-center justify-between gap-1 text-xs text-gray-500">
+                    <span>Amount</span>
+                    <span>OP: {prettyToken(opBal)} • Base: {prettyToken(baBal)}</span>
                   </div>
-                  <div className="flex items-center justify-between text-sm mt-1">
-                    <span>Base</span>
-                    <span className="font-medium">{prettyPool(poolBa)} {snap.token}</span>
-                  </div>
-                  <div className="mt-2 border-t pt-2 flex items-center justify-between text-sm">
-                    <span>Total</span>
-                    <span className="font-semibold">
-                      {combinedPool != null ? formatUnits(combinedPool, poolDecimals) : '…'} {snap.token}
-                    </span>
+                  <div className="mt-2 flex items-center gap-3">
+                    <Input
+                      // better mobile keyboard
+                      type="text"
+                      inputMode="decimal"
+                      pattern="[0-9]*[.,]?[0-9]*"
+                      placeholder="0.0"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value.replace(',', '.'))}
+                      className="h-12 text-2xl font-bold border-0 bg-white focus-visible:ring-0"
+                      autoFocus
+                    />
+                    <span className="text-gray-600 font-semibold">{snap.token}</span>
                   </div>
                 </div>
-              )}
 
-              {/* Route & Fees */}
-              {route && (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Route</span>
-                    <span className="font-medium">{route}</span>
-                  </div>
-                  {fee > BigInt(0) && (
-                    <div className="mt-1 flex items-center justify-between text-sm">
-                      <span className="text-gray-500">Bridge fee</span>
-                      <span className="font-medium">{formatUnits(fee, tokenDecimals)} {snap.token}</span>
+                {/* Protocol balances */}
+                {(poolOp != null || poolBa != null) && (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="mb-2 text-xs font-medium text-gray-500">Your supplied balance</div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span>Optimism</span>
+                      <span className="font-medium">{prettyPool(poolOp)} {snap.token}</span>
                     </div>
-                  )}
-                  <div className="mt-1 flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Will deposit</span>
-                    <span className="font-semibold">{formatUnits(received, tokenDecimals)} {snap.token}</span>
+                    <div className="mt-1 flex items-center justify-between text-sm">
+                      <span>Base</span>
+                      <span className="font-medium">{prettyPool(poolBa)} {snap.token}</span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between border-t pt-2 text-sm">
+                      <span>Total</span>
+                      <span className="font-semibold">
+                        {combinedPool != null ? formatUnits(combinedPool, poolDecimals) : '…'} {snap.token}
+                      </span>
+                    </div>
                   </div>
-                  {quoteError && <p className="mt-2 text-xs text-red-600">{quoteError}</p>}
+                )}
+
+                {/* Route & Fees */}
+                {route && (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">Route</span>
+                      <span className="font-medium">{route}</span>
+                    </div>
+                    {fee > BigInt(0) && (
+                      <div className="mt-1 flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Bridge fee</span>
+                        <span className="font-medium">{formatUnits(fee, tokenDecimals)} {snap.token}</span>
+                      </div>
+                    )}
+                    <div className="mt-1 flex items-center justify-between text-sm">
+                      <span className="text-gray-500">Will deposit</span>
+                      <span className="font-semibold">{formatUnits(received, tokenDecimals)} {snap.token}</span>
+                    </div>
+                    {quoteError && <p className="mt-2 text-xs text-red-600">{quoteError}</p>}
+                  </div>
+                )}
+
+                {switchError && <p className="text-xs text-red-600">Network switch failed: {switchError.message}</p>}
+                {error && <p className="text-xs text-red-600">{error}</p>}
+              </>
+            )}
+
+            {/* ───────── Progress (bridge / wait / switch / deposit) ───────── */}
+            {showProgress && (
+              <div className="space-y-4">
+                <Stepper
+                  current={step}
+                  items={[
+                    { key: 'bridging',     label: 'Bridging liquidity',     visible: route && route !== 'On-chain' ? true : false },
+                    { key: 'waitingFunds', label: 'Waiting for funds',      visible: route && route !== 'On-chain' ? true : false },
+                    { key: 'switching',    label: 'Switching network',      visible: true },
+                    { key: 'depositing',   label: 'Depositing to protocol', visible: true },
+                  ]}
+                />
+              </div>
+            )}
+
+            {/* ───────── Success ───────── */}
+            {showSuccess && (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <CheckCircle2 className="h-10 w-10 text-green-600" />
+                <div className="text-center">
+                  <div className="text-lg font-semibold">Deposit successful</div>
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    Your {snap.token} has been supplied to {snap.protocol}.
+                  </div>
                 </div>
+              </div>
+            )}
+
+            {/* ───────── Error ───────── */}
+            {showError && (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <div className="text-lg font-semibold text-red-600">Transaction failed</div>
+                <div className="text-sm text-muted-foreground">{error}</div>
+              </div>
+            )}
+          </div>
+
+          {/* Sticky action bar (mobile-first) */}
+          <div
+            className="sticky bottom-0 border-t bg-white px-4 py-3 sm:px-6"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+          >
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-end">
+              {showForm && (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={onClose}
+                    title="Cancel"
+                    className="h-12 w-full sm:h-9 sm:w-auto"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleConfirm}
+                    disabled={confirmDisabled}
+                    title="Confirm"
+                    className="h-12 w-full sm:h-9 sm:w-auto"
+                  >
+                    Confirm
+                  </Button>
+                </>
               )}
 
-              {switchError && <p className="text-xs text-red-600">Network switch failed: {switchError.message}</p>}
-              {error && <p className="text-xs text-red-600">{error}</p>}
+              {showProgress && (
+                <Button
+                  variant="outline"
+                  onClick={onClose}
+                  title="Close"
+                  className="h-12 w-full sm:h-9 sm:w-auto"
+                >
+                  Close
+                </Button>
+              )}
 
-              <div className="flex justify-end gap-3">
-                <Button variant="outline" onClick={onClose} title="Cancel">Cancel</Button>
-                <Button onClick={handleConfirm} disabled={confirmDisabled} title="Confirm">Confirm</Button>
-              </div>
-            </>
-          )}
+              {showSuccess && (
+                <Button
+                  onClick={onClose}
+                  title="Done"
+                  className="h-12 w-full sm:h-9 sm:w-auto"
+                >
+                  Done
+                </Button>
+              )}
 
-          {/* ───────── Progress (bridge / wait / switch / deposit) ───────── */}
-          {showProgress && (
-            <div className="space-y-4">
-              <Stepper
-                current={step}
-                items={[
-                  { key: 'bridging',     label: 'Bridging liquidity',    visible: route && route !== 'On-chain'? true:false },
-                  { key: 'waitingFunds', label: 'Waiting for funds',     visible: route && route !== 'On-chain'? true:false  },
-                  { key: 'switching',    label: 'Switching network',     visible: true },
-                  { key: 'depositing',   label: 'Depositing to protocol', visible: true },
-                ]}
-              />
-              <div className="flex justify-end">
-                <Button variant="outline" onClick={onClose} title={'Close'}>Close</Button>
-              </div>
-            </div>
-          )}
-
-          {/* ───────── Success ───────── */}
-          {showSuccess && (
-            <div className="flex flex-col items-center gap-3 py-6">
-              <CheckCircle2 className="h-10 w-10 text-green-600" />
-              <div className="text-center">
-                <div className="text-lg font-semibold">Deposit successful</div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  Your {snap.token} has been supplied to {snap.protocol}.
+              {showError && (
+                <div className="flex w-full gap-2 sm:justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => setStep('idle')}
+                    title="Try Again"
+                    className="h-12 w-full sm:h-9 sm:w-auto"
+                  >
+                    Try again
+                  </Button>
+                  <Button
+                    onClick={onClose}
+                    title="Close"
+                    className="h-12 w-full sm:h-9 sm:w-auto"
+                  >
+                    Close
+                  </Button>
                 </div>
-              </div>
-              <div className="mt-4">
-                <Button onClick={onClose} title={'Done'}>Done</Button>
-              </div>
+              )}
             </div>
-          )}
-
-          {/* ───────── Error ───────── */}
-          {showError && (
-            <div className="flex flex-col items-center gap-3 py-6">
-              <div className="text-lg font-semibold text-red-600">Transaction failed</div>
-              <div className="text-sm text-muted-foreground">{error}</div>
-              <div className="mt-2">
-                <Button variant="outline" onClick={() => setStep('idle')} title={'Try Again'}>Try again</Button>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -549,12 +607,12 @@ function Stepper(props: {
   const idx = order.indexOf(props.current)
   return (
     <div className="space-y-2">
-      {props.items.filter((i) => i.visible).map((item, i) => {
+      {props.items.filter((i) => i.visible).map((item) => {
         const myIndex = order.indexOf(item.key)
         const done = idx > myIndex
         const active = idx === myIndex
         return (
-          <div key={item.key} className="flex items-center gap-3 rounded-lg border p-3">
+          <div key={item.key} className="flex items-center gap-3 rounded-lg border p-3 sm:p-3.5">
             {done ? (
               <CheckCircle2 className="h-4 w-4 text-green-600" />
             ) : active ? (
