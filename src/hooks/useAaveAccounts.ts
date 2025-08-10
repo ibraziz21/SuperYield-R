@@ -1,45 +1,65 @@
-/* ────────── hooks/useAaveAccounts.ts ────────── */
+/* src/hooks/useAaveAccounts.ts */
+'use client'
+
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchAaveAccount, type AaveAccount } from '@/lib/positions'
 import { useWalletClient } from 'wagmi'
+
+import { fetchPositions, type Position } from '@/lib/positions'
+
+export type AaveAccount = {
+  chain: 'optimism' | 'base'
+  /** Sum of Aave supplied balances on this chain (aToken/underlying units: USDC/USDT = 1e6) */
+  supplied: bigint
+  /** We’re not fetching per-user debt right now – keep as 0 for compatibility */
+  debt: bigint
+}
+
+function toAaveAccounts(positions: Position[]): AaveAccount[] {
+  const sums: Record<'optimism' | 'base', bigint> = {
+    optimism: BigInt(0),
+    base: BigInt(0),
+  }
+
+  for (const p of positions) {
+    if (p.protocol !== 'Aave v3') continue
+    if (p.chain === 'optimism' || p.chain === 'base') {
+      sums[p.chain] += p.amount // amount already in underlying units (1e6)
+    }
+  }
+
+  return (['optimism', 'base'] as const).map((chain) => ({
+    chain,
+    supplied: sums[chain],
+    debt: BigInt(0),
+  }))
+}
 
 export function useAaveAccounts() {
   const { data: walletClient } = useWalletClient()
 
-  /* wrapped in a var so we can inspect it later */
   const query = useQuery<AaveAccount[]>({
     queryKey: ['aaveAccount', walletClient?.account.address],
-    enabled:  !!walletClient?.account.address,
-    queryFn:  async () => {
-      const user = walletClient!.account.address
-      console.log('[useAaveAccounts] 🔄 queryFn fired for', user)
-
-      /* measure the network round-trip */
+    enabled: !!walletClient?.account.address,
+    queryFn: async () => {
+      const user = walletClient!.account.address as `0x${string}`
       console.time('[useAaveAccounts] fetch time')
-
-      const result = await Promise.all([
-        fetchAaveAccount('optimism', user),
-        fetchAaveAccount('base',     user),
-      ])
-
+      const positions = await fetchPositions(user)
+      const result = toAaveAccounts(positions)
       console.timeEnd('[useAaveAccounts] fetch time')
-      console.log('[useAaveAccounts] ✅ queryFn result', result)
       return result
     },
     refetchInterval: 30_000,
-  
   })
 
-  /* log every state change */
   useEffect(() => {
     console.log('[useAaveAccounts] state →', {
-      status:        query.status,
-      isFetching:    query.isFetching,
-      data:          query.data,
-      error:         query.error,
-      fetchStatus:   query.fetchStatus,
-      isStale:       query.isStale,
+      status: query.status,
+      isFetching: query.isFetching,
+      data: query.data,
+      error: query.error,
+      fetchStatus: query.fetchStatus,
+      isStale: query.isStale,
     })
   }, [
     query.status,
