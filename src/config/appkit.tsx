@@ -37,6 +37,7 @@ createAppKit({
     "--w3m-border-radius-master": "1px", 
     "--w3m-color-mix": "#000000",
   },
+  enableWallets: true,
 })
 
 function ContextProvider({ children, cookies }: { children: ReactNode; cookies: string | null }) {
