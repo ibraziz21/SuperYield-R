@@ -13,7 +13,10 @@ import type { Position } from '@/lib/positions'
  *  - Morpho Blue  : token-based on Lisk (WETH=18, stables=6)
  */
 function decimalsFor(p: Position): number {
-  if (p.protocol === 'Aave v3') return 8
+  if (p.protocol === 'Aave v3') {
+    // We now read per-asset balances via aTokens -> token decimals
+    return p.token === 'WETH' ? 18 : 6
+  }
   if (p.protocol === 'Compound v3') return 6
   // Morpho Blue on Lisk
   return p.token === 'WETH' ? 18 : 6

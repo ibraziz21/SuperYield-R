@@ -102,15 +102,10 @@ export function Navbar() {
           {/* Desktop nav */}
           <nav className="ml-2 hidden items-center gap-1 md:flex">
             <ActiveLink href="/">Dashboard</ActiveLink>
-            <ActiveLink href="/positions">Positions</ActiveLink>
-            <a
-              href="/docs"
-              className="rounded-full px-3 py-1 text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Docs
-            </a>
+            <ActiveLink href="/markets">Markets</ActiveLink>
+            <ActiveLink href="/docs">Docs</ActiveLink>
+
+           
           </nav>
         </div>
 
