@@ -1,42 +1,39 @@
 // src/lib/smartbridge.ts
-
 import { publicOptimism, publicBase, publicLisk } from './clients'
 import { erc20Abi } from 'viem'
 import { TokenAddresses, type ChainId, type TokenSymbol } from './constants'
+import { bridgeTokens } from './bridge'
 import type { WalletClient } from 'viem'
 
-type EvmChain = ChainId
-
-function clientFor(chain: EvmChain) {
-  return chain === 'optimism' ? publicOptimism : chain === 'base' ? publicBase : publicLisk
+function clientFor(chain: ChainId) {
+  return chain === 'optimism'
+    ? publicOptimism
+    : chain === 'base'
+    ? publicBase
+    : publicLisk
 }
 
-/** Token address resolver – maps USDC/USDT to USDCe/USDT0 on Lisk */
-export function addressFor(
-  chain: EvmChain,
-  symbol: TokenSymbol,
-): `0x${string}` | null {
-  if (chain === 'optimism' || chain === 'base') {
-    if (symbol === 'USDC' || symbol === 'USDT')
-      return TokenAddresses[symbol][chain] as `0x${string}`
-    return null
-  }
-  // lisk
-  if (symbol === 'USDC') return TokenAddresses.USDCe.lisk
-  if (symbol === 'USDT') return TokenAddresses.USDT0.lisk
-  if (symbol === 'WETH') return TokenAddresses.WETH.lisk
-  if (symbol === 'USDCe') return TokenAddresses.USDCe.lisk
-  if (symbol === 'USDT0') return TokenAddresses.USDT0.lisk
-  return null
+// Map a canonical symbol to the token that actually exists on each chain
+function symbolOnChain(symbol: TokenSymbol, chain: ChainId): TokenSymbol {
+  if (chain !== 'lisk') return symbol
+  if (symbol === 'USDC') return 'USDCe'
+  if (symbol === 'USDT') return 'USDT0'
+  return symbol // WETH stays WETH
 }
 
-async function erc20Balance(
-  chain: EvmChain,
+function addressOnChain(symbol: TokenSymbol, chain: ChainId): `0x${string}` {
+  const s = symbolOnChain(symbol, chain)
+  const addr = (TokenAddresses[s] as any)?.[chain]
+  if (!addr) throw new Error(`Token ${s} not supported on ${chain}`)
+  return addr as `0x${string}`
+}
+
+async function getBalanceOnChain(
+  chain: ChainId,
   token: `0x${string}`,
-  user: `0x${string}`
+  user: `0x${string}`,
 ): Promise<bigint> {
-  const client = clientFor(chain)
-  return client.readContract({
+  return clientFor(chain).readContract({
     address: token,
     abi: erc20Abi,
     functionName: 'balanceOf',
@@ -44,60 +41,42 @@ async function erc20Balance(
   }) as Promise<bigint>
 }
 
-/**
- * Ensure the user has `amount` of `symbol` on the `target` chain.
- * Will bridge only the shortfall. Valid routes:
- *  - OP ⇄ Base
- *  - OP/Base → Lisk
- */
+/** Ensure the user has `amount` of the *correct token on that chain* (USDCe/USDT0 on Lisk). */
 export async function ensureLiquidity(
-  symbol: TokenSymbol,
-  amount: bigint,
-  target: EvmChain,
+  symbol: TokenSymbol,          // canonical input, e.g. USDC
+  amount: bigint,               // required *destination* amount (post-fee if bridging)
+  target: ChainId,
   wallet: WalletClient,
 ) {
   const user = wallet.account?.address as `0x${string}`
   if (!user) throw new Error('Wallet not connected')
 
-  // resolve per-chain token addresses (including Lisk aliases)
-  const tokens: Partial<Record<EvmChain, `0x${string}`>> = {}
-  for (const chain of ['optimism', 'base', 'lisk'] as const) {
-    const addr = addressFor(chain, symbol)
-    if (addr) tokens[chain] = addr
-  }
+  // compute balances of the *right token per chain*
+  const chains: ChainId[] = ['optimism', 'base', 'lisk']
+  const balances: Record<ChainId, bigint> = { optimism: BigInt(0), base: BigInt(0), lisk: BigInt(0) }
 
-  // read balances where token exists
-  const balances: Record<EvmChain, bigint> = {
-    optimism: BigInt(0),
-    base: BigInt(0),
-    lisk: BigInt(0),
-  }
-  await Promise.all(
-    (Object.keys(balances) as EvmChain[]).map(async (c) => {
-      const addr = tokens[c]
-      if (addr) balances[c] = await erc20Balance(c, addr, user)
-    })
-  )
+  await Promise.all(chains.map(async (c) => {
+    try {
+      const addr = addressOnChain(symbol, c)
+      balances[c] = await getBalanceOnChain(c, addr, user)
+    } catch {
+      balances[c] = BigInt(0) // not supported on that chain
+    }
+  }))
 
-  const destBal = balances[target]
-  if (destBal >= amount) return // already enough
+  if (balances[target] >= amount) return
 
-  const missing = amount - destBal
+  const missing = amount - balances[target]
 
-  // choose routes
-  const candidates: EvmChain[] =
-    target === 'lisk' ? ['optimism', 'base']
-    : target === 'optimism' ? ['base']
-    : ['optimism']
+  // Prefer OP → Lisk or Base → Lisk when target is Lisk
+  const sources: ChainId[] =
+    target === 'lisk' ? ['optimism', 'base'] : ['optimism', 'base', 'lisk']
 
-  const from = candidates.find((c) => balances[c] >= missing)
+  const from = sources.find((c) => balances[c] >= missing)
   if (!from) {
-    throw new Error(
-      `Insufficient liquidity: need ${missing} ${symbol} on ${target}, but no source chain has enough`
-    )
+    throw new Error(`Insufficient liquidity: need ${missing} ${symbolOnChain(symbol, target)} on ${target}`)
   }
 
-  // Perform the bridge (your bridgeTokens should understand the aliasing on Lisk)
-  const { bridgeTokens } = await import('./bridge')
+  // bridge canonical; bridgeTokens will map output to USDCe/USDT0 on Lisk
   await bridgeTokens(symbol, missing, from, target, wallet)
 }

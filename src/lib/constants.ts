@@ -1,6 +1,4 @@
-/** 3-chain token map */
 // src/lib/constants.ts
-
 import { keccak256, toBytes } from 'viem'
 
 export type AdapterKey = `0x${string}`
@@ -19,9 +17,9 @@ export const ADAPTER_KEYS = {
   cometOpUSDC:   makeKey('compound-v3:optimism:USDC'),
   cometOpUSDT:   makeKey('compound-v3:optimism:USDT'),
   cometBaseUSDC: makeKey('compound-v3:base:USDC'),
-  // NOTE: base:USDT is not supported in your constants (pool is 0x0)
+  // NOTE: base:USDT not supported (pool = 0x0)
 
-  // MORPHO BLUE (Lisk uses USDCe / USDT0 / WETH)
+  // MORPHO BLUE (Lisk)
   morphoLiskUSDCe: makeKey('morpho-blue:lisk:USDCe'),
   morphoLiskUSDT0: makeKey('morpho-blue:lisk:USDT0'),
   morphoLiskWETH:  makeKey('morpho-blue:lisk:WETH'),
@@ -29,12 +27,14 @@ export const ADAPTER_KEYS = {
 
 export type AdapterKeyName = keyof typeof ADAPTER_KEYS
 
+/** Your deployed routers */
 export const ROUTERS: Record<'optimism' | 'base' | 'lisk', `0x${string}`> = {
   optimism: '0x74298D4c82f06797029b90ca7e50B1AEB9edB501',
-  base:     '0x7AE3e0e585b1663Dc876e8b36B47494166d38F2F',
+  base:     '0x7AE3e0e585b1663Dc876e8b36B47494166d38F2F', // ← make sure this matches your deployment
   lisk:     '0x5133C942c1b7962D62a3851Fe01876D750d02AA7',
 } as const
 
+/** 3-chain token map */
 export const TokenAddresses = {
   USDC: {
     optimism: '0x0b2c639c533813f4aa9d7837caf62653d097ff85',
@@ -70,8 +70,7 @@ export const COMET_POOLS = {
     USDC: '0xb125e6687d4313864e53df431d5425969c15eb2f',
     USDT: '0x0000000000000000000000000000000000000000', // not yet
   },
-} as const satisfies Record<'optimism' | 'base',
-  Record<'USDC' | 'USDT', `0x${string}`>>
+} as const satisfies Record<'optimism' | 'base', Record<'USDC' | 'USDT', `0x${string}`>>
 
 export const MORPHO_POOLS = {
   'usdce-supply': '0xd92f564a29992251297980187a6b74faa3d50699',
@@ -80,7 +79,4 @@ export const MORPHO_POOLS = {
 } as const
 
 export type ChainId = 'optimism' | 'base' | 'lisk'
-export type TokenSymbol =
-  | 'USDC' | 'USDT'
-  | 'USDCe' | 'USDT0' | 'WETH'
-
+export type TokenSymbol = 'USDC' | 'USDT' | 'USDCe' | 'USDT0' | 'WETH'

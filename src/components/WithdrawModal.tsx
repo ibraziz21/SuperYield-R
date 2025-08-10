@@ -20,14 +20,21 @@ import { TokenAddresses, AAVE_POOL, COMET_POOLS } from '@/lib/constants'
 import { publicOptimism, publicBase } from '@/lib/clients'
 import aaveAbi from '@/lib/abi/aavePool.json'
 import { erc20Abi } from 'viem'
+import { Loader2, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react'
 
-// ──────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────── */
 
 type EvmChain = 'optimism' | 'base'
 const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1)
 
 function clientFor(chain: EvmChain) {
   return chain === 'base' ? publicBase : publicOptimism
+}
+
+function explorerTxBaseUrl(chain: EvmChain) {
+  return chain === 'base'
+    ? 'https://basescan.org/tx/'
+    : 'https://optimistic.etherscan.io/tx/'
 }
 
 async function getAaveSuppliedBalance(params: {
@@ -62,7 +69,7 @@ async function getAaveSuppliedBalance(params: {
     args: [user],
   }) as bigint
 
-  return bal
+  return bal // token units (USDC/USDT -> 6)
 }
 
 async function getCometSuppliedBalance(params: {
@@ -75,7 +82,6 @@ async function getCometSuppliedBalance(params: {
   if (comet === '0x0000000000000000000000000000000000000000') return BigInt(0)
 
   const client = clientFor(chain)
-  // Comet.balanceOf(user) returns base-asset balance (e.g., 6 decimals for USDC)
   const bal = await client.readContract({
     address: comet,
     abi: [
@@ -86,15 +92,15 @@ async function getCometSuppliedBalance(params: {
         inputs: [{ name: 'account', type: 'address' }],
         outputs: [{ type: 'uint256' }],
       },
-    ],
+    ] as const,
     functionName: 'balanceOf',
     args: [user],
   }) as bigint
 
-  return bal
+  return bal // token units (USDC/USDT -> 6)
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────── */
 
 interface Props {
   open: boolean
@@ -103,9 +109,10 @@ interface Props {
 }
 
 /**
- * Withdraws FULL balance for this position.
- * - Aave v3: uses MAX_UINT256 to withdrawAll()
- * - Compound v3: reads balance and withdraws exact amount
+ * Improved UX:
+ * - No alerts; fully in-modal states (idle → switching → withdrawing → success / error)
+ * - Clear summaries and a success screen with optional explorer link
+ * - Single "Withdraw All" action (Aave uses MAX_UINT256; Comet uses exact balance)
  */
 export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   const { open: openConnect } = useAppKit()
@@ -113,12 +120,15 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   const chainId = useChainId()
   const { switchChainAsync, isPending: switching, error: switchErr } = useSwitchChain()
 
-  const [loading, setLoading] = useState(false)
-  const [fetching, setFetching] = useState(false)
+  type Status = 'idle' | 'switching' | 'withdrawing' | 'success' | 'error'
+  const [status, setStatus] = useState<Status>('idle')
+
   const [error, setError] = useState<string | null>(null)
   const [supplied, setSupplied] = useState<bigint | null>(null)
+  const [txHash, setTxHash] = useState<`0x${string}` | null>(null)
 
-  const decimals = 6 // USDC/USDT on OP/Base
+  // USDC/USDT on OP/Base
+  const decimals = 6
   const evmChain = snap.chain as EvmChain
   const needChainId = evmChain === 'base' ? base.id : optimism.id
 
@@ -127,6 +137,14 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
            snap.protocolKey === 'compound-v3' ? 'Withdraw (Compound v3)' :
            'Withdraw'
   }, [snap.protocolKey])
+
+  // Reset transient UI state when modal opens/changes
+  useEffect(() => {
+    if (!open) return
+    setStatus('idle')
+    setError(null)
+    setTxHash(null)
+  }, [open, snap.id])
 
   // Load user's supplied amount for the specific protocol/chain/token
   useEffect(() => {
@@ -139,9 +157,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
     const user = walletClient.account?.address as `0x${string}` | undefined
     if (!user) return
 
-    async function run() {
-      setFetching(true)
-      setError(null)
+    ;(async () => {
       try {
         if (snap.token !== 'USDC' && snap.token !== 'USDT') {
           setSupplied(BigInt(0))
@@ -152,14 +168,14 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           const bal = await getAaveSuppliedBalance({
             chain: evmChain,
             token: snap.token,
-            user: user as `0x${string}`,
+            user,
           })
           setSupplied(bal)
         } else if (snap.protocolKey === 'compound-v3') {
           const bal = await getCometSuppliedBalance({
             chain: evmChain,
             token: snap.token,
-            user: user as `0x${string}`,
+            user,
           })
           setSupplied(bal)
         } else {
@@ -169,12 +185,8 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
         console.error('[WithdrawModal] fetch supplied error', e)
         setError('Failed to load balance')
         setSupplied(BigInt(0))
-      } finally {
-        setFetching(false)
       }
-    }
-
-    void run()
+    })()
   }, [open, walletClient, snap.protocolKey, snap.chain, snap.token, evmChain])
 
   async function handleWithdrawAll() {
@@ -182,130 +194,277 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
       openConnect()
       return
     }
-    setError(null)
-    setLoading(true)
 
     try {
-      // switch network if needed
+      setError(null)
+      setTxHash(null)
+
+      // Step 1: switch if needed
       if (chainId !== needChainId && switchChainAsync) {
+        setStatus('switching')
         await switchChainAsync({ chainId: needChainId })
       }
 
+      // Step 2: withdraw
+      setStatus('withdrawing')
+
       let amount: bigint
       if (snap.protocolKey === 'aave-v3') {
-        // Aave accepts MAX_UINT256 to withdraw entire balance for the asset
-        amount = MAX_UINT256
+        amount = MAX_UINT256 // withdraw all for that asset
       } else if (snap.protocolKey === 'compound-v3') {
-        // Withdraw exact supplied amount
         if (supplied == null) throw new Error('Balance not loaded')
-        amount = supplied
+        amount = supplied // exact base-asset balance
       } else {
         throw new Error(`Unsupported protocol: ${snap.protocol}`)
       }
 
-      await withdrawFromPool(snap, amount, walletClient)
-      onClose()
-      alert('✅ Withdrawal complete')
+      const maybeHash = await withdrawFromPool(snap, amount, walletClient)
+      if (typeof maybeHash === 'string' && maybeHash.startsWith('0x')) {
+        setTxHash(maybeHash as `0x${string}`)
+      }
+
+      setStatus('success')
     } catch (e) {
       console.error('[WithdrawModal] withdraw error', e)
       setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
+      setStatus('error')
     }
   }
 
-  // ─────────── UI (Uniswap-style, clean & compact) ───────────
+  const suppliedPretty =
+    typeof supplied === 'bigint' ? formatUnits(supplied, decimals) : '0'
+
+  const isActionDisabled =
+    status === 'switching' ||
+    status === 'withdrawing' ||
+    (typeof supplied === 'bigint' && supplied === BigInt(0))
+
+  /* ─────────── UI states inside the modal ─────────── */
+
+  function HeaderBar() {
+    return (
+      <div className="flex items-center justify-between bg-gradient-to-r from-teal-600 to-emerald-500 px-5 py-4 text-white">
+        <DialogHeader>
+          <DialogTitle className="text-base font-semibold">{title}</DialogTitle>
+        </DialogHeader>
+        <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">
+          {snap.chain.toUpperCase()}
+        </span>
+      </div>
+    )
+  }
+
+  function TokenCard() {
+    return (
+      <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold">
+            {snap.token.slice(0, 1)}
+          </div>
+          <div className="leading-tight">
+            <div className="text-sm font-medium">{snap.token}</div>
+            <div className="text-xs text-gray-500">{snap.protocol}</div>
+          </div>
+        </div>
+
+        <div className="text-right">
+          <div className="text-xs text-gray-500">Supplied</div>
+          <div className="text-lg font-semibold">
+            {status === 'switching' || status === 'withdrawing'
+              ? '…'
+              : suppliedPretty}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  function SummaryCard() {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-gray-600">Action</span>
+          <span className="font-medium">Withdraw full balance</span>
+        </div>
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-gray-600">Network</span>
+          <span className="font-medium">
+            {evmChain === 'base' ? 'Base' : 'Optimism'}
+            {switching && ' (switching…)'}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  function ProgressCard() {
+    const isSwitch = status === 'switching'
+    const isWithd  = status === 'withdrawing'
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <div className="flex items-center gap-3">
+          <Loader2 className="h-4 w-4 animate-spin text-teal-600" />
+          <div className="text-sm font-medium">
+            {isSwitch ? 'Switching network…' : 'Withdrawing…'}
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          {isSwitch
+            ? 'Confirm the network switch in your wallet.'
+            : 'Confirm the withdrawal transaction in your wallet.'}
+        </p>
+      </div>
+    )
+  }
+
+  function SuccessCard() {
+    return (
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm">
+        <div className="flex items-center gap-2 text-emerald-700">
+          <CheckCircle2 className="h-5 w-5" />
+          <span className="font-semibold">Withdrawal complete</span>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2 text-gray-700">
+          <div className="flex items-center justify-between">
+            <span className="text-gray-500">Token</span>
+            <span className="font-medium">{snap.token}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-gray-500">Network</span>
+            <span className="font-medium">{evmChain === 'base' ? 'Base' : 'Optimism'}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-gray-500">Amount</span>
+            <span className="font-medium">
+              {/* We display the previously-read supplied amount. */}
+              {suppliedPretty} {snap.token}
+            </span>
+          </div>
+        </div>
+
+        {txHash && (
+          <a
+            href={`${explorerTxBaseUrl(evmChain)}${txHash}`}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:underline"
+          >
+            View on explorer
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        )}
+      </div>
+    )
+  }
+
+  function ErrorCard() {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm">
+        <div className="flex items-center gap-2 text-red-700">
+          <AlertTriangle className="h-5 w-5" />
+          <span className="font-semibold">Withdrawal failed</span>
+        </div>
+        <p className="mt-2 text-xs text-red-700 break-words">
+          {error ?? 'Unknown error'}
+        </p>
+      </div>
+    )
+  }
+
+  /* ─────────── Render ─────────── */
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="w-full max-w-md overflow-hidden rounded-2xl p-0">
-        {/* Header Bar */}
-        <div className="flex items-center justify-between bg-gradient-to-r from-teal-600 to-emerald-500 px-5 py-4 text-white">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">{title}</DialogTitle>
-          </DialogHeader>
-          <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">
-            {snap.chain.toUpperCase()}
-          </span>
-        </div>
+        <HeaderBar />
 
-        {/* Body */}
         <div className="space-y-4 p-5">
-          {/* Token pill */}
-          <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold">
-                {snap.token.slice(0, 1)}
-              </div>
-              <div className="leading-tight">
-                <div className="text-sm font-medium">{snap.token}</div>
-                <div className="text-xs text-gray-500">{snap.protocol}</div>
-              </div>
-            </div>
+          <TokenCard />
 
-            <div className="text-right">
-              <div className="text-xs text-gray-500">Supplied</div>
-              <div className="text-lg font-semibold">
-                {fetching
-                  ? '…'
-                  : typeof supplied === 'bigint'
-                  ? formatUnits(supplied, decimals)
-                  : '0'}
+          {/* Idle / Switching / Withdrawing → show live summary */}
+          {(status === 'idle' || status === 'switching' || status === 'withdrawing') && (
+            <>
+              <SummaryCard />
+              {(status === 'switching' || status === 'withdrawing') && <ProgressCard />}
+              {switchErr && (
+                <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
+                  {switchErr.message}
+                </p>
+              )}
+              {error && (
+                <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
+                  {error}
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  variant="secondary"
+                  onClick={onClose}
+                  className="rounded-full"
+                  title="Cancel"
+                  disabled={status === 'switching' || status === 'withdrawing'}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleWithdrawAll}
+                  disabled={isActionDisabled}
+                  title={
+                    status === 'switching'
+                      ? 'Switching…'
+                      : status === 'withdrawing'
+                      ? 'Withdrawing…'
+                      : 'Withdraw All'
+                  }
+                  className="rounded-full bg-teal-600 hover:bg-teal-500"
+                >
+                  {status === 'switching' ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Switching…
+                    </span>
+                  ) : status === 'withdrawing' ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Withdrawing…
+                    </span>
+                  ) : (
+                    'Withdraw All'
+                  )}
+                </Button>
               </div>
-            </div>
-          </div>
-
-          {/* Summary */}
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-gray-600">Action</span>
-              <span className="font-medium">Withdraw full balance</span>
-            </div>
-            <div className="mt-2 flex items-center justify-between">
-              <span className="text-gray-600">Network</span>
-              <span className="font-medium">
-                {snap.chain === 'base' ? 'Base' : 'Optimism'}
-                {switching && ' (switching…)'}
-              </span>
-            </div>
-          </div>
-
-          {/* Errors */}
-          {error && (
-            <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
-              {error}
-            </p>
+            </>
           )}
-          {switchErr && (
-            <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
-              {switchErr.message}
-            </p>
+
+          {/* Success */}
+          {status === 'success' && (
+            <>
+              <SuccessCard />
+              <div className="flex items-center justify-end pt-2">
+                <Button onClick={onClose} className="rounded-full bg-teal-600 hover:bg-teal-500" title={'Done'}>
+                  Done
+                </Button>
+              </div>
+            </>
           )}
 
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <Button
-              variant="secondary"
-              onClick={onClose}
-              title="Cancel"
-              className="rounded-full"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleWithdrawAll}
-              disabled={loading || fetching || (supplied !== null && supplied === BigInt(0))}
-              title={
-                loading
-                  ? 'Processing…'
-                  : fetching
-                  ? 'Loading…'
-                  : 'Withdraw All'
-              }
-              className="rounded-full bg-teal-600 hover:bg-teal-500"
-            >
-              {loading ? 'Processing…' : 'Withdraw All'}
-            </Button>
-          </div>
+          {/* Error */}
+          {status === 'error' && (
+            <>
+              <ErrorCard />
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button variant="secondary" onClick={onClose} className="rounded-full" title={'Close'}>
+                  Close
+                </Button>
+                <Button
+                  onClick={handleWithdrawAll}
+                  className="rounded-full bg-teal-600 hover:bg-teal-500" title={'Try Again'}                >
+                  Try again
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>

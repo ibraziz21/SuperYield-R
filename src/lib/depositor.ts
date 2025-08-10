@@ -1,13 +1,12 @@
 // src/lib/depositor.ts
-import { WalletClient } from 'viem'
-// at top
+import type { WalletClient } from 'viem'
 import { erc20Abi, maxUint256 } from 'viem'
 import { optimism, base, lisk } from 'viem/chains'
 import { ROUTERS, TokenAddresses, type TokenSymbol } from './constants'
 import aggregatorRouterAbi from './abi/AggregatorRouter.json'
 import { publicOptimism, publicBase, publicLisk } from './clients'
 import type { YieldSnapshot } from '@/hooks/useYields'
-import { adapterKeyForSnapshot } from './adaptors'
+import { adapterKeyForSnapshot } from './adapters' // ✅ correct import
 
 type ChainId = 'optimism' | 'base' | 'lisk'
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
@@ -25,7 +24,6 @@ function isUSDT(addr: `0x${string}`) {
     a === '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2'.toLowerCase()    // Base USDT
   )
 }
-
 async function waitReceipt(chain: ChainId, hash: `0x${string}`) {
   await pub(chain).waitForTransactionReceipt({ hash })
 }
@@ -38,7 +36,7 @@ async function getAdapterAddress(
   const addr = await pub(chain).readContract({
     address: router,
     abi: aggregatorRouterAbi as any,
-    functionName: 'adapters', // adjust if your getter differs
+    functionName: 'adapters',
     args: [key],
   }) as `0x${string}`
   return addr
@@ -69,10 +67,9 @@ async function ensureAllowanceForRouter(
   if (!owner) throw new Error('Wallet not connected')
 
   const current = await readAllowance(token, owner, router, chain)
-  // If we already have enough allowance for this call, do nothing.
   if (current >= amount) return
 
-  // USDT quirk: must set to 0 before changing a non-zero allowance
+  // USDT quirk: reset to 0 first if non-zero
   if (current > BigInt(0) && isUSDT(token)) {
     const resetHash = await wallet.writeContract({
       address: token,
@@ -85,7 +82,6 @@ async function ensureAllowanceForRouter(
     await waitReceipt(chain, resetHash)
   }
 
-  // Approve infinite
   const approveHash = await wallet.writeContract({
     address: token,
     abi: erc20Abi,
@@ -97,7 +93,7 @@ async function ensureAllowanceForRouter(
   await waitReceipt(chain, approveHash)
 }
 
-function resolveAssetForSnapshot(
+export function resolveAssetForSnapshot(
   snap: YieldSnapshot,
   chain: ChainId,
 ): `0x${string}` {
@@ -106,7 +102,7 @@ function resolveAssetForSnapshot(
     const morphoToken =
       snap.token === 'USDC' ? 'USDCe' :
       snap.token === 'USDT' ? 'USDT0' :
-      snap.token              // WETH passthrough
+      snap.token
     return (TokenAddresses as any)[morphoToken].lisk as `0x${string}`
   }
   // Aave/Comet on OP/Base
@@ -146,17 +142,19 @@ export async function depositToPool(
   allowance → router:  ${allowToRouter}
   allowance → adapter: ${allowToAdapter}`)
 
-  // ✅ Approve the ROUTER as spender (router does transferFrom)
+  // ✅ approve router (router does transferFrom)
   await ensureAllowanceForRouter(asset, router, amount, wallet, chain)
 
-  // ▶️ Call router.deposit
-  const tx = await wallet.writeContract({
+  // 🔍 (optional) simulate to catch exact revert reasons
+  const { request } = await pub(chain).simulateContract({
     address: router,
     abi: aggregatorRouterAbi as any,
     functionName: 'deposit',
     args: [key, asset, amount, owner, '0x'],
-    chain: chainObj(chain),
     account: owner,
   })
+
+  // ▶️ write
+  const tx = await wallet.writeContract(request)
   await waitReceipt(chain, tx)
 }

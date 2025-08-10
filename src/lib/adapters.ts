@@ -25,7 +25,7 @@ export function adapterKeyForSnapshot(s: YieldSnapshot): AdapterKey {
 
   if (s.protocolKey === 'morpho-blue') {
     if (s.chain !== 'lisk') throw new Error('Morpho Blue is only on Lisk')
-    // Snapshots use USDC/USDT/WETH labels, but Lisk adapters want USDCe/USDT0/WETH.
+    // Snapshots use base labels (USDC/USDT/WETH), but Lisk adapters want USDCe/USDT0/WETH.
     if (s.token === 'USDC') return ADAPTER_KEYS.morphoLiskUSDCe
     if (s.token === 'USDT') return ADAPTER_KEYS.morphoLiskUSDT0
     if (s.token === 'WETH') return ADAPTER_KEYS.morphoLiskWETH

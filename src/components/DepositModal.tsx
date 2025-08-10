@@ -1,8 +1,7 @@
 // src/components/DepositModal.tsx
-
 'use client'
 
-import { FC, useEffect, useMemo, useState } from 'react'
+import { FC, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -15,11 +14,7 @@ import { Button } from '@/components/ui/button'
 import { getDualBalances } from '@/lib/balances'
 import { ensureLiquidity } from '@/lib/smartbridge'
 import { depositToPool } from '@/lib/depositor'
-import {
-  TokenAddresses,
-  COMET_POOLS,
-  AAVE_POOL,
-} from '@/lib/constants'
+import { TokenAddresses, COMET_POOLS, AAVE_POOL } from '@/lib/constants'
 import type { YieldSnapshot } from '@/hooks/useYields'
 
 import { useAppKit } from '@reown/appkit/react'
@@ -28,39 +23,41 @@ import { formatUnits, parseUnits } from 'viem'
 import { base, optimism, lisk as liskChain } from 'viem/chains'
 import { client as acrossClient } from '@/lib/across'
 import aaveAbi from '@/lib/abi/aavePool.json'
-import { publicOptimism, publicBase } from '@/lib/clients'
+import { publicOptimism, publicBase, publicLisk } from '@/lib/clients'
+import { CheckCircle2, Loader2 } from 'lucide-react'
+import { erc20Abi } from 'viem'
 
 type EvmChain = 'optimism' | 'base' | 'lisk'
 
-/* ──────────────────────────────────────────────────────────────── */
+/* ---------------------------------------------------------------- */
 /* Helpers                                                          */
-/* ──────────────────────────────────────────────────────────────── */
+/* ---------------------------------------------------------------- */
 
 const isCometToken = (t: YieldSnapshot['token']): t is 'USDC' | 'USDT' =>
   t === 'USDC' || t === 'USDT'
 
-function clientFor(chain: Extract<EvmChain, 'optimism' | 'base'>) {
-  return chain === 'optimism' ? publicOptimism : publicBase
+function clientFor(chain: EvmChain) {
+  if (chain === 'optimism') return publicOptimism
+  if (chain === 'base') return publicBase
+  return publicLisk
 }
 
-/** Aave supplied balance (getUserAccountData), returned in 1e8 units. */
+/** Aave: totalCollateralBase (1e8) – for supplied display */
 async function getAaveSuppliedBalance(params: {
   chain: Extract<EvmChain, 'optimism' | 'base'>
   user: `0x${string}`
 }): Promise<bigint> {
   const { chain, user } = params
-  const client = clientFor(chain)
-  const data = await client.readContract({
+  const data = await clientFor(chain).readContract({
     address: AAVE_POOL[chain],
     abi: aaveAbi,
     functionName: 'getUserAccountData',
     args: [user],
   }) as readonly [bigint, bigint, bigint, bigint, bigint, bigint]
-  const supplied = data[0] // 1e8
-  return supplied
+  return data[0] // 1e8
 }
 
-/** Comet (Compound v3) supplied balance uses 1e6 for USDC/USDT. */
+/** Comet: balanceOf (1e6) */
 async function getCometSuppliedBalance(params: {
   chain: Extract<EvmChain, 'optimism' | 'base'>
   token: 'USDC' | 'USDT'
@@ -69,30 +66,16 @@ async function getCometSuppliedBalance(params: {
   const { chain, token, user } = params
   const comet = COMET_POOLS[chain][token]
   if (comet === '0x0000000000000000000000000000000000000000') return BigInt(0)
-
-  const client = clientFor(chain)
-  const bal = await client.readContract({
+  const bal = await clientFor(chain).readContract({
     address: comet,
-    abi: [
-      {
-        type: 'function',
-        name: 'balanceOf',
-        stateMutability: 'view',
-        inputs: [{ name: 'account', type: 'address' }],
-        outputs: [{ type: 'uint256' }],
-      },
-    ],
+    abi: [{ type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }] }] as const,
     functionName: 'balanceOf',
     args: [user],
   }) as bigint
-
-  return bal // 1e6
+  return bal
 }
 
-/** Map cross-chain tokens for Lisk:
- *  - If bridging to Lisk and token is USDC/USDT, we output USDCe/USDT0.
- *  - For OP/Base, keep tokens as-is.
- */
+/** Lisk mapping for bridge preview */
 function mapCrossTokenForDest(
   symbol: YieldSnapshot['token'],
   dest: EvmChain,
@@ -103,7 +86,7 @@ function mapCrossTokenForDest(
   return symbol
 }
 
-/** Resolve a token address on a given chain; throws if unsupported. */
+/** Resolve token address for a chain */
 function tokenAddrFor(
   symbol: YieldSnapshot['token'],
   chain: EvmChain,
@@ -114,20 +97,45 @@ function tokenAddrFor(
   return addr
 }
 
-/** Convert chain string to chainId */
 function chainIdOf(chain: EvmChain) {
   if (chain === 'optimism') return optimism.id
   if (chain === 'base') return base.id
   return liskChain.id
 }
 
-/* ──────────────────────────────────────────────────────────────── */
+/** Read wallet balance for a token on a chain */
+async function readWalletBalance(
+  chain: EvmChain,
+  token: `0x${string}`,
+  user: `0x${string}`,
+): Promise<bigint> {
+  return await clientFor(chain).readContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [user],
+  }) as bigint
+}
+
+/* ---------------------------------------------------------------- */
+/* Modal                                                            */
+/* ---------------------------------------------------------------- */
 
 interface DepositModalProps {
   open: boolean
   onClose: () => void
   snap: YieldSnapshot
 }
+
+/** Visual step states */
+type FlowStep =
+  | 'idle'           // editing amount
+  | 'bridging'       // submitting bridge tx
+  | 'waitingFunds'   // polling destination balance
+  | 'switching'      // switching wallet chain
+  | 'depositing'     // approving+depositing via router
+  | 'success'        // done
+  | 'error'          // error state
 
 export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => {
   const { open: openConnect } = useAppKit()
@@ -136,66 +144,60 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
   const { switchChainAsync, isPending: isSwitching, error: switchError } = useSwitchChain()
 
   const [amount, setAmount] = useState('')
-  const [opBal, setOpBal] = useState<bigint | null>(null) // wallet balance (token decimals)
+  const [opBal, setOpBal] = useState<bigint | null>(null)
   const [baBal, setBaBal] = useState<bigint | null>(null)
 
-  // protocol supplied balances (Aave: 1e8, Comet: 1e6). Morpho shown on Lisk UI elsewhere.
   const [poolOp, setPoolOp] = useState<bigint | null>(null)
   const [poolBa, setPoolBa] = useState<bigint | null>(null)
 
-  // Bridge preview
   const [route, setRoute] = useState<string | null>(null)
   const [fee, setFee] = useState<bigint>(BigInt(0))
   const [received, setReceived] = useState<bigint>(BigInt(0))
   const [quoteError, setQuoteError] = useState<string | null>(null)
 
-  const [busy, setBusy] = useState(false)
+  const [step, setStep] = useState<FlowStep>('idle')
   const [error, setError] = useState<string | null>(null)
 
-  // Token decimals for wallet amounts & deposit input
-  const tokenDecimals = useMemo(() => {
-    if (snap.token === 'WETH') return 18
-    return 6 // USDC/USDT(/e/0)
-  }, [snap.token])
+  // gate so ensureLiquidity only runs once
+  const [liquidityEnsured, setLiquidityEnsured] = useState(false)
 
-  // Pool decimals for supplied balances:
-  // Aave v3: 1e8 (base currency units)
-  // Comet v3: 1e6 (token units)
+  // bridge tracking (baseline and latest dest balance)
+  const destStartBal = useRef<bigint>(BigInt(0))
+  const destCurrBal  = useRef<bigint>(BigInt(0))
+
+  // reset gate/steps when modal/amount/protocol changes
+  useEffect(() => {
+    setLiquidityEnsured(false)
+    setStep('idle')
+    setError(null)
+  }, [open, amount, snap.chain, snap.token, snap.protocolKey])
+
+  const tokenDecimals = useMemo(() => (snap.token === 'WETH' ? 18 : 6), [snap.token])
+
   const poolDecimals = useMemo(() => {
     if (snap.protocolKey === 'aave-v3') return 8
     if (snap.protocolKey === 'compound-v3') return 6
-    return tokenDecimals // fallback
+    return tokenDecimals
   }, [snap.protocolKey, tokenDecimals])
 
-  // Load wallet balances (OP/BASE) if applicable for the token
+  // Wallet balances (OP/BASE)
   useEffect(() => {
     if (!open || !walletClient) return
-
-    // Only fetch for tokens that exist on OP/BASE map
     const tb = TokenAddresses[snap.token] as Partial<Record<'optimism' | 'base', `0x${string}`>>
-    if (!tb?.optimism && !tb?.base) {
-      setOpBal(null)
-      setBaBal(null)
-      return
-    }
-
     const user = walletClient.account.address as `0x${string}`
-    if (tb.optimism && tb.base) {
-      getDualBalances(
-        { optimism: tb.optimism, base: tb.base },
-        user,
-      ).then(({ opBal, baBal }) => {
+
+    if (tb?.optimism && tb?.base) {
+      getDualBalances({ optimism: tb.optimism, base: tb.base }, user).then(({ opBal, baBal }) => {
         setOpBal(opBal)
         setBaBal(baBal)
       })
     } else {
-      // one side missing – read whichever exists
-      (async () => {
+      ;(async () => {
         const [op, ba] = await Promise.all([
-          tb.optimism
+          tb?.optimism
             ? getDualBalances({ optimism: tb.optimism, base: tb.optimism }, user).then((r) => r.opBal)
             : Promise.resolve<bigint | null>(null),
-          tb.base
+          tb?.base
             ? getDualBalances({ optimism: tb.base, base: tb.base }, user).then((r) => r.baBal)
             : Promise.resolve<bigint | null>(null),
         ])
@@ -205,7 +207,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     }
   }, [open, walletClient, snap.token])
 
-  // Load user’s supplied balance on this protocol (Aave/Comet), per chain
+  // Supplied balances (display)
   useEffect(() => {
     if (!open || !walletClient) return
     const user = walletClient.account.address as `0x${string}`
@@ -214,8 +216,8 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       Promise.allSettled([
         getAaveSuppliedBalance({ chain: 'optimism', user }),
         getAaveSuppliedBalance({ chain: 'base', user }),
-      ]).then((results) => {
-        const [op, ba] = results.map((r) => (r.status === 'fulfilled' ? r.value : BigInt(0)))
+      ]).then((rs) => {
+        const [op, ba] = rs.map((r) => (r.status === 'fulfilled' ? r.value : BigInt(0)))
         setPoolOp(op)
         setPoolBa(ba)
       })
@@ -224,37 +226,30 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
         Promise.allSettled([
           getCometSuppliedBalance({ chain: 'optimism', token: snap.token, user }),
           getCometSuppliedBalance({ chain: 'base',     token: snap.token, user }),
-        ]).then((results) => {
-          const [op, ba] = results.map((r) => (r.status === 'fulfilled' ? r.value : BigInt(0)))
+        ]).then((rs) => {
+          const [op, ba] = rs.map((r) => (r.status === 'fulfilled' ? r.value : BigInt(0)))
           setPoolOp(op)
           setPoolBa(ba)
         })
       } else {
-        setPoolOp(BigInt(0))
-        setPoolBa(BigInt(0))
+        setPoolOp(BigInt(0)); setPoolBa(BigInt(0))
       }
     } else {
-      // morpho/lisk – not shown here (different units/pool)
-      setPoolOp(null)
-      setPoolBa(null)
+      setPoolOp(null); setPoolBa(null)
     }
   }, [open, walletClient, snap.protocolKey, snap.token])
 
-  // Bridge quote (only if cross-chain is needed)
+  // Bridge quote (only if cross-chain)
   useEffect(() => {
     if (!walletClient || !amount) {
-      setRoute(null)
-      setFee(BigInt(0))
-      setReceived(BigInt(0))
-      setQuoteError(null)
+      setRoute(null); setFee(BigInt(0)); setReceived(BigInt(0)); setQuoteError(null)
       return
     }
 
     const dest = snap.chain as EvmChain
-    const amt = parseUnits(amount, tokenDecimals)
+    const amt  = parseUnits(amount, tokenDecimals)
 
-    // figure source chain for funds (OP/BASE first; Lisk not a source for these tokens)
-    // priority: enough balance on OP, then BASE, otherwise pick the max side
+    // choose source: prefer enough on OP, then Base, else the larger one
     const src: Extract<EvmChain, 'optimism' | 'base'> =
       (opBal ?? BigInt(0)) >= amt ? 'optimism'
       : (baBal ?? BigInt(0)) >= amt ? 'base'
@@ -268,26 +263,19 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       return
     }
 
-    // Prepare tokens for cross-chain, map to Lisk representations
     const outSymbol = mapCrossTokenForDest(snap.token, dest)
     const inputToken  = tokenAddrFor(snap.token, src)
     const outputToken = tokenAddrFor(outSymbol, dest)
 
-    const srcId  = chainIdOf(src)
+    const srcId  = src === 'optimism' ? optimism.id : base.id
     const destId = chainIdOf(dest)
 
     acrossClient.getQuote({
-      route: {
-        originChainId: srcId,
-        destinationChainId: destId,
-        inputToken,
-        outputToken,
-      },
+      route: { originChainId: srcId, destinationChainId: destId, inputToken, outputToken },
       inputAmount: amt,
     })
     .then((q) => {
       setRoute(`${src.toUpperCase()} → ${dest.toUpperCase()}`)
-      // Across SDK fee shape: use the total (string/number) → to BigInt
       const feeTotal =
         typeof q.fees?.totalRelayFee?.total === 'string'
           ? BigInt(q.fees.totalRelayFee.total)
@@ -297,12 +285,14 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       setQuoteError(null)
     })
     .catch(() => {
-      setRoute(null)
-      setFee(BigInt(0))
-      setReceived(BigInt(0))
+      setRoute(null); setFee(BigInt(0)); setReceived(BigInt(0))
       setQuoteError('Could not fetch bridge quote')
     })
   }, [amount, walletClient, opBal, baBal, snap.chain, snap.token, tokenDecimals])
+
+  /* -------------------------------------------------------------- */
+  /* Action handler (single flow with stepper)                       */
+  /* -------------------------------------------------------------- */
 
   async function handleConfirm() {
     if (!walletClient) {
@@ -310,69 +300,105 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       return
     }
 
-    setBusy(true)
     setError(null)
+
     try {
       const inputAmt = parseUnits(amount || '0', tokenDecimals)
       const dest = snap.chain as EvmChain
       const destId = chainIdOf(dest)
+      const user = walletClient.account!.address as `0x${string}`
 
-      // 1) Ensure liquidity (bridge if needed)
-      await ensureLiquidity(
-        // Note: ensureLiquidity expects the *input* symbol.
-        // When dest is Lisk, the internal bridge adapts to USDCe/USDT0 as needed.
-        snap.token,
-        inputAmt,
-        dest,
-        walletClient,
-      )
+      // If cross-chain, capture destination baseline first and bridge once
+      if (!liquidityEnsured && route && route !== 'On-chain') {
+        setStep('bridging')
 
-      // 2) Switch chain if wallet isn’t on the destination
-      if (chainId !== destId && switchChainAsync) {
-        await switchChainAsync({ chainId: destId })
-        setError(
-          `Switched wallet to ${
-            dest === 'optimism' ? 'Optimism' : dest === 'base' ? 'Base' : 'Lisk'
-          }. Click Confirm again.`,
-        )
-        setBusy(false)
-        return
+        // track baseline on destination (USDC→USDCe, USDT→USDT0)
+        const outSymbol = mapCrossTokenForDest(snap.token, dest)
+        const destToken = tokenAddrFor(outSymbol, dest)
+        destStartBal.current = await readWalletBalance(dest, destToken, user)
+
+        await ensureLiquidity(snap.token, inputAmt, dest, walletClient)
+        setLiquidityEnsured(true)
+
+        // wait for funds (simple: any increase from baseline)
+        setStep('waitingFunds')
+        await waitForFunds(dest, destToken, user, destStartBal, destCurrBal)
+      } else {
+        setLiquidityEnsured(true)
       }
 
-      // 3) Deposit *received* (after fees) if route existed, else input
-      const toDeposit = received > BigInt(0) ? received : inputAmt
+      // Switch if needed
+      if (chainId !== destId && switchChainAsync) {
+        setStep('switching')
+        await switchChainAsync({ chainId: destId })
+      }
+
+      // Decide how much to deposit:
+      // - cross-chain: deposit the delta that arrived
+      // - on-chain:    deposit the input amount (received == input)
+      let toDeposit: bigint
+      if (route && route !== 'On-chain') {
+        const delta = destCurrBal.current - destStartBal.current
+        toDeposit = delta > BigInt(0) ? delta : received > BigInt(0) ? received : inputAmt
+      } else {
+        toDeposit = received > BigInt(0) ? received : inputAmt
+      }
+
+      setStep('depositing')
       await depositToPool(snap, toDeposit, walletClient)
 
-      onClose()
-      alert(`✅ Deposited ${formatUnits(toDeposit, tokenDecimals)} ${snap.token}`)
+      setStep('success')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
+      setStep('error')
     }
   }
 
-  // ── pretty formatters ───────────────────────────────────────────
+  // Poll destination balance until it increases from baseline
+  async function waitForFunds(
+    dest: EvmChain,
+    token: `0x${string}`,
+    user: `0x${string}`,
+    startRef: React.MutableRefObject<bigint>,
+    currRef: React.MutableRefObject<bigint>,
+  ) {
+    const timeoutMs = 15 * 60 * 1000 // 15 minutes
+    const intervalMs = 10_000
+    const started = Date.now()
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const now = Date.now()
+      if (now - started > timeoutMs) throw new Error('Timeout waiting for bridged funds')
+
+      const bal = await readWalletBalance(dest, token, user)
+      currRef.current = bal
+      if (bal > startRef.current) break
+      await new Promise((r) => setTimeout(r, intervalMs))
+    }
+  }
+
+  /* -------------------------------------------------------------- */
+  /* UI                                                             */
+  /* -------------------------------------------------------------- */
+
   const prettyToken = (bn: bigint | null | undefined) =>
     bn != null ? formatUnits(bn, tokenDecimals) : '…'
-
   const prettyPool = (bn: bigint | null | undefined) =>
     bn != null ? formatUnits(bn, poolDecimals) : '…'
-
   const combinedPool = useMemo(() => {
     if (poolOp == null && poolBa == null) return null
     return (poolOp ?? BigInt(0)) + (poolBa ?? BigInt(0))
   }, [poolOp, poolBa])
 
-  // Strict boolean for Button.disabled (fixes TS error)
-  const hasAmount: boolean =
-    amount.trim().length > 0 && Number(amount) > 0
+  const hasAmount = amount.trim().length > 0 && Number(amount) > 0
+  const confirmDisabled =
+    step !== 'idle' ? true : !hasAmount || Boolean(quoteError)
 
-  const confirmDisabled: boolean =
-    Boolean(busy) ||
-    Boolean(isSwitching) ||
-    !hasAmount ||
-    Boolean(quoteError)
+  const showForm = step === 'idle'
+  const showProgress = step !== 'idle' && step !== 'success' && step !== 'error'
+  const showSuccess = step === 'success'
+  const showError = step === 'error'
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -388,93 +414,160 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
 
         {/* Body */}
         <div className="p-6 space-y-5 bg-white">
-          {/* Amount */}
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <div className="flex items-center justify-between text-xs text-gray-500">
-              <span>Amount</span>
-              <span>
-                OP: {prettyToken(opBal)} • Base: {prettyToken(baBal)}
-              </span>
-            </div>
-            <div className="mt-2 flex items-center gap-3">
-              <Input
-                type="number"
-                placeholder="0.0"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="text-2xl font-bold border-0 bg-white focus-visible:ring-0"
-              />
-              <span className="text-gray-600 font-semibold">{snap.token}</span>
-            </div>
-          </div>
+          {/* ───────── Input Form (idle) ───────── */}
+          {showForm && (
+            <>
+              {/* Amount */}
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span>Amount</span>
+                  <span>OP: {prettyToken(opBal)} • Base: {prettyToken(baBal)}</span>
+                </div>
+                <div className="mt-2 flex items-center gap-3">
+                  <Input
+                    type="number"
+                    placeholder="0.0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="text-2xl font-bold border-0 bg-white focus-visible:ring-0"
+                  />
+                  <span className="text-gray-600 font-semibold">{snap.token}</span>
+                </div>
+              </div>
 
-          {/* Protocol balances (Aave uses 1e8; Comet uses 1e6) */}
-          {(poolOp != null || poolBa != null) && (
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="text-xs text-gray-500 font-medium mb-2">Your supplied balance</div>
-              <div className="flex items-center justify-between text-sm">
-                <span>Optimism</span>
-                <span className="font-medium">{prettyPool(poolOp)} {snap.token}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm mt-1">
-                <span>Base</span>
-                <span className="font-medium">{prettyPool(poolBa)} {snap.token}</span>
-              </div>
-              <div className="mt-2 border-t pt-2 flex items-center justify-between text-sm">
-                <span>Total</span>
-                <span className="font-semibold">
-                  {combinedPool != null ? formatUnits(combinedPool, poolDecimals) : '…'} {snap.token}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Route & Fees */}
-          {route && (
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Route</span>
-                <span className="font-medium">{route}</span>
-              </div>
-              {fee > BigInt(0) && (
-                <div className="mt-1 flex items-center justify-between text-sm">
-                  <span className="text-gray-500">Bridge fee</span>
-                  <span className="font-medium">
-                    {formatUnits(fee, tokenDecimals)} {snap.token}
-                  </span>
+              {/* Protocol balances */}
+              {(poolOp != null || poolBa != null) && (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="text-xs text-gray-500 font-medium mb-2">Your supplied balance</div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span>Optimism</span>
+                    <span className="font-medium">{prettyPool(poolOp)} {snap.token}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm mt-1">
+                    <span>Base</span>
+                    <span className="font-medium">{prettyPool(poolBa)} {snap.token}</span>
+                  </div>
+                  <div className="mt-2 border-t pt-2 flex items-center justify-between text-sm">
+                    <span>Total</span>
+                    <span className="font-semibold">
+                      {combinedPool != null ? formatUnits(combinedPool, poolDecimals) : '…'} {snap.token}
+                    </span>
+                  </div>
                 </div>
               )}
-              <div className="mt-1 flex items-center justify-between text-sm">
-                <span className="text-gray-500">Will deposit</span>
-                <span className="font-semibold">
-                  {formatUnits(received, tokenDecimals)} {snap.token}
-                </span>
+
+              {/* Route & Fees */}
+              {route && (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Route</span>
+                    <span className="font-medium">{route}</span>
+                  </div>
+                  {fee > BigInt(0) && (
+                    <div className="mt-1 flex items-center justify-between text-sm">
+                      <span className="text-gray-500">Bridge fee</span>
+                      <span className="font-medium">{formatUnits(fee, tokenDecimals)} {snap.token}</span>
+                    </div>
+                  )}
+                  <div className="mt-1 flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Will deposit</span>
+                    <span className="font-semibold">{formatUnits(received, tokenDecimals)} {snap.token}</span>
+                  </div>
+                  {quoteError && <p className="mt-2 text-xs text-red-600">{quoteError}</p>}
+                </div>
+              )}
+
+              {switchError && <p className="text-xs text-red-600">Network switch failed: {switchError.message}</p>}
+              {error && <p className="text-xs text-red-600">{error}</p>}
+
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={onClose} title="Cancel">Cancel</Button>
+                <Button onClick={handleConfirm} disabled={confirmDisabled} title="Confirm">Confirm</Button>
               </div>
-              {quoteError && <p className="mt-2 text-xs text-red-600">{quoteError}</p>}
+            </>
+          )}
+
+          {/* ───────── Progress (bridge / wait / switch / deposit) ───────── */}
+          {showProgress && (
+            <div className="space-y-4">
+              <Stepper
+                current={step}
+                items={[
+                  { key: 'bridging',     label: 'Bridging liquidity',    visible: route && route !== 'On-chain'? true:false },
+                  { key: 'waitingFunds', label: 'Waiting for funds',     visible: route && route !== 'On-chain'? true:false  },
+                  { key: 'switching',    label: 'Switching network',     visible: true },
+                  { key: 'depositing',   label: 'Depositing to protocol', visible: true },
+                ]}
+              />
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={onClose} title={'Close'}>Close</Button>
+              </div>
             </div>
           )}
 
-          {/* Errors */}
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          {switchError && (
-            <p className="text-xs text-red-600">Network switch failed: {switchError.message}</p>
+          {/* ───────── Success ───────── */}
+          {showSuccess && (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <CheckCircle2 className="h-10 w-10 text-green-600" />
+              <div className="text-center">
+                <div className="text-lg font-semibold">Deposit successful</div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  Your {snap.token} has been supplied to {snap.protocol}.
+                </div>
+              </div>
+              <div className="mt-4">
+                <Button onClick={onClose} title={'Done'}>Done</Button>
+              </div>
+            </div>
           )}
 
-          {/* Actions */}
-          <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={onClose} title="Cancel">
-              Cancel
-            </Button>
-            <Button
-              onClick={handleConfirm}
-              disabled={confirmDisabled}
-              title={isSwitching ? 'Switching…' : busy ? 'Processing…' : 'Confirm'}
-            >
-              {isSwitching ? 'Switching…' : busy ? 'Processing…' : 'Confirm'}
-            </Button>
-          </div>
+          {/* ───────── Error ───────── */}
+          {showError && (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <div className="text-lg font-semibold text-red-600">Transaction failed</div>
+              <div className="text-sm text-muted-foreground">{error}</div>
+              <div className="mt-2">
+                <Button variant="outline" onClick={() => setStep('idle')} title={'Try Again'}>Try again</Button>
+              </div>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/* ---------------------------------------------------------------- */
+/* Tiny Stepper                                                     */
+/* ---------------------------------------------------------------- */
+
+function Stepper(props: {
+  current: FlowStep
+  items: { key: Exclude<FlowStep, 'idle' | 'success' | 'error'>; label: string; visible?: boolean }[]
+}) {
+  const order: FlowStep[] = ['bridging', 'waitingFunds', 'switching', 'depositing']
+  const idx = order.indexOf(props.current)
+  return (
+    <div className="space-y-2">
+      {props.items.filter((i) => i.visible).map((item, i) => {
+        const myIndex = order.indexOf(item.key)
+        const done = idx > myIndex
+        const active = idx === myIndex
+        return (
+          <div key={item.key} className="flex items-center gap-3 rounded-lg border p-3">
+            {done ? (
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+            ) : active ? (
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            ) : (
+              <span className="h-4 w-4 rounded-full border" />
+            )}
+            <span className={`text-sm ${done ? 'text-green-700' : active ? 'text-primary' : 'text-muted-foreground'}`}>
+              {item.label}
+            </span>
+          </div>
+        )
+      })}
+    </div>
   )
 }

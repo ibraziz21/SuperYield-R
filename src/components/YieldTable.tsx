@@ -1,5 +1,4 @@
 // src/components/positions/YieldTable.tsx
-
 'use client'
 
 import { FC, useMemo, useState } from 'react'
@@ -7,10 +6,9 @@ import { Card, CardContent } from '@/components/ui/Card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useYields } from '@/hooks/useYields'
-import { YieldRow } from './YieldRow'
 import { isAaveMarketSupported } from '@/lib/tvl'
-
 import { Loader2 } from 'lucide-react'
+import { YieldRow } from './YieldRow'
 
 type Chain = 'optimism' | 'base' | 'lisk'
 type Proto = 'aave-v3' | 'compound-v3' | 'morpho-blue'
@@ -32,7 +30,7 @@ const PROTO_ORDER: Proto[] = ['aave-v3', 'compound-v3', 'morpho-blue']
 export const YieldTable: FC = () => {
   const { yields, isLoading, error } = useYields()
 
-  // ── UI state: search / filters / sort
+  // UI: search / filters / sort
   const [query, setQuery] = useState('')
   const [activeProto, setActiveProto] = useState<'all' | Proto>('all')
   const [chainEnabled, setChainEnabled] = useState<Record<Chain, boolean>>({
@@ -42,10 +40,8 @@ export const YieldTable: FC = () => {
   })
   const [sort, setSort] = useState<'apy_desc' | 'apy_asc' | 'tvl_desc' | 'tvl_asc'>('apy_desc')
 
-  // ── derived rows
   const rows = useMemo(() => {
     if (!yields) return []
-
     const q = query.trim().toLowerCase()
 
     const filtered = yields.filter((y) => {
@@ -56,12 +52,10 @@ export const YieldTable: FC = () => {
         (y.token === 'USDC' || y.token === 'USDT') &&
         !isAaveMarketSupported(y.chain, y.token)
       ) return false
-    
-      // protocol filter
+
       if (activeProto !== 'all' && y.protocolKey !== activeProto) return false
-      // chain filter
       if (!chainEnabled[y.chain as Chain]) return false
-      // search
+
       if (q) {
         const hay = `${y.token} ${y.protocol} ${y.chain}`.toLowerCase()
         if (!hay.includes(q)) return false
@@ -69,36 +63,27 @@ export const YieldTable: FC = () => {
       return true
     })
 
-    // sort
     const sorted = filtered.slice().sort((a, b) => {
       const apyA = a.apy ?? 0
       const apyB = b.apy ?? 0
       const tvlA = a.tvlUSD ?? 0
       const tvlB = b.tvlUSD ?? 0
       switch (sort) {
-        case 'apy_desc':
-          return apyB - apyA
-        case 'apy_asc':
-          return apyA - apyB
-        case 'tvl_desc':
-          return tvlB - tvlA
-        case 'tvl_asc':
-          return tvlA - tvlB
+        case 'apy_desc': return apyB - apyA
+        case 'apy_asc':  return apyA - apyB
+        case 'tvl_desc': return tvlB - tvlA
+        case 'tvl_asc':  return tvlA - tvlB
       }
     })
 
-    // nice: keep groups by protocol (optional)
-    const grouped = sorted.sort((a, b) => {
+    return sorted.sort((a, b) => {
       const ia = PROTO_ORDER.indexOf(a.protocolKey as Proto)
       const ib = PROTO_ORDER.indexOf(b.protocolKey as Proto)
       return ia - ib
     })
-
-    return grouped
   }, [yields, query, activeProto, chainEnabled, sort])
 
-  const toggleChain = (c: Chain) =>
-    setChainEnabled((prev) => ({ ...prev, [c]: !prev[c] }))
+  const toggleChain = (c: Chain) => setChainEnabled((prev) => ({ ...prev, [c]: !prev[c] }))
 
   return (
     <Card className="mx-auto w-full max-w-6xl overflow-hidden">
@@ -181,6 +166,7 @@ export const YieldTable: FC = () => {
                 <th className="px-4 py-3 text-left font-semibold">Protocol</th>
                 <th className="px-4 py-3 text-right font-semibold">APY</th>
                 <th className="px-4 py-3 text-right font-semibold">TVL&nbsp;(USD)</th>
+                <th className="px-4 py-3 text-right font-semibold">Action</th>{/* NEW */}
               </tr>
             </thead>
             <tbody className="divide-y divide-secondary/30">
@@ -189,21 +175,12 @@ export const YieldTable: FC = () => {
                 <>
                   {Array.from({ length: 6 }).map((_, i) => (
                     <tr key={`sk-${i}`} className="animate-pulse">
-                      <td className="px-4 py-4">
-                        <div className="h-4 w-20 rounded bg-muted" />
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="h-4 w-24 rounded bg-muted" />
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="h-4 w-28 rounded bg-muted" />
-                      </td>
-                      <td className="px-4 py-4 text-right">
-                        <div className="ml-auto h-4 w-14 rounded bg-muted" />
-                      </td>
-                      <td className="px-4 py-4 text-right">
-                        <div className="ml-auto h-4 w-24 rounded bg-muted" />
-                      </td>
+                      <td className="px-4 py-4"><div className="h-4 w-20 rounded bg-muted" /></td>
+                      <td className="px-4 py-4"><div className="h-4 w-24 rounded bg-muted" /></td>
+                      <td className="px-4 py-4"><div className="h-4 w-28 rounded bg-muted" /></td>
+                      <td className="px-4 py-4 text-right"><div className="ml-auto h-4 w-14 rounded bg-muted" /></td>
+                      <td className="px-4 py-4 text-right"><div className="ml-auto h-4 w-24 rounded bg-muted" /></td>
+                      <td className="px-4 py-4 text-right"><div className="ml-auto h-8 w-20 rounded bg-muted" /></td>
                     </tr>
                   ))}
                 </>
@@ -212,40 +189,29 @@ export const YieldTable: FC = () => {
               {/* error */}
               {error && !isLoading && (
                 <tr>
-                  <td colSpan={5} className="py-10 text-center text-red-500">
-                    Failed to load yields
-                  </td>
+                  <td colSpan={6} className="py-10 text-center text-red-500">Failed to load yields</td>
                 </tr>
               )}
 
               {/* empty */}
               {!isLoading && !error && rows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-10 text-center text-muted-foreground">
+                  <td colSpan={6} className="py-10 text-center text-muted-foreground">
                     No pools match your filters.
                   </td>
                 </tr>
               )}
 
               {/* data */}
-              {!isLoading &&
-                !error &&
-                rows.map((snap) => (
-                  <YieldRow key={snap.id} snap={snap} />
-                ))}
+              {!isLoading && !error && rows.map((snap) => <YieldRow key={snap.id} snap={snap} />)}
             </tbody>
           </table>
         </div>
 
-        {/* footer metrics */}
         {!isLoading && !error && (
           <div className="flex items-center justify-between border-t px-4 py-3 text-xs text-muted-foreground">
-            <span>
-              Showing <strong>{rows.length}</strong> pool{rows.length === 1 ? '' : 's'}
-            </span>
-            <span className="hidden md:block">
-              Tip: Filter by protocol and chain, then sort by APY or TVL.
-            </span>
+            <span>Showing <strong>{rows.length}</strong> pool{rows.length === 1 ? '' : 's'}</span>
+            <span className="hidden md:block">Tip: Filter by protocol and chain, then sort by APY or TVL.</span>
           </div>
         )}
       </CardContent>

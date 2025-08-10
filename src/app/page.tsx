@@ -16,7 +16,7 @@ export default function Dashboard() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold tracking-tight">Top yields</h2>
           <Link
-            href="/positions"
+            href="/markets"
             className="text-sm font-medium text-primary underline-offset-4 hover:underline"
           >
             See all markets →
