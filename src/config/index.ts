@@ -10,31 +10,21 @@ if (!projectId) throw new Error('REOWN project id missing')
 
 export const networks = [optimism, base, lisk]
 
-// Prefer explicit HTTPS RPCs (public or your own)
-// You can swap these for your provider URLs
-const rpc = {
-  [optimism.id]: optimism.rpcUrls.default.http[0],
-  [base.id]:     base.rpcUrls.default.http[0],
-  [lisk.id]:     lisk.rpcUrls.default.http[0],
-}
-
 /** WagmiAdapter builds the wagmi config for us */
 export const wagmiAdapter = new WagmiAdapter({
+  storage: createStorage({
+    storage: cookieStorage
+  }),
+  ssr: true,
   projectId,
   networks,
 
   transports: {
-    [optimism.id]: http(rpc[optimism.id]),
-    [base.id]:     http(rpc[base.id]),
-    [lisk.id]:     http(rpc[lisk.id]),
-  },
+    [optimism.id]: http("https://mainnet.optimism.io"),
+    [base.id]:     http("https://mainnet.base.org"),
+    [lisk.id]:     http('https://rpc.api.lisk.com'),
+  }
 
-  connectors: [
-    injected(),
-    walletConnect({ projectId }),
-  ],
-
-  storage: createStorage({ storage: cookieStorage }),
 })
 
 export const wagmiConfig = wagmiAdapter.wagmiConfig

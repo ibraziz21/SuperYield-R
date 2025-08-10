@@ -1,8 +1,8 @@
 // src/app/layout.tsx
 import '@/app/globals.css'
 import { ReactNode } from 'react'
-import { cookies } from 'next/headers'
-import { ProvidersWrapper } from '@/components/ProvidersWrapper'
+import { cookies, headers } from 'next/headers'
+import  ContextProvider  from '@/config/appkit'
 
 export default async function RootLayout({
   children,
@@ -10,16 +10,14 @@ export default async function RootLayout({
   children: ReactNode
 }) {
   // runs on the server; cookies() is async in Next 13.4+
-  const cookieStore = await cookies()
-  const raw = cookieStore.get('wagmi.store')?.value
-  const wagmiCookie = raw ? decodeURIComponent(raw) : undefined
+  const cookies = (await headers()).get('cookie')
 
   return (
     <html lang="en">
       <body className="bg-surface-light text-secondary-foreground antialiased">
-        <ProvidersWrapper initialState={wagmiCookie}>
+        <ContextProvider cookies={cookies}>
           {children}
-        </ProvidersWrapper>
+        </ContextProvider>
       </body>
     </html>
   )
