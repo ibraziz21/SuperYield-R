@@ -6,6 +6,7 @@ import {lisk} from 'viem/chains'
 import { optimism, base } from '@reown/appkit/networks'
 
 export const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID!
+
 if (!projectId) throw new Error('REOWN project id missing')
 
 export const networks = [optimism, lisk]
