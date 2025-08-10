@@ -1,8 +1,9 @@
 'use client'
 
 import { createAppKit } from '@reown/appkit/react'
-import { optimism, base, lisk } from '@reown/appkit/networks'
+import { optimism, base } from '@reown/appkit/networks'
 import { wagmiAdapter, projectId } from '@/config'
+import {lisk} from 'viem/chains'
 
 // Set stable, HTTPS metadata. Do NOT leave blanks.
 // NEXT_PUBLIC_APP_URL must be the exact origin and be whitelisted in WC Cloud → Allowed Origins

@@ -2,7 +2,8 @@ import { http } from 'viem'
 import { cookieStorage, createStorage } from '@wagmi/core'
 import { injected, walletConnect } from '@wagmi/connectors'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
-import { optimism, base, lisk } from '@reown/appkit/networks'
+import {lisk} from 'viem/chains'
+import { optimism, base } from '@reown/appkit/networks'
 
 export const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID!
 if (!projectId) throw new Error('REOWN project id missing')
