@@ -1,6 +1,5 @@
 import { http } from 'viem'
 import { cookieStorage, createStorage } from '@wagmi/core'
-import { injected, walletConnect } from '@wagmi/connectors'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 import {lisk} from 'viem/chains'
 import { optimism, base } from '@reown/appkit/networks'

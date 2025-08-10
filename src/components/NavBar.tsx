@@ -4,11 +4,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useAppKit, useAppKitAccount } from '@reown/appkit/react'
-import { useDisconnect, useChainId, useSwitchChain } from 'wagmi'
+import { useAppKit } from '@reown/appkit/react'                    // ⬅️ keep only useAppKit
+import { useAccount, useDisconnect, useChainId, useSwitchChain } from 'wagmi'
 import { Button } from '@/components/ui/button'
 
-/** Minimal chain meta used for badges & quick switch */
 const CHAIN_META: Record<number, { key: 'optimism' | 'base' | 'lisk'; label: string; badge: string; bg: string; ring: string }> = {
   10:   { key: 'optimism', label: 'Optimism', badge: 'OP',   bg: 'bg-rose-600',   ring: 'ring-rose-500/30' },
   8453: { key: 'base',     label: 'Base',     badge: 'BASE', bg: 'bg-blue-600',   ring: 'ring-blue-500/30' },
@@ -50,7 +49,7 @@ function ActiveLink({ href, children }: { href: string; children: React.ReactNod
 export function Navbar() {
   const pathname = usePathname()
   const { open } = useAppKit()
-  const { address } = useAppKitAccount()
+  const { address } = useAccount()
   const { disconnect } = useDisconnect()
   const chainId = useChainId()
   const { switchChainAsync, isPending: isSwitching } = useSwitchChain()
@@ -59,7 +58,6 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  // Close menus when route changes
   useEffect(() => {
     setMenuOpen(false)
     setMobileOpen(false)
@@ -80,7 +78,6 @@ export function Navbar() {
     try {
       await switchChainAsync?.({ chainId: id })
     } catch (e) {
-      // surface minimal error; you can toast here
       console.error('Switch chain failed:', e)
     }
   }
@@ -104,8 +101,6 @@ export function Navbar() {
             <ActiveLink href="/">Dashboard</ActiveLink>
             <ActiveLink href="/markets">Markets</ActiveLink>
             <ActiveLink href="/docs">Docs</ActiveLink>
-
-           
           </nav>
         </div>
 
@@ -127,7 +122,7 @@ export function Navbar() {
           {/* Wallet area */}
           {!address ? (
             <Button
-              onClick={open}
+              onClick={() => open({ view: 'Connect' })} 
               className="hidden md:inline-flex gap-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white hover:from-teal-500 hover:to-cyan-500"
               title="Connect Wallet"
             >
@@ -174,7 +169,7 @@ export function Navbar() {
                     </button>
                     <button
                       className="mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 hover:bg-muted/60"
-                      onClick={() => { setMenuOpen(false); open() }}
+                      onClick={() => { setMenuOpen(false); open({ view: 'Connect' }) }}  
                     >
                       <span>Switch wallet</span>
                       <span className="text-xs text-muted-foreground">Modal</span>
@@ -193,9 +188,7 @@ export function Navbar() {
                               onClick={() => quickSwitch(id)}
                               disabled={isSwitching || active}
                               className={`flex items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] ${
-                                active
-                                  ? `${meta.bg} text-white`
-                                  : 'bg-muted hover:bg-muted/80'
+                                active ? `${meta.bg} text-white` : 'bg-muted hover:bg-muted/80'
                               } disabled:opacity-60`}
                               title={meta.label}
                             >
@@ -241,8 +234,10 @@ export function Navbar() {
 
             {!address && (
               <Button
-                onClick={open}
-                className="mt-3 w-full bg-gradient-to-r from-teal-600 to-cyan-600 text-white hover:from-teal-500 hover:to-cyan-500" title={'Connect Wallet'}              >
+                onClick={() => open({ view: 'Connect' })} 
+                className="mt-3 w-full bg-gradient-to-r from-teal-600 to-cyan-600 text-white hover:from-teal-500 hover:to-cyan-500"
+                title="Connect Wallet"
+              >
                 Connect Wallet
               </Button>
             )}
