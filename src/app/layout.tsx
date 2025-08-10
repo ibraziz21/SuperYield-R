@@ -3,7 +3,7 @@ import '@/app/globals.css'
 import { ReactNode } from 'react'
 import { cookies, headers } from 'next/headers'
 import AppShell from '@/components/AppShell'
-import ContextProvider from './context'
+import ContextProvider from '@/context'
 
 export default async function RootLayout({
   children,
