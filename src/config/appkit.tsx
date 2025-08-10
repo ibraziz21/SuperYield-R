@@ -18,7 +18,7 @@ if (!APP_URL || !APP_URL.startsWith('http')) {
   console.warn('[AppKit] metadata.url is missing or not https. Set NEXT_PUBLIC_APP_URL.')
 }
 
-createAppKit({
+const _modal = createAppKit({
   projectId,
   adapters: [wagmiAdapter],
   networks: [optimism, lisk],
