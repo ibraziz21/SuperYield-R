@@ -1,9 +1,9 @@
 'use client'
 import React, { type ReactNode } from 'react'
 import { createAppKit } from '@reown/appkit/react'
-import { optimism, base } from '@reown/appkit/networks'
+import { optimism, base,lisk } from '@reown/appkit/networks'
 import { wagmiAdapter, projectId } from '@/config'
-import {lisk} from 'viem/chains'
+
 import { cookieToInitialState, WagmiProvider, type Config } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 

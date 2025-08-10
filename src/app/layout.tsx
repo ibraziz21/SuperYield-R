@@ -3,6 +3,7 @@ import '@/app/globals.css'
 import { ReactNode } from 'react'
 import { cookies, headers } from 'next/headers'
 import  ContextProvider  from '@/config/appkit'
+import AppShell from '@/components/AppShell'
 
 export default async function RootLayout({
   children,
@@ -16,7 +17,7 @@ export default async function RootLayout({
     <html lang="en">
       <body className="bg-surface-light text-secondary-foreground antialiased">
         <ContextProvider cookies={cookies}>
-          {children}
+          <AppShell>{children}</AppShell>
         </ContextProvider>
       </body>
     </html>
