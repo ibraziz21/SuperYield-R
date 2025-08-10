@@ -104,7 +104,7 @@ export function Navbar() {
             <ActiveLink href="/">Dashboard</ActiveLink>
             <ActiveLink href="/positions">Positions</ActiveLink>
             <a
-              href="#"
+              href="/docs"
               className="rounded-full px-3 py-1 text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
               target="_blank"
               rel="noreferrer"

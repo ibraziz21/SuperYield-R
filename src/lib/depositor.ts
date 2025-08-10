@@ -1,189 +1,162 @@
 // src/lib/depositor.ts
-
 import { WalletClient } from 'viem'
+// at top
+import { erc20Abi, maxUint256 } from 'viem'
 import { optimism, base, lisk } from 'viem/chains'
-import {
-  TokenAddresses,
-  AAVE_POOL,
-  COMET_POOLS,
-  type TokenSymbol,
-} from './constants'
-import { erc20Abi } from 'viem'
-import aaveAbi from './abi/aavePool.json'
-import cometAbi from './abi/comet.json'
-// This ABI should include standard ERC-4626 functions: deposit, mint, previewDeposit
-// If your existing morphoLisk.json already has them, keep using it.
-// Otherwise replace import below with an ERC-4626 ABI file.
-import morphoAbi from './abi/morphoLisk.json'
-
+import { ROUTERS, TokenAddresses, type TokenSymbol } from './constants'
+import aggregatorRouterAbi from './abi/AggregatorRouter.json'
 import { publicOptimism, publicBase, publicLisk } from './clients'
 import type { YieldSnapshot } from '@/hooks/useYields'
+import { adapterKeyForSnapshot } from './adaptors'
 
-/* ----------------------------------------------------------------------
- * Types
- * ---------------------------------------------------------------------*/
-export type ChainId = 'optimism' | 'base' | 'lisk'
+type ChainId = 'optimism' | 'base' | 'lisk'
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 
-/* ----------------------------------------------------------------------
- * Public client picker
- * ---------------------------------------------------------------------*/
 function pub(chain: ChainId) {
-  switch (chain) {
-    case 'optimism':
-      return publicOptimism
-    case 'base':
-      return publicBase
-    default:
-      return publicLisk
-  }
+  return chain === 'optimism' ? publicOptimism : chain === 'base' ? publicBase : publicLisk
+}
+function chainObj(chain: ChainId) {
+  return chain === 'optimism' ? optimism : chain === 'base' ? base : lisk
+}
+function isUSDT(addr: `0x${string}`) {
+  const a = addr.toLowerCase()
+  return (
+    a === '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58'.toLowerCase() || // OP USDT
+    a === '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2'.toLowerCase()    // Base USDT
+  )
 }
 
-/* ----------------------------------------------------------------------
- * Allowance helper – checks & approves if necessary
- * ---------------------------------------------------------------------*/
-export async function ensureAllowance(
+async function waitReceipt(chain: ChainId, hash: `0x${string}`) {
+  await pub(chain).waitForTransactionReceipt({ hash })
+}
+
+async function getAdapterAddress(
+  chain: ChainId,
+  key: `0x${string}`,
+): Promise<`0x${string}`> {
+  const router = ROUTERS[chain]
+  const addr = await pub(chain).readContract({
+    address: router,
+    abi: aggregatorRouterAbi as any,
+    functionName: 'adapters', // adjust if your getter differs
+    args: [key],
+  }) as `0x${string}`
+  return addr
+}
+
+async function readAllowance(
   token: `0x${string}`,
+  owner: `0x${string}`,
   spender: `0x${string}`,
-  amt: bigint,
-  wallet: WalletClient,
   chain: ChainId,
 ) {
-  const owner = wallet.account?.address as `0x${string}` | undefined
-  if (!owner) return
-
-  const allowance = (await pub(chain).readContract({
+  return (await pub(chain).readContract({
     address: token,
     abi: erc20Abi,
     functionName: 'allowance',
     args: [owner, spender],
   })) as bigint
+}
 
-  if (allowance >= amt) return
+async function ensureAllowanceForRouter(
+  token: `0x${string}`,
+  router: `0x${string}`,
+  amount: bigint,
+  wallet: WalletClient,
+  chain: ChainId,
+) {
+  const owner = wallet.account?.address as `0x${string}` | undefined
+  if (!owner) throw new Error('Wallet not connected')
 
-  await wallet.writeContract({
+  const current = await readAllowance(token, owner, router, chain)
+  // If we already have enough allowance for this call, do nothing.
+  if (current >= amount) return
+
+  // USDT quirk: must set to 0 before changing a non-zero allowance
+  if (current > BigInt(0) && isUSDT(token)) {
+    const resetHash = await wallet.writeContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: 'approve',
+      args: [router, BigInt(0)],
+      chain: chainObj(chain),
+      account: owner,
+    })
+    await waitReceipt(chain, resetHash)
+  }
+
+  // Approve infinite
+  const approveHash = await wallet.writeContract({
     address: token,
     abi: erc20Abi,
     functionName: 'approve',
-    args: [spender, amt],
-    chain: chain === 'optimism' ? optimism : chain === 'base' ? base : lisk,
+    args: [router, maxUint256],
+    chain: chainObj(chain),
     account: owner,
   })
+  await waitReceipt(chain, approveHash)
 }
 
-/* ----------------------------------------------------------------------
- * Helper: map UI token → Lisk underlying for MetaMorpho vaults
- * (USDC → USDCe, USDT → USDT0, WETH → WETH)
- * ---------------------------------------------------------------------*/
-function morphoUnderlyingOnLisk(sym: YieldSnapshot['token']): TokenSymbol {
-  if (sym === 'USDC') return 'USDCe'
-  if (sym === 'USDT') return 'USDT0'
-  return 'WETH'
+function resolveAssetForSnapshot(
+  snap: YieldSnapshot,
+  chain: ChainId,
+): `0x${string}` {
+  if (snap.protocolKey === 'morpho-blue') {
+    // Lisk: USDC -> USDCe, USDT -> USDT0
+    const morphoToken =
+      snap.token === 'USDC' ? 'USDCe' :
+      snap.token === 'USDT' ? 'USDT0' :
+      snap.token              // WETH passthrough
+    return (TokenAddresses as any)[morphoToken].lisk as `0x${string}`
+  }
+  // Aave/Comet on OP/Base
+  const tokenMap = TokenAddresses[
+    snap.token as Extract<TokenSymbol, 'USDC' | 'USDT'>
+  ] as Record<'optimism' | 'base', `0x${string}`>
+  return tokenMap[chain as 'optimism' | 'base']
 }
 
-/* ----------------------------------------------------------------------
- * Main deposit dispatcher
- * ---------------------------------------------------------------------*/
+/** Router.deposit(adapterKey, asset, amount, onBehalfOf, data) */
 export async function depositToPool(
   snap: YieldSnapshot,
   amount: bigint,
   wallet: WalletClient,
 ) {
   const owner = wallet.account?.address as `0x${string}` | undefined
-  if (!owner) return
+  if (!owner) throw new Error('Wallet not connected')
 
-  /* ---------- Aave v3 ---------- */
-  if (snap.protocolKey === 'aave-v3') {
-    const chain = snap.chain as Extract<ChainId, 'optimism' | 'base'>
+  const chain: ChainId = snap.protocolKey === 'morpho-blue' ? 'lisk' : (snap.chain as ChainId)
+  const router = ROUTERS[chain]
+  if (!router || router.toLowerCase() === ZERO_ADDR) throw new Error(`Router missing for ${chain}`)
 
-    const tokenMap = TokenAddresses[snap.token] as Record<
-      'optimism' | 'base',
-      `0x${string}`
-    >
-    const tokenAddr = tokenMap[chain]
-    const poolAddr = AAVE_POOL[chain]
+  const key = adapterKeyForSnapshot(snap)
+  const adapter = await getAdapterAddress(chain, key)
+  if (!adapter || adapter.toLowerCase() === ZERO_ADDR)
+    throw new Error(`Adapter not registered for key on ${chain}: ${key}`)
 
-    await ensureAllowance(tokenAddr, poolAddr, amount, wallet, chain)
+  const asset = resolveAssetForSnapshot(snap, chain)
 
-    await wallet.writeContract({
-      address: poolAddr,
-      abi: aaveAbi,
-      functionName: 'supply',
-      args: [tokenAddr, amount, owner, 0],
-      chain: chain === 'optimism' ? optimism : base,
-      account: owner,
-    })
-    return
-  }
+  // helpful preflight logs
+  const [allowToRouter, allowToAdapter] = await Promise.all([
+    readAllowance(asset, owner, router, chain),
+    readAllowance(asset, owner, adapter, chain),
+  ])
+  console.log(`[deposit] chain=${chain} asset=${asset}
+  key=${key}
+  allowance → router:  ${allowToRouter}
+  allowance → adapter: ${allowToAdapter}`)
 
-  /* ---------- Compound v3 (Comet) ---------- */
-  if (snap.protocolKey === 'compound-v3') {
-    const chain = snap.chain as Extract<ChainId, 'optimism' | 'base'>
+  // ✅ Approve the ROUTER as spender (router does transferFrom)
+  await ensureAllowanceForRouter(asset, router, amount, wallet, chain)
 
-    const tokenMap = TokenAddresses[snap.token] as Record<
-      'optimism' | 'base',
-      `0x${string}`
-    >
-    const tokenAddr = tokenMap[chain]
-    const poolAddr = COMET_POOLS[chain][snap.token as 'USDC' | 'USDT']
-
-    await ensureAllowance(tokenAddr, poolAddr, amount, wallet, chain)
-
-    await wallet.writeContract({
-      address: poolAddr,
-      abi: cometAbi,
-      functionName: 'supply',
-      args: [tokenAddr, amount],
-      chain: chain === 'optimism' ? optimism : base,
-      account: owner,
-    })
-    return
-  }
-
-  /* ---------- Morpho MetaMorpho v1.1 (ERC-4626 vault on Lisk) ---------- */
-  if (snap.protocolKey === 'morpho-blue') {
-    const chain: ChainId = 'lisk'
-    const vault = snap.poolAddress as `0x${string}` // the MetaMorpho vault (ERC-4626)
-
-    // Map UI fiat tokens to Lisk underlyings
-    const underlyingSymbol = morphoUnderlyingOnLisk(snap.token)
-    const tokenAddr = (TokenAddresses[underlyingSymbol] as { lisk: `0x${string}` })
-      .lisk
-
-    // Approve vault to pull underlying
-    await ensureAllowance(tokenAddr, vault, amount, wallet, chain)
-
-    // Prefer ERC-4626 `deposit(assets, receiver)`, else fall back to `mint(shares, receiver)`
-    try {
-      // Try deposit first (most intuitive: we have `amount` assets)
-      await wallet.writeContract({
-        address: vault,
-        abi: morphoAbi,
-        functionName: 'deposit',
-        args: [amount, owner],
-        chain: lisk,
-        account: owner,
-      })
-    } catch (depositErr) {
-      // If `deposit` not present/allowed, compute shares via preview and call mint
-      const shares = (await publicLisk.readContract({
-        address: vault,
-        abi: morphoAbi,
-        functionName: 'previewDeposit',
-        args: [amount],
-      })) as bigint
-
-      await wallet.writeContract({
-        address: vault,
-        abi: morphoAbi,
-        functionName: 'mint',
-        args: [shares, owner],
-        chain: lisk,
-        account: owner,
-      })
-    }
-
-    return
-  }
-
-  throw new Error(`Unsupported protocol ${snap.protocolKey}`)
+  // ▶️ Call router.deposit
+  const tx = await wallet.writeContract({
+    address: router,
+    abi: aggregatorRouterAbi as any,
+    functionName: 'deposit',
+    args: [key, asset, amount, owner, '0x'],
+    chain: chainObj(chain),
+    account: owner,
+  })
+  await waitReceipt(chain, tx)
 }
