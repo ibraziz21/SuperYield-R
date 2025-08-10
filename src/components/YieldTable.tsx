@@ -6,16 +6,14 @@ import { Card, CardContent } from '@/components/ui/Card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useYields } from '@/hooks/useYields'
-import { isAaveMarketSupported } from '@/lib/tvl'
 import { Loader2 } from 'lucide-react'
 import { YieldRow } from './YieldRow'
 
-type Chain = 'optimism' | 'base' | 'lisk'
+type Chain = 'optimism'  | 'lisk'
 type Proto = 'aave-v3' | 'compound-v3' | 'morpho-blue'
 
 const CHAIN_LABEL: Record<Chain, string> = {
   optimism: 'Optimism',
-  base: 'Base',
   lisk: 'Lisk',
 }
 
@@ -35,7 +33,6 @@ export const YieldTable: FC = () => {
   const [activeProto, setActiveProto] = useState<'all' | Proto>('all')
   const [chainEnabled, setChainEnabled] = useState<Record<Chain, boolean>>({
     optimism: true,
-    base: true,
     lisk: true,
   })
   const [sort, setSort] = useState<'apy_desc' | 'apy_asc' | 'tvl_desc' | 'tvl_asc'>('apy_desc')
@@ -45,14 +42,8 @@ export const YieldTable: FC = () => {
     const q = query.trim().toLowerCase()
 
     const filtered = yields.filter((y) => {
-      // Hide unsupported Aave markets (e.g., Base + USDT)
-      if (
-        y.protocolKey === 'aave-v3' &&
-        (y.chain === 'optimism' || y.chain === 'base') &&
-        (y.token === 'USDC' || y.token === 'USDT') &&
-        !isAaveMarketSupported(y.chain, y.token)
-      ) return false
 
+    
       if (activeProto !== 'all' && y.protocolKey !== activeProto) return false
       if (!chainEnabled[y.chain as Chain]) return false
 

@@ -8,7 +8,7 @@ import { useWalletClient } from 'wagmi'
 import { fetchPositions, type Position } from '@/lib/positions'
 
 export type AaveAccount = {
-  chain: 'optimism' | 'base'
+  chain: 'optimism' 
   /** Sum of Aave supplied balances on this chain (aToken/underlying units: USDC/USDT = 1e6) */
   supplied: bigint
   /** We’re not fetching per-user debt right now – keep as 0 for compatibility */
@@ -16,19 +16,19 @@ export type AaveAccount = {
 }
 
 function toAaveAccounts(positions: Position[]): AaveAccount[] {
-  const sums: Record<'optimism' | 'base', bigint> = {
+  const sums: Record<'optimism' , bigint> = {
     optimism: BigInt(0),
-    base: BigInt(0),
+
   }
 
   for (const p of positions) {
     if (p.protocol !== 'Aave v3') continue
-    if (p.chain === 'optimism' || p.chain === 'base') {
+    if (p.chain === 'optimism') {
       sums[p.chain] += p.amount // amount already in underlying units (1e6)
     }
   }
 
-  return (['optimism', 'base'] as const).map((chain) => ({
+  return (['optimism'] as const).map((chain) => ({
     chain,
     supplied: sums[chain],
     debt: BigInt(0),

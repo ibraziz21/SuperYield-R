@@ -8,7 +8,7 @@ import { optimism, base } from '@reown/appkit/networks'
 export const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID!
 if (!projectId) throw new Error('REOWN project id missing')
 
-export const networks = [optimism, base, lisk]
+export const networks = [optimism, lisk]
 
 /** WagmiAdapter builds the wagmi config for us */
 export const wagmiAdapter = new WagmiAdapter({
@@ -21,7 +21,6 @@ export const wagmiAdapter = new WagmiAdapter({
 
   transports: {
     [optimism.id]: http("https://mainnet.optimism.io"),
-    [base.id]:     http("https://mainnet.base.org"),
     [lisk.id]:     http('https://rpc.api.lisk.com'),
   }
 

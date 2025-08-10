@@ -13,8 +13,8 @@ import {
 import { getTvlUsd, MORPHO_VAULTS } from '@/lib/tvl'
 import { aaveSupplyApy, compoundSupplyApy } from '@/lib/positions'
 
-type EvmChain = 'optimism' | 'base'
-type Chain = 'optimism' | 'base' | 'lisk'
+type EvmChain = 'optimism' 
+type Chain = 'optimism' | 'lisk'
 
 const isZero = (addr: string) =>
   addr.toLowerCase() === '0x0000000000000000000000000000000000000000'
@@ -46,7 +46,7 @@ async function fetchMerklLiskMorphoRewards(): Promise<Record<string, number>> {
 
 // Aave v3
 async function buildAave(): Promise<YieldSnapshot[]> {
-  const chains: EvmChain[] = ['optimism', 'base']
+  const chains: EvmChain[] = ['optimism']
   const tokens = ['USDC', 'USDT'] as const
 
   const rows: YieldSnapshot[] = []
@@ -81,7 +81,7 @@ async function buildAave(): Promise<YieldSnapshot[]> {
 
 // Comet
 async function buildComet(): Promise<YieldSnapshot[]> {
-  const chains: EvmChain[] = ['optimism', 'base']
+  const chains: EvmChain[] = ['optimism']
   const tokens = ['USDC', 'USDT'] as const
 
   const rows: YieldSnapshot[] = []

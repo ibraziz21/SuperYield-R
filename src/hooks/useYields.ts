@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { fetchYields } from '@/lib/fetchYields'
 
-export type Chain = 'optimism' | 'base' | 'lisk'
+export type Chain = 'optimism' | 'lisk'
 export type Protocol = 'Aave v3' | 'Compound v3' | 'Morpho Blue'
 export type ProtocolKey = 'aave-v3' | 'compound-v3' | 'morpho-blue'
 export type TokenSym = 'USDC' | 'USDT' | 'USDCe' | 'USDT0' | 'WETH'

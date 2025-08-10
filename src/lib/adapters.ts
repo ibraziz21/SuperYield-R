@@ -6,7 +6,7 @@ import { ADAPTER_KEYS, type AdapterKey } from './constants'
 export function adapterKeyForSnapshot(s: YieldSnapshot): AdapterKey {
   if (s.protocolKey === 'aave-v3') {
     if (s.chain === 'optimism') return ADAPTER_KEYS.aaveOptimism
-    if (s.chain === 'base')     return ADAPTER_KEYS.aaveBase
+
     throw new Error(`Aave not supported on chain ${s.chain}`)
   }
 
@@ -16,10 +16,7 @@ export function adapterKeyForSnapshot(s: YieldSnapshot): AdapterKey {
       if (s.token === 'USDT') return ADAPTER_KEYS.cometOpUSDT
       throw new Error(`Compound(optimism) token not supported: ${s.token}`)
     }
-    if (s.chain === 'base') {
-      if (s.token === 'USDC') return ADAPTER_KEYS.cometBaseUSDC
-      throw new Error(`Compound(base) token not supported: ${s.token}`)
-    }
+   
     throw new Error(`Compound not supported on chain ${s.chain}`)
   }
 

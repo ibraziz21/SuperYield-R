@@ -1,7 +1,7 @@
 'use client'
 import React, { type ReactNode } from 'react'
 import { createAppKit } from '@reown/appkit/react'
-import { optimism, base,lisk } from '@reown/appkit/networks'
+import { optimism,lisk } from '@reown/appkit/networks'
 import { wagmiAdapter, projectId } from '@/config'
 
 import { cookieToInitialState, WagmiProvider, type Config } from 'wagmi'
@@ -21,7 +21,7 @@ if (!APP_URL || !APP_URL.startsWith('http')) {
 createAppKit({
   projectId,
   adapters: [wagmiAdapter],
-  networks: [optimism, base, lisk],
+  networks: [optimism, lisk],
   defaultNetwork: optimism,
   metadata: {
     name: 'SuperYield-R',

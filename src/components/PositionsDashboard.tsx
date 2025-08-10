@@ -10,13 +10,7 @@ import { formatUnits } from 'viem'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Loader2 } from 'lucide-react'
 
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
 import type { Position } from '@/lib/positions'
 import { TokenAddresses, COMET_POOLS } from '@/lib/constants'
@@ -30,23 +24,20 @@ import { Button } from '@/components/ui/button'
 const PIE_COLORS = ['#16a34a', '#7c3aed', '#f97316', '#38bdf8', '#ef4444']
 
 /** Per-position decimals:
- *  - Aave v3: 8 (Aave base units)
- *  - Compound v3: 6 (USDC/USDT)
+ *  - Aave v3 (OP): 8 (Aave base units)
+ *  - Compound v3 (OP): 6 (USDC/USDT)
  *  - Morpho Blue (Lisk): token-based (WETH=18, USDCe/USDT0=6)
  */
 function decimalsFor(p: Position): number {
   if (p.protocol === 'Aave v3') return 8
   if (p.protocol === 'Compound v3') return 6
-  // Morpho Blue
+  // Morpho Blue on Lisk
   if (p.token === 'WETH') return 18
   return 6
 }
 
-const isOpBase = (c: Position['chain']): c is 'optimism' | 'base' =>
-  c === 'optimism' || c === 'base'
-
-const isCometToken = (t: Position['token']): t is 'USDC' | 'USDT' =>
-  t === 'USDC' || t === 'USDT'
+const isOptimism = (c: Position['chain']): c is 'optimism' => c === 'optimism'
+const isCometToken = (t: Position['token']): t is 'USDC' | 'USDT' => t === 'USDC' || t === 'USDT'
 
 /** bigint -> number using decimals */
 const bnToNum = (bn: bigint, decimals: number) => Number(bn) / 10 ** decimals
@@ -60,11 +51,9 @@ export const PositionsDashboard: FC = () => {
   const { apy: portfolioApy, loading: apyLoading, totalUsd } = usePortfolioApy()
 
   const forecast =
-    !apyLoading && totalUsd != null
-      ? rewardForecast(totalUsd, portfolioApy)
-      : null
+    !apyLoading && totalUsd != null ? rewardForecast(totalUsd, portfolioApy) : null
 
-  // Aggregate totals & pie data
+  // Aggregate totals & pie data (raw token units summed per protocol)
   const { totalSupplied, protocolTotals, pieData } = useMemo(() => {
     if (!data) {
       return {
@@ -109,9 +98,7 @@ export const PositionsDashboard: FC = () => {
       <div className="grid gap-6 sm:grid-cols-3">
         <StatCard
           title="Total Supplied"
-          value={`$${totalSupplied.toLocaleString(undefined, {
-            maximumFractionDigits: 2,
-          })}`}
+          value={`$${totalSupplied.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
         />
         <StatCard
           title="Total APY"
@@ -123,9 +110,7 @@ export const PositionsDashboard: FC = () => {
           value={
             apyLoading || !forecast
               ? '—'
-              : `≈ $${forecast.yearly.toLocaleString(undefined, {
-                  maximumFractionDigits: 2,
-                })}`
+              : `≈ $${forecast.yearly.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
           }
           sub="at current APY"
         />
@@ -134,9 +119,7 @@ export const PositionsDashboard: FC = () => {
       {/* protocol allocation pie */}
       <Card className="p-6">
         <CardContent className="flex flex-col items-center">
-          <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-            Protocol allocation
-          </h3>
+          <h3 className="mb-4 text-sm font-medium text-muted-foreground">Protocol allocation</h3>
           <div className="h-64 w-full max-w-md">
             <ResponsiveContainer>
               <PieChart>
@@ -155,9 +138,7 @@ export const PositionsDashboard: FC = () => {
                 </Pie>
                 <Tooltip
                   formatter={(v: number) =>
-                    `$${v.toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    })}`
+                    `$${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
                   }
                 />
               </PieChart>
@@ -166,16 +147,14 @@ export const PositionsDashboard: FC = () => {
         </CardContent>
       </Card>
 
-      {/* per-protocol breakdown (includes Morpho Blue / Lisk) */}
+      {/* per-protocol breakdown (Aave/Compound on OP; Morpho Blue on Lisk) */}
       <div className="space-y-8">
         {Object.entries(protocolTotals).map(([protocol]) => (
           <div key={protocol} className="space-y-4">
             <h3 className="text-lg font-semibold tracking-tight">{protocol}</h3>
             <p className="text-sm text-muted-foreground">
               $
-              {protocolTotals[protocol].toLocaleString(undefined, {
-                maximumFractionDigits: 2,
-              })}{' '}
+              {protocolTotals[protocol].toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
               supplied
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -221,36 +200,30 @@ const AssetCard: FC<AssetCardProps> = ({ p, onSupply, onWithdraw }) => {
   const decimals = decimalsFor(p)
   const amt = formatUnits(p.amount, decimals)
 
-  // Resolve Aave asset (op/base only)
+  // Resolve Aave asset (Optimism only)
   let assetAddress: `0x${string}` | undefined
-  if (p.protocol === 'Aave v3' && isOpBase(p.chain)) {
-    const map = TokenAddresses[p.token] as {
-      optimism: `0x${string}`
-      base: `0x${string}`
-    }
-    assetAddress = map[p.chain]
+  if (p.protocol === 'Aave v3' && isOptimism(p.chain) && (p.token === 'USDC' || p.token === 'USDT')) {
+    const map = TokenAddresses[p.token] as { optimism: `0x${string}` }
+    assetAddress = map.optimism
   }
 
-  // Resolve Comet pool (op/base + USDC|USDT only)
+  // Resolve Comet pool (Optimism + USDC/USDT only)
   let cometAddress: `0x${string}` | undefined
-  if (p.protocol === 'Compound v3' && isOpBase(p.chain) && isCometToken(p.token)) {
-    cometAddress = COMET_POOLS[p.chain][p.token]
+  if (p.protocol === 'Compound v3' && isOptimism(p.chain) && isCometToken(p.token)) {
+    cometAddress = COMET_POOLS.optimism[p.token]
   }
 
-  /** 
-   * Always call the hook in the same order.
-   * For Morpho Blue (or unsupported combos), we pass a dummy protocol/chain and keep `enabled` false internally
-   * because `assetAddress`/`cometAddress` will be `undefined`.
+  /**
+   * APY: only fetch for Optimism Aave/Compound. For Lisk/Morpho (or unsupported),
+   * keep it undefined so UI shows "APY —".
    */
-  const normalizedProtocolForHook: 'Aave v3' | 'Compound v3' =
-    p.protocol === 'Compound v3' ? 'Compound v3' : 'Aave v3'
-  const chainForHook: 'optimism' | 'base' = isOpBase(p.chain) ? p.chain : 'optimism'
+  const shouldFetchApy =
+    isOptimism(p.chain) && (p.protocol === 'Aave v3' || p.protocol === 'Compound v3')
 
-  const { data: apyMaybe } = useApy(normalizedProtocolForHook, {
-    chain: chainForHook,
-    asset: assetAddress,
-    comet: cometAddress,
-  })
+  const { data: apyMaybe } = useApy(
+    (p.protocol === 'Compound v3' ? 'Compound v3' : 'Aave v3'),
+    { chain: 'optimism', asset: assetAddress, comet: cometAddress }
+  )
 
   const apy = typeof apyMaybe === 'number' ? apyMaybe : null
 

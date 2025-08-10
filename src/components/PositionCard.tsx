@@ -9,7 +9,7 @@ import { useApy } from '@/hooks/useAPY'
 import { useYields } from '@/hooks/useYields'
 import { TokenAddresses, COMET_POOLS } from '@/lib/constants'
 
-type EvmChain = 'optimism' | 'base' | 'lisk'
+type EvmChain = 'optimism' | 'lisk'
 type MorphoToken = 'USDCe' | 'USDT0' | 'WETH'
 type ProtocolName = 'Aave v3' | 'Compound v3' | 'Morpho Blue'
 
@@ -30,45 +30,44 @@ interface Props {
 }
 
 function tokenDecimals(protocol: ProtocolName, token: string): number {
-  if (protocol === 'Morpho Blue') {
-    return token === 'WETH' ? 18 : 6 // lisk tokens: WETH 18, USDCe/USDT0 6
-  }
-  if (protocol === 'Aave v3') return 6 // aToken-style reporting (1e8 base units)
-  return 6 // Compound v3 balances in token units (USDC/USDT)
+  if (protocol === 'Morpho Blue') return token === 'WETH' ? 18 : 6
+  if (protocol === 'Aave v3') return 8
+  return 6 // Compound v3
 }
 
 export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
   const decs = tokenDecimals(p.protocol as ProtocolName, p.token)
   const amt = formatUnits(p.amount, decs)
 
-  // Resolve addresses for Aave/Compound (never for Lisk/Morpho)
+  // Resolve addresses for Aave/Compound (Optimism only)
   let assetAddress: `0x${string}` | undefined
   let cometAddress: `0x${string}` | undefined
 
-  if (p.protocol === 'Aave v3' && (p.chain === 'optimism' || p.chain === 'base')) {
+  if (p.protocol === 'Aave v3' && p.chain === 'optimism') {
     if (p.token === 'USDC' || p.token === 'USDT') {
-      const tokenMap = TokenAddresses[p.token] as {
-        optimism: `0x${string}`
-        base: `0x${string}`
-      }
-      assetAddress = tokenMap[p.chain]
+      const tokenMap = TokenAddresses[p.token] as { optimism: `0x${string}` }
+      assetAddress = tokenMap.optimism
     }
   }
 
   if (
     p.protocol === 'Compound v3' &&
-    (p.chain === 'optimism' || p.chain === 'base') &&
+    p.chain === 'optimism' &&
     (p.token === 'USDC' || p.token === 'USDT')
   ) {
-    cometAddress = COMET_POOLS[p.chain][p.token]
+    cometAddress = COMET_POOLS.optimism[p.token]
   }
 
-  // APY: use hook for Aave/Compound; for Morpho, read from yields snapshot
-  const { data: apyHook } = useApy(
-    p.protocol === 'Morpho Blue' ? 'Aave v3' : (p.protocol as 'Aave v3' | 'Compound v3'),
-    // for Morpho we won't use these values anyway
-    { chain: (p.chain === 'lisk' ? 'base' : p.chain) as 'optimism' | 'base', asset: assetAddress, comet: cometAddress },
-  )
+  // APY: hook for Aave/Compound; Morpho uses yields snapshot
+  const { data: apyHook } =
+    p.protocol !== 'Morpho Blue'
+      ? useApy(p.protocol as 'Aave v3' | 'Compound v3', {
+          chain: 'optimism', // only OP is used for these hooks now
+          asset: assetAddress,
+          comet: cometAddress,
+        })
+      : { data: undefined }
+
   const { yields } = useYields()
 
   const morphoApy =
@@ -80,29 +79,13 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
 
   const apy =
     p.protocol === 'Morpho Blue'
-      ? typeof morphoApy === 'number'
-        ? morphoApy
-        : undefined
-      : typeof apyHook === 'number'
-      ? apyHook
-      : undefined
+      ? (typeof morphoApy === 'number' ? morphoApy : undefined)
+      : (typeof apyHook === 'number' ? apyHook : undefined)
 
   return (
-    <Card
-      className="
-        relative overflow-hidden rounded-2xl bg-gradient-to-br
-        from-teal-50 via-white to-gray-50 p-5 shadow
-        transition hover:-translate-y-1 hover:shadow-lg
-        dark:from-white/5 dark:via-gray-900 dark:to-gray-800
-      "
-    >
+    <Card className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-50 via-white to-gray-50 p-5 shadow transition hover:-translate-y-1 hover:shadow-lg dark:from-white/5 dark:via-gray-900 dark:to-gray-800">
       <CardContent>
-        <div
-          className="
-            flex items-center justify-between text-xs uppercase
-            text-gray-500 dark:text-gray-400
-          "
-        >
+        <div className="flex items-center justify-between text-xs uppercase text-gray-500 dark:text-gray-400">
           <span>{p.chain}</span>
           {typeof apy === 'number' && (
             <span className="text-teal-600 dark:text-teal-400">{apy.toFixed(2)}%</span>

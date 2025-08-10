@@ -32,11 +32,11 @@ function isAcInput(
   p: Position,
 ): p is Position & {
   protocol: 'Aave v3' | 'Compound v3'
-  chain: 'optimism' | 'base'
+  chain: 'optimism' 
   token: 'USDC' | 'USDT'
 } {
   const protoOk = p.protocol === 'Aave v3' || p.protocol === 'Compound v3'
-  const chainOk = p.chain === 'optimism' || p.chain === 'base'
+  const chainOk = p.chain === 'optimism' 
   const tokenOk = p.token === 'USDC' || p.token === 'USDT'
   return protoOk && chainOk && tokenOk
 }

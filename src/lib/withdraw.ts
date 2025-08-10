@@ -20,7 +20,7 @@ const erc4626WithdrawAbi = [
   },
 ] as const
 
-type OpBase = 'optimism' | 'base'
+type OpBase = 'optimism' 
 
 export async function withdrawFromPool(
   snap: YieldSnapshot,
@@ -41,7 +41,7 @@ export async function withdrawFromPool(
   /* ─────────────────────────── AAVE v3 (OP/Base) ─────────────────────────── */
   if (key === 'aave-v3') {
     const chain = snap.chain as OpBase
-    if (chain !== 'optimism' && chain !== 'base')
+    if (chain !== 'optimism')
       throw new Error(`Aave withdraw only on OP/Base, got ${snap.chain}`)
 
     // Underlying token (USDC/USDT) on that chain
@@ -58,22 +58,20 @@ export async function withdrawFromPool(
       abi: aaveAbi,
       functionName: 'withdraw',               // Pool.withdraw(underlying, amount, to)
       args: [underlying, amount, owner],
-      chain: chain === 'base' ? base : optimism,
+      chain: optimism,
       account: owner,
     })
   }
 
   if (key === 'compound-v3') {
     const chain = snap.chain as OpBase
-    if (chain !== 'optimism' && chain !== 'base')
+    if (chain !== 'optimism')
       throw new Error(`Comet withdraw only on OP/Base, got ${snap.chain}`)
   
     if (snap.token !== 'USDC' && snap.token !== 'USDT')
       throw new Error(`Unsupported Comet token: ${snap.token}`)
   
     const comet = COMET_POOLS[chain][snap.token]
-    if (comet === '0x0000000000000000000000000000000000000000')
-      throw new Error(`Comet market not available for ${snap.token} on ${chain}`)
   
     // underlying ERC20 (USDC/USDT) for this chain
     const asset = TokenAddresses[snap.token][chain] as `0x${string}`
@@ -84,7 +82,7 @@ export async function withdrawFromPool(
       abi: cometAbi,
       functionName: 'withdraw',              // withdraw(address asset, uint256 amount)
       args: [asset, amount],
-      chain: chain === 'base' ? base : optimism,
+      chain: optimism,
       account: owner,
     })
   }

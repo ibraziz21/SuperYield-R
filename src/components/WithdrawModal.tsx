@@ -12,43 +12,32 @@ import { Button } from '@/components/ui/button'
 import { formatUnits } from 'viem'
 import { useAppKit } from '@reown/appkit/react'
 import { useWalletClient, useChainId, useSwitchChain } from 'wagmi'
-import { optimism, base } from 'viem/chains'
+import { optimism } from 'viem/chains'
 
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { withdrawFromPool } from '@/lib/withdraw'
 import { TokenAddresses, AAVE_POOL, COMET_POOLS } from '@/lib/constants'
-import { publicOptimism, publicBase } from '@/lib/clients'
+import { publicOptimism } from '@/lib/clients'
 import aaveAbi from '@/lib/abi/aavePool.json'
 import { erc20Abi } from 'viem'
 import { Loader2, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react'
 
 /* ──────────────────────────────────────────────────────────────── */
 
-type EvmChain = 'optimism' | 'base'
+const EXPLORER_TX_BASE = 'https://optimistic.etherscan.io/tx/'
 const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1)
 
-function clientFor(chain: EvmChain) {
-  return chain === 'base' ? publicBase : publicOptimism
-}
-
-function explorerTxBaseUrl(chain: EvmChain) {
-  return chain === 'base'
-    ? 'https://basescan.org/tx/'
-    : 'https://optimistic.etherscan.io/tx/'
-}
-
 async function getAaveSuppliedBalance(params: {
-  chain: EvmChain
   token: 'USDC' | 'USDT'
   user: `0x${string}`
 }): Promise<bigint> {
-  const { chain, token, user } = params
-  const client = clientFor(chain)
-  const pool   = AAVE_POOL[chain]
-  const asset  = (TokenAddresses[token] as Record<EvmChain, `0x${string}`>)[chain]
+  const { token, user } = params
 
-  // getReserveData(asset) -> contains aTokenAddress
-  const reserve = await client.readContract({
+  const pool  = AAVE_POOL.optimism
+  const asset = (TokenAddresses[token] as { optimism: `0x${string}` }).optimism
+
+  // getReserveData(asset) -> contains aTokenAddress (slot index differs by ABI variants)
+  const reserve = await publicOptimism.readContract({
     address: pool,
     abi: aaveAbi,
     functionName: 'getReserveData',
@@ -56,33 +45,33 @@ async function getAaveSuppliedBalance(params: {
   }) as unknown
 
   const aToken =
-    (Array.isArray(reserve) ? reserve[7] : (reserve as { aTokenAddress?: `0x${string}` }).aTokenAddress) as
+    (Array.isArray(reserve) ? reserve[7] :
+      (reserve as { aTokenAddress?: `0x${string}` }).aTokenAddress) as
     | `0x${string}`
     | undefined
 
   if (!aToken) return BigInt(0)
 
-  const bal = await client.readContract({
+  const bal = await publicOptimism.readContract({
     address: aToken,
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: [user],
   }) as bigint
 
-  return bal // token units (USDC/USDT -> 6)
+  // aToken balance is in token units (USDC/USDT -> 6)
+  return bal
 }
 
 async function getCometSuppliedBalance(params: {
-  chain: EvmChain
   token: 'USDC' | 'USDT'
   user: `0x${string}`
 }): Promise<bigint> {
-  const { chain, token, user } = params
-  const comet = COMET_POOLS[chain][token]
-  if (comet === '0x0000000000000000000000000000000000000000') return BigInt(0)
+  const { token, user } = params
+  const comet = COMET_POOLS.optimism[token]
 
-  const client = clientFor(chain)
-  const bal = await client.readContract({
+
+  const bal = await publicOptimism.readContract({
     address: comet,
     abi: [
       {
@@ -97,7 +86,7 @@ async function getCometSuppliedBalance(params: {
     args: [user],
   }) as bigint
 
-  return bal // token units (USDC/USDT -> 6)
+  return bal
 }
 
 /* ──────────────────────────────────────────────────────────────── */
@@ -109,10 +98,7 @@ interface Props {
 }
 
 /**
- * Improved UX:
- * - No alerts; fully in-modal states (idle → switching → withdrawing → success / error)
- * - Clear summaries and a success screen with optional explorer link
- * - Single "Withdraw All" action (Aave uses MAX_UINT256; Comet uses exact balance)
+ * OP-only withdraw modal for Aave v3 / Compound v3.
  */
 export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   const { open: openConnect } = useAppKit()
@@ -127,18 +113,17 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   const [supplied, setSupplied] = useState<bigint | null>(null)
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null)
 
-  // USDC/USDT on OP/Base
+  // USDC/USDT on OP
   const decimals = 6
-  const evmChain = snap.chain as EvmChain
-  const needChainId = evmChain === 'base' ? base.id : optimism.id
+  const needChainId = optimism.id
 
   const title = useMemo(() => {
-    return snap.protocolKey === 'aave-v3' ? 'Withdraw (Aave v3)' :
-           snap.protocolKey === 'compound-v3' ? 'Withdraw (Compound v3)' :
-           'Withdraw'
+    return snap.protocolKey === 'aave-v3' ? 'Withdraw (Aave v3)'
+      : snap.protocolKey === 'compound-v3' ? 'Withdraw (Compound v3)'
+      : 'Withdraw'
   }, [snap.protocolKey])
 
-  // Reset transient UI state when modal opens/changes
+  // Reset transient UI when modal opens/changes
   useEffect(() => {
     if (!open) return
     setStatus('idle')
@@ -146,10 +131,12 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
     setTxHash(null)
   }, [open, snap.id])
 
-  // Load user's supplied amount for the specific protocol/chain/token
+  // Load user's supplied amount for the specific protocol/token on OP
   useEffect(() => {
     if (!open || !walletClient) return
-    if (snap.chain !== 'optimism' && snap.chain !== 'base') {
+
+    // Only support Optimism here; return 0 for anything else
+    if (snap.chain !== 'optimism') {
       setSupplied(BigInt(0))
       return
     }
@@ -165,18 +152,10 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
         }
 
         if (snap.protocolKey === 'aave-v3') {
-          const bal = await getAaveSuppliedBalance({
-            chain: evmChain,
-            token: snap.token,
-            user,
-          })
+          const bal = await getAaveSuppliedBalance({ token: snap.token, user })
           setSupplied(bal)
         } else if (snap.protocolKey === 'compound-v3') {
-          const bal = await getCometSuppliedBalance({
-            chain: evmChain,
-            token: snap.token,
-            user,
-          })
+          const bal = await getCometSuppliedBalance({ token: snap.token, user })
           setSupplied(bal)
         } else {
           setSupplied(BigInt(0))
@@ -187,7 +166,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
         setSupplied(BigInt(0))
       }
     })()
-  }, [open, walletClient, snap.protocolKey, snap.chain, snap.token, evmChain])
+  }, [open, walletClient, snap.protocolKey, snap.chain, snap.token])
 
   async function handleWithdrawAll() {
     if (!walletClient) {
@@ -210,10 +189,10 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
 
       let amount: bigint
       if (snap.protocolKey === 'aave-v3') {
-        amount = MAX_UINT256 // withdraw all for that asset
+        amount = MAX_UINT256 // withdraw all for that asset on Aave
       } else if (snap.protocolKey === 'compound-v3') {
         if (supplied == null) throw new Error('Balance not loaded')
-        amount = supplied // exact base-asset balance
+        amount = supplied // exact asset balance for Comet
       } else {
         throw new Error(`Unsupported protocol: ${snap.protocol}`)
       }
@@ -239,7 +218,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
     status === 'withdrawing' ||
     (typeof supplied === 'bigint' && supplied === BigInt(0))
 
-  /* ─────────── UI states inside the modal ─────────── */
+  /* ─────────── UI bits ─────────── */
 
   function HeaderBar() {
     return (
@@ -248,7 +227,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           <DialogTitle className="text-base font-semibold">{title}</DialogTitle>
         </DialogHeader>
         <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">
-          {snap.chain.toUpperCase()}
+          OPTIMISM
         </span>
       </div>
     )
@@ -270,9 +249,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
         <div className="text-right">
           <div className="text-xs text-gray-500">Supplied</div>
           <div className="text-lg font-semibold">
-            {status === 'switching' || status === 'withdrawing'
-              ? '…'
-              : suppliedPretty}
+            {status === 'switching' || status === 'withdrawing' ? '…' : suppliedPretty}
           </div>
         </div>
       </div>
@@ -289,7 +266,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
         <div className="mt-2 flex items-center justify-between">
           <span className="text-gray-600">Network</span>
           <span className="font-medium">
-            {evmChain === 'base' ? 'Base' : 'Optimism'}
+            Optimism
             {switching && ' (switching…)'}
           </span>
         </div>
@@ -299,7 +276,6 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
 
   function ProgressCard() {
     const isSwitch = status === 'switching'
-    const isWithd  = status === 'withdrawing'
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-4">
         <div className="flex items-center gap-3">
@@ -331,20 +307,17 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-gray-500">Network</span>
-            <span className="font-medium">{evmChain === 'base' ? 'Base' : 'Optimism'}</span>
+            <span className="font-medium">Optimism</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-gray-500">Amount</span>
-            <span className="font-medium">
-              {/* We display the previously-read supplied amount. */}
-              {suppliedPretty} {snap.token}
-            </span>
+            <span className="font-medium">{suppliedPretty} {snap.token}</span>
           </div>
         </div>
 
         {txHash && (
           <a
-            href={`${explorerTxBaseUrl(evmChain)}${txHash}`}
+            href={`${EXPLORER_TX_BASE}${txHash}`}
             target="_blank"
             rel="noreferrer"
             className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:underline"
@@ -364,9 +337,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           <AlertTriangle className="h-5 w-5" />
           <span className="font-semibold">Withdrawal failed</span>
         </div>
-        <p className="mt-2 text-xs text-red-700 break-words">
-          {error ?? 'Unknown error'}
-        </p>
+        <p className="mt-2 text-xs text-red-700 break-words">{error ?? 'Unknown error'}</p>
       </div>
     )
   }
@@ -381,20 +352,15 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
         <div className="space-y-4 p-5">
           <TokenCard />
 
-          {/* Idle / Switching / Withdrawing → show live summary */}
           {(status === 'idle' || status === 'switching' || status === 'withdrawing') && (
             <>
               <SummaryCard />
               {(status === 'switching' || status === 'withdrawing') && <ProgressCard />}
               {switchErr && (
-                <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
-                  {switchErr.message}
-                </p>
+                <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">{switchErr.message}</p>
               )}
               {error && (
-                <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
-                  {error}
-                </p>
+                <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">{error}</p>
               )}
 
               <div className="flex items-center justify-end gap-3 pt-2">
@@ -437,29 +403,25 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
             </>
           )}
 
-          {/* Success */}
           {status === 'success' && (
             <>
               <SuccessCard />
               <div className="flex items-center justify-end pt-2">
-                <Button onClick={onClose} className="rounded-full bg-teal-600 hover:bg-teal-500" title={'Done'}>
+                <Button onClick={onClose} className="rounded-full bg-teal-600 hover:bg-teal-500" title="Done">
                   Done
                 </Button>
               </div>
             </>
           )}
 
-          {/* Error */}
           {status === 'error' && (
             <>
               <ErrorCard />
               <div className="flex items-center justify-end gap-3 pt-2">
-                <Button variant="secondary" onClick={onClose} className="rounded-full" title={'Close'}>
+                <Button variant="secondary" onClick={onClose} className="rounded-full" title="Close">
                   Close
                 </Button>
-                <Button
-                  onClick={handleWithdrawAll}
-                  className="rounded-full bg-teal-600 hover:bg-teal-500" title={'Try Again'}                >
+                <Button onClick={handleWithdrawAll} className="rounded-full bg-teal-600 hover:bg-teal-500" title="Try Again">
                   Try again
                 </Button>
               </div>

@@ -42,9 +42,6 @@ function chainChipStyles(chain: string) {
     case 'optimism':
     case 'Optimism':
       return 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300'
-    case 'base':
-    case 'Base':
-      return 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
     case 'lisk':
     case 'Lisk':
       return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'

@@ -3,7 +3,7 @@ import { publicOptimism, publicBase } from './clients'
 import { AAVE_POOL, TokenAddresses } from './constants'
 import aavePoolAbi from '@/lib/abi/aavePool.json'
 
-type Evm = 'optimism' | 'base'
+type Evm = 'optimism' 
 
 const clientFor = (c: Evm) => (c === 'optimism' ? publicOptimism : publicBase)
 

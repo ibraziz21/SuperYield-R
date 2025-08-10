@@ -23,9 +23,9 @@ import aavePoolAbi from '@/lib/abi/aavePool.json'
 /* Aave helpers & addresses                                                   */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-export const AAVE_UI_POOL_DATA_PROVIDER: Record<'optimism' | 'base', `0x${string}`> = {
+export const AAVE_UI_POOL_DATA_PROVIDER: Record<'optimism' , `0x${string}`> = {
   optimism: '0xE92cd6164CE7DC68e740765BC1f2a091B6CBc3e4',
-  base:     '0x68100bD5345eA474D93577127C11F39FF8463e93',
+
 }
 
 const aavePoolListAbi = [
@@ -81,8 +81,8 @@ export const MORPHO_VAULTS: Record<'USDCe' | 'USDT0' | 'WETH', `0x${string}`> = 
 /* Utils                                                                       */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-function rpc(chain: 'optimism' | 'base' | 'lisk') {
-  return chain === 'optimism' ? publicOptimism : chain === 'base' ? publicBase : publicLisk
+function rpc(chain: 'optimism'  | 'lisk') {
+  return chain === 'optimism' ? publicOptimism : publicLisk
 }
 
 const RAY = BigInt(1e27)
@@ -98,7 +98,7 @@ function normSym(sym: string) {
  * - Fallback: scan reserves & match symbol/decimals robustly (USDC vs USDbC etc.).
  */
 async function resolveAaveUnderlying(
-  chain: 'optimism' | 'base',
+  chain: 'optimism',
   desired: 'USDC' | 'USDT',
 ): Promise<`0x${string}` | null> {
   const c  = rpc(chain)
@@ -106,7 +106,7 @@ async function resolveAaveUnderlying(
 
   // 1) Configured address fast-path (works on OP and Base native USDC)
   try {
-    const addr = (TokenAddresses[desired] as Record<'optimism' | 'base', `0x${string}`>)[chain]
+    const addr = (TokenAddresses[desired] as Record<'optimism' , `0x${string}`>)[chain]
     await c.readContract({ address: pl, abi: aavePoolAbi, functionName: 'getReserveData', args: [addr] })
     return addr
   } catch { /* fallthrough */ }
@@ -158,7 +158,7 @@ async function resolveAaveUnderlying(
 }
 
 /** Aave TVL in USD for stables = scaledTotalSupply * liquidityIndex / RAY (decimals=6) */
-async function aaveStableTvlUsd(chain: 'optimism' | 'base', token: 'USDC' | 'USDT'): Promise<number> {
+async function aaveStableTvlUsd(chain: 'optimism' , token: 'USDC' | 'USDT'): Promise<number> {
   try {
     const c    = rpc(chain)
     const pool = AAVE_POOL[chain]
@@ -213,7 +213,7 @@ async function aaveStableTvlUsd(chain: 'optimism' | 'base', token: 'USDC' | 'USD
   }
 }
 
-async function cometTvlUsd(chain: 'optimism' | 'base', token: 'USDC' | 'USDT'): Promise<number> {
+async function cometTvlUsd(chain: 'optimism' , token: 'USDC' | 'USDT'): Promise<number> {
   try {
     const c = rpc(chain)
     const comet = COMET_POOLS[chain][token]
@@ -269,26 +269,21 @@ async function morphoTvlUsd(token: 'USDCe' | 'USDT0' | 'WETH'): Promise<number> 
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 /** Helper you can use in lists to hide unsupported Aave markets. */
-export function isAaveMarketSupported(chain: 'optimism' | 'base', token: 'USDC' | 'USDT') {
-  // There is no Aave USDT market on Base
-  if (chain === 'base' && token === 'USDT') return false
-  return true
-}
+
 
 export async function getTvlUsd(p: {
   protocol: 'Aave v3' | 'Compound v3' | 'Morpho Blue'
-  chain: 'optimism' | 'base' | 'lisk'
+  chain: 'optimism' | 'lisk'
   token: TokenSymbol
 }): Promise<number> {
   try {
-    if (p.protocol === 'Aave v3' && (p.chain === 'optimism' || p.chain === 'base')) {
+    if (p.protocol === 'Aave v3' && (p.chain === 'optimism')) {
       // Only stables (USDC/USDT) for this path; skip unsupported combo.
       const t = p.token === 'USDT' ? 'USDT' : 'USDC' as 'USDC' | 'USDT'
-      if (!isAaveMarketSupported(p.chain, t)) return 0
       return await aaveStableTvlUsd(p.chain, t)
     }
 
-    if (p.protocol === 'Compound v3' && (p.chain === 'optimism' || p.chain === 'base')) {
+    if (p.protocol === 'Compound v3' && (p.chain === 'optimism')) {
       if (p.token !== 'USDC' && p.token !== 'USDT') return 0
       return await cometTvlUsd(p.chain, p.token)
     }

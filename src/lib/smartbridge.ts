@@ -8,8 +8,6 @@ import type { WalletClient } from 'viem'
 function clientFor(chain: ChainId) {
   return chain === 'optimism'
     ? publicOptimism
-    : chain === 'base'
-    ? publicBase
     : publicLisk
 }
 
@@ -52,8 +50,8 @@ export async function ensureLiquidity(
   if (!user) throw new Error('Wallet not connected')
 
   // compute balances of the *right token per chain*
-  const chains: ChainId[] = ['optimism', 'base', 'lisk']
-  const balances: Record<ChainId, bigint> = { optimism: BigInt(0), base: BigInt(0), lisk: BigInt(0) }
+  const chains: ChainId[] = ['optimism', 'lisk']
+  const balances: Record<ChainId, bigint> = { optimism: BigInt(0), lisk: BigInt(0) }
 
   await Promise.all(chains.map(async (c) => {
     try {
@@ -70,7 +68,7 @@ export async function ensureLiquidity(
 
   // Prefer OP → Lisk or Base → Lisk when target is Lisk
   const sources: ChainId[] =
-    target === 'lisk' ? ['optimism', 'base'] : ['optimism', 'base', 'lisk']
+    target === 'lisk' ? ['optimism'] : ['optimism', 'lisk']
 
   const from = sources.find((c) => balances[c] >= missing)
   if (!from) {

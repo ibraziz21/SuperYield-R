@@ -10,7 +10,7 @@ import { WithdrawModal } from '@/components/WithdrawModal'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
-type EvmChain = 'optimism' | 'base' | 'lisk'
+type EvmChain = 'optimism'| 'lisk'
 type MorphoToken = 'USDCe' | 'USDT0' | 'WETH'
 
 /** Extend the base Position shape locally to allow Morpho/Lisk too. */
@@ -30,11 +30,11 @@ interface Props {
 const PROTOCOL_TAG: Record<Props['protocol'], { title: string; hint: string }> = {
   'Aave v3': {
     title: 'Aave v3',
-    hint: 'Supply & borrow across Optimism and Base.',
+    hint: 'Supply & borrow across Optimism',
   },
   'Compound v3': {
     title: 'Compound v3',
-    hint: 'Isolated markets on Optimism and Base.',
+    hint: 'Isolated markets on Optimism',
   },
   'Morpho Blue': {
     title: 'Morpho Blue (Lisk)',
@@ -44,7 +44,6 @@ const PROTOCOL_TAG: Record<Props['protocol'], { title: string; hint: string }> =
 
 const CHAIN_LABEL: Record<EvmChain, string> = {
   optimism: 'Optimism',
-  base: 'Base',
   lisk: 'Lisk',
 }
 
@@ -57,7 +56,6 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
   /** Default chains per protocol */
   const defaultChains: Record<EvmChain, boolean> = {
     optimism: protocol !== 'Morpho Blue',
-    base: protocol !== 'Morpho Blue',
     lisk: protocol === 'Morpho Blue',
   }
 

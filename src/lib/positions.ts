@@ -20,12 +20,11 @@ import { getATokenAddress as _unused, getAaveATokenBalance } from './aave'
 /* Chains & helpers                                                 */
 /* ──────────────────────────────────────────────────────────────── */
 
-export type EvmChain = 'optimism' | 'base' | 'lisk'
+export type EvmChain = 'optimism'  | 'lisk'
 
 function pub(chain: EvmChain) {
   switch (chain) {
     case 'optimism': return publicOptimism
-    case 'base':     return publicBase
     default:         return publicLisk
   }
 }
@@ -50,7 +49,7 @@ const BPS_MULTIPLIER = BigInt(10_000)    // basis points
 
 export async function aaveSupplyApy(
   asset: `0x${string}`,
-  chain: Extract<EvmChain, 'optimism' | 'base'>,
+  chain: Extract<EvmChain, 'optimism' >,
 ): Promise<number | null> {
   const client = pub(chain)
   const pool   = AAVE_POOL[chain]
@@ -88,7 +87,7 @@ export async function aaveSupplyApy(
 
 export async function compoundSupplyApy(
   comet:  `0x${string}`,
-  chain:  Extract<EvmChain, 'optimism' | 'base'>,
+  chain:  Extract<EvmChain, 'optimism' >,
 ): Promise<number> {
   const client = pub(chain)
   const util   = await client.readContract({
@@ -114,12 +113,11 @@ export async function compoundSupplyApy(
 /* ──────────────────────────────────────────────────────────────── */
 
 async function cometSupply(
-  chain: Extract<EvmChain, 'optimism' | 'base'>,
+  chain: Extract<EvmChain, 'optimism'>,
   token: Extract<TokenSymbol, 'USDC' | 'USDT'>,
   user:  `0x${string}`,
 ): Promise<bigint> {
   const pool = COMET_POOLS[chain][token]
-  if (pool === '0x0000000000000000000000000000000000000000') return BigInt(0)
 
   const bal = await pub(chain).readContract({
     address: pool,
@@ -191,7 +189,7 @@ export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
   const tasks: Promise<Position>[] = []
 
   /* AAVE v3 – per-token balances via aToken (token units: USDC/USDT → 6) */
-  for (const chain of ['optimism', 'base'] as const) {
+  for (const chain of ['optimism'] as const) {
     for (const token of ['USDC', 'USDT'] as const) {
       tasks.push(
         getAaveATokenBalance(chain, token, user).then((amt) => ({
@@ -205,7 +203,7 @@ export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
   }
 
   /* COMPOUND v3 – per token (USDC/USDT) on optimism|base (1e6) */
-  for (const chain of ['optimism', 'base'] as const) {
+  for (const chain of ['optimism'] as const) {
     for (const token of ['USDC', 'USDT'] as const) {
       tasks.push(
         cometSupply(chain, token, user).then((amt) => ({

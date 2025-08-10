@@ -28,9 +28,8 @@ export const ADAPTER_KEYS = {
 export type AdapterKeyName = keyof typeof ADAPTER_KEYS
 
 /** Your deployed routers */
-export const ROUTERS: Record<'optimism' | 'base' | 'lisk', `0x${string}`> = {
+export const ROUTERS: Record<'optimism'| 'lisk', `0x${string}`> = {
   optimism: '0x74298D4c82f06797029b90ca7e50B1AEB9edB501',
-  base:     '0x7AE3e0e585b1663Dc876e8b36B47494166d38F2F', // ← make sure this matches your deployment
   lisk:     '0x5133C942c1b7962D62a3851Fe01876D750d02AA7',
 } as const
 
@@ -38,11 +37,11 @@ export const ROUTERS: Record<'optimism' | 'base' | 'lisk', `0x${string}`> = {
 export const TokenAddresses = {
   USDC: {
     optimism: '0x0b2c639c533813f4aa9d7837caf62653d097ff85',
-    base:     '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+
   },
   USDT: {
     optimism: '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58',
-    base:     '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2',
+  
   },
 
   USDCe: {
@@ -56,9 +55,9 @@ export const TokenAddresses = {
   },
 } as const
 
-export const AAVE_POOL: Record<'optimism' | 'base', `0x${string}`> = {
+export const AAVE_POOL: Record<'optimism', `0x${string}`> = {
   optimism: '0x794a61358d6845594f94dc1db02a252b5b4814ad',
-  base:     '0xa238dd80c259a72e81d7e4664a9801593f98d1c5',
+
 }
 
 export const COMET_POOLS = {
@@ -66,11 +65,8 @@ export const COMET_POOLS = {
     USDC: '0x2e44e174f7d53f0212823acc11c01a11d58c5bcb',
     USDT: '0x995e394b8b2437ac8ce61ee0bc610d617962b214',
   },
-  base: {
-    USDC: '0xb125e6687d4313864e53df431d5425969c15eb2f',
-    USDT: '0x0000000000000000000000000000000000000000', // not yet
-  },
-} as const satisfies Record<'optimism' | 'base', Record<'USDC' | 'USDT', `0x${string}`>>
+ 
+} as const satisfies Record<'optimism', Record<'USDC' | 'USDT', `0x${string}`>>
 
 export const MORPHO_POOLS = {
   'usdce-supply': '0xd92f564a29992251297980187a6b74faa3d50699',
@@ -78,5 +74,5 @@ export const MORPHO_POOLS = {
   'weth-supply':  '0x7cbaa98bd5e171a658fdf761ed1db33806a0d346',
 } as const
 
-export type ChainId = 'optimism' | 'base' | 'lisk'
+export type ChainId = 'optimism' | 'lisk'
 export type TokenSymbol = 'USDC' | 'USDT' | 'USDCe' | 'USDT0' | 'WETH'

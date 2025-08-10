@@ -8,20 +8,19 @@ import { publicOptimism, publicBase, publicLisk } from './clients'
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { adapterKeyForSnapshot } from './adapters' // ✅ correct import
 
-type ChainId = 'optimism' | 'base' | 'lisk'
+type ChainId = 'optimism' | 'lisk'
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 
 function pub(chain: ChainId) {
-  return chain === 'optimism' ? publicOptimism : chain === 'base' ? publicBase : publicLisk
+  return chain === 'optimism' ? publicOptimism : publicLisk
 }
 function chainObj(chain: ChainId) {
-  return chain === 'optimism' ? optimism : chain === 'base' ? base : lisk
+  return chain === 'optimism' ? optimism  : lisk
 }
 function isUSDT(addr: `0x${string}`) {
   const a = addr.toLowerCase()
   return (
-    a === '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58'.toLowerCase() || // OP USDT
-    a === '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2'.toLowerCase()    // Base USDT
+    a === '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58'.toLowerCase()  // OP USDT
   )
 }
 async function waitReceipt(chain: ChainId, hash: `0x${string}`) {
@@ -108,8 +107,8 @@ export function resolveAssetForSnapshot(
   // Aave/Comet on OP/Base
   const tokenMap = TokenAddresses[
     snap.token as Extract<TokenSymbol, 'USDC' | 'USDT'>
-  ] as Record<'optimism' | 'base', `0x${string}`>
-  return tokenMap[chain as 'optimism' | 'base']
+  ] as Record<'optimism' , `0x${string}`>
+  return tokenMap[chain as 'optimism']
 }
 
 /** Router.deposit(adapterKey, asset, amount, onBehalfOf, data) */

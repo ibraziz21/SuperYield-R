@@ -10,7 +10,7 @@ import { useQuery, UseQueryResult } from '@tanstack/react-query'
 export function useApy(
   protocol: 'Aave v3' | 'Compound v3',
   opts: {
-    chain: 'optimism' | 'base'
+    chain: 'optimism' 
     asset?: `0x${string}`   // for Aave
     comet?: `0x${string}`   // for Compound
   }
