@@ -1,7 +1,5 @@
-// src/components/ProvidersWrapper.tsx
 'use client'
-
-import '@/lib/appkit' // ensure createAppKit runs in the browser
+import '@/lib/appkit'
 import { ReactNode } from 'react'
 import { WagmiProvider, cookieToInitialState } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -10,14 +8,8 @@ import { Navbar } from '@/components/NavBar'
 
 const queryClient = new QueryClient()
 
-interface Props {
-  initialState?: string
-  children: ReactNode
-}
-
-export function ProvidersWrapper({ initialState, children }: Props) {
+export function ProvidersWrapper({ initialState, children }: { initialState?: string; children: ReactNode }) {
   const wagmiState = cookieToInitialState(wagmiConfig, initialState)
-
   return (
     <WagmiProvider config={wagmiConfig} initialState={wagmiState}>
       <QueryClientProvider client={queryClient}>

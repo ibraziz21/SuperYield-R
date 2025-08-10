@@ -9,27 +9,31 @@ if (!projectId) throw new Error('REOWN project id missing')
 
 export const networks = [optimism, base, lisk]
 
-/**  WagmiAdapter builds the wagmi config for us  */
+// Prefer explicit HTTPS RPCs (public or your own)
+// You can swap these for your provider URLs
+const rpc = {
+  [optimism.id]: optimism.rpcUrls.default.http[0],
+  [base.id]:     base.rpcUrls.default.http[0],
+  [lisk.id]:     lisk.rpcUrls.default.http[0],
+}
+
+/** WagmiAdapter builds the wagmi config for us */
 export const wagmiAdapter = new WagmiAdapter({
   projectId,
   networks,
 
-  // viem transports (per-chain RPC URLs)
   transports: {
-    [optimism.id]: http(),
-    [base.id]:     http(),
-    [lisk.id]:     http(),
+    [optimism.id]: http(rpc[optimism.id]),
+    [base.id]:     http(rpc[base.id]),
+    [lisk.id]:     http(rpc[lisk.id]),
   },
 
-  // wallet connectors
   connectors: [
-    injected(),                         // MetaMask / Brave / Rabby …
-    walletConnect({ projectId }),       // WalletConnect v2
+    injected(),
+    walletConnect({ projectId }),
   ],
 
-  // SSR cookie storage
   storage: createStorage({ storage: cookieStorage }),
 })
 
-/** Re-export the generated wagmi config */
 export const wagmiConfig = wagmiAdapter.wagmiConfig
