@@ -16,7 +16,7 @@ import { optimism, base, lisk } from 'viem/chains'
    ──────────────────────────────────────────────────────────────── */
 
 const configuredPublicClients = configurePublicClients(
-  [optimism, base, lisk],
+  [optimism, lisk],
   1000, // polling ms
   {},   // optional RPC URL overrides
   {},   // optional transport overrides
@@ -28,7 +28,6 @@ const configuredPublicClients = configurePublicClients(
 
 const CHAIN_ID: Record<ChainId, number> = {
   optimism: optimism.id,
-  base: base.id,
   lisk: lisk.id,
 }
 

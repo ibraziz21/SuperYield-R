@@ -2,7 +2,7 @@
 import { aaveSupplyApy, compoundSupplyApy } from '@/lib/positions'
 import { COMET_POOLS, TokenAddresses } from '@/lib/constants'
 
-type Chain = 'optimism' | 'base'
+type Chain = 'optimism'
 type Protocol = 'Aave v3' | 'Compound v3'
 type TokenSymbol = keyof typeof TokenAddresses // 'USDC' | 'USDT' | 'USDCe' | 'USDT0' | 'WETH'
 
@@ -29,6 +29,5 @@ export async function fetchApy(p: {
   // Compound v3 pools exist only for USDC/USDT
   if (!isCometToken(p.token)) return 0
   const comet = COMET_POOLS[p.chain][p.token]
-  if (!comet || comet === '0x0000000000000000000000000000000000000000') return 0
   return await compoundSupplyApy(comet, p.chain)
 }

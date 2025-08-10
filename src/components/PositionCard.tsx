@@ -58,29 +58,32 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
     cometAddress = COMET_POOLS.optimism[p.token]
   }
 
-  // APY: hook for Aave/Compound; Morpho uses yields snapshot
-  const { data: apyHook } =
-    p.protocol !== 'Morpho Blue'
-      ? useApy(p.protocol as 'Aave v3' | 'Compound v3', {
-          chain: 'optimism', // only OP is used for these hooks now
-          asset: assetAddress,
-          comet: cometAddress,
-        })
-      : { data: undefined }
+  const normalizedProtocol: 'Aave v3' | 'Compound v3' =
+  p.protocol === 'Compound v3' ? 'Compound v3' : 'Aave v3'
 
-  const { yields } = useYields()
 
-  const morphoApy =
-    p.protocol === 'Morpho Blue'
-      ? yields?.find(
-          (y) => y.protocolKey === 'morpho-blue' && y.chain === 'lisk' && y.token === p.token,
-        )?.apy
-      : undefined
+// ✅ Hook is always called; it just won’t fetch when disabled
+const { data: apyHook } = useApy(normalizedProtocol, {
+  chain: 'optimism',
+  asset: assetAddress,
+  comet: cometAddress,
+})
 
-  const apy =
-    p.protocol === 'Morpho Blue'
-      ? (typeof morphoApy === 'number' ? morphoApy : undefined)
-      : (typeof apyHook === 'number' ? apyHook : undefined)
+const { yields } = useYields()
+const morphoApy =
+  p.protocol === 'Morpho Blue'
+    ? yields?.find(
+        (y) =>
+          y.protocolKey === 'morpho-blue' &&
+          y.chain === 'lisk' &&
+          y.token === p.token,
+      )?.apy
+    : undefined
+
+const apy =
+  p.protocol === 'Morpho Blue'
+    ? (typeof morphoApy === 'number' ? morphoApy : undefined)
+    : (typeof apyHook === 'number' ? apyHook : undefined)
 
   return (
     <Card className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-50 via-white to-gray-50 p-5 shadow transition hover:-translate-y-1 hover:shadow-lg dark:from-white/5 dark:via-gray-900 dark:to-gray-800">
