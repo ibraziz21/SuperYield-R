@@ -30,7 +30,7 @@ export type AdapterKeyName = keyof typeof ADAPTER_KEYS
 /** Your deployed routers */
 export const ROUTERS: Record<'optimism' | 'base' | 'lisk', `0x${string}`> = {
   optimism: '0x74298D4c82f06797029b90ca7e50B1AEB9edB501',
-  base:     '0x7AE3e0e585b1663Dc876e8b36B47494166d38F2F', // ← make sure this matches your deployment
+  base:     '0x7AE3e0e585b1663Dc876e8b36B47494166d38F2F',
   lisk:     '0x5133C942c1b7962D62a3851Fe01876D750d02AA7',
 } as const
 
@@ -43,6 +43,7 @@ export const TokenAddresses = {
   USDT: {
     optimism: '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58',
     base:     '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2',
+    lisk:     '0x05d032ac25d322df992303dca074ee7392c117b9', // Lisk USDT
   },
 
   USDCe: {
@@ -76,6 +77,20 @@ export const MORPHO_POOLS = {
   'usdce-supply': '0xd92f564a29992251297980187a6b74faa3d50699',
   'usdt0-supply': '0x50cb55be8cf05480a844642cb979820c847782ae',
   'weth-supply':  '0x7cbaa98bd5e171a658fdf761ed1db33806a0d346',
+} as const
+
+/** Velodrome (Lisk) — quotes only */
+export const VELODROME_LISK = {
+  leafGaugeFactory:       '0xeAD23f606643E387a073D0EE8718602291ffaAeB',
+  leafPoolFactory:        '0x04625B046C69577EfC40e6c0Bb83CDBAfab5a55F',
+  leafPoolImplementation: '0x321f7Dfb9B2eA9131B8C17691CF6e01E5c149cA8',
+  mixedQuoter:            '0x2f7150B288ef1cc553207bD9fbd40D4e0e093B24',
+  nft:                    '0x991d5546C4B442B4c5fdc4c8B8b8d131DEB24702',
+  nftDescriptor:          '0xf13bd1AFdf4f8b394928228F8FD122DC225f9140',
+  quoter:                 '0x3FA596fAC2D6f7d16E01984897Ac04200Cb9cA05',
+  swapFeeModule:          '0xCB885Aa008031cBDb72447Bed78AF4f87a197126',
+  swapRouter:             '0x63951637d667f23D5251DEdc0f9123D22d8595be',
+  unstakedFeeModule:      '0x916e0AD2d7e3f446A26b0333Ca37A9e8972030c5',
 } as const
 
 export type ChainId = 'optimism' | 'base' | 'lisk'

@@ -6,18 +6,18 @@
 // Aave v3 (OP/Base):
 //   TVL = aToken.scaledTotalSupply * liquidityIndex / 1e27  (fallback totalSupply())
 //   Underlying detection is resilient to USDC vs USDbC symbol differences.
-//
+//   Heavy lookups memoized; reserve scans use multicall.
 // Comet (OP/Base):
 //   TVL = totalsBasic().totalSupplyBase  (stables ≈ $1)
-//
 // Morpho (Lisk):
-//   TVL = ERC-4626 totalAssets (WETH uses Coingecko price).
+//   TVL = ERC-4626 totalAssets (WETH uses Coingecko price; price memoized).
 //
 
 import { erc20Abi, formatUnits } from 'viem'
 import { publicOptimism, publicBase, publicLisk } from '@/lib/clients'
 import { AAVE_POOL, COMET_POOLS, TokenAddresses, type TokenSymbol } from '@/lib/constants'
 import aavePoolAbi from '@/lib/abi/aavePool.json'
+import { memo } from './memo'
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* Aave helpers & addresses                                                   */
@@ -92,70 +92,121 @@ function normSym(sym: string) {
   return sym.replace(/[^a-z0-9]/gi, '').toLowerCase() // e.g., 'USDbC' -> 'usdbc'
 }
 
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Memoized helpers                                                            */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/** ETH/USD price (Coingecko) – memoized 60s to avoid rate limits. */
+async function getEthUsdPrice(): Promise<number> {
+  return memo('price:eth-usd', 60_000, async () => {
+    try {
+      const res = await fetch(
+        'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
+        { cache: 'no-store' },
+      )
+      const j = await res.json()
+      return typeof j?.ethereum?.usd === 'number' ? j.ethereum.usd : 0
+    } catch {
+      return 0
+    }
+  })
+}
+
+/** Cache Aave reserveData for 5 minutes per (chain, underlying). */
+async function getAaveReserveDataCached(
+  chain: 'optimism'|'base',
+  underlying: `0x${string}`,
+): Promise<any> {
+  return memo(`aave:reserveData:${chain}:${underlying}`, 5 * 60_000, async () => {
+    const c = rpc(chain)
+    return c.readContract({
+      address: AAVE_POOL[chain],
+      abi: aavePoolAbi,
+      functionName: 'getReserveData',
+      args: [underlying],
+    })
+  })
+}
+
 /**
  * Detect the correct Aave underlying for stables (USDC or USDT) on a chain.
- * - First try your configured address (from TokenAddresses).
- * - Fallback: scan reserves & match symbol/decimals robustly (USDC vs USDbC etc.).
+ * Memoized for 24h. Scans reserves via multicall only on cache miss.
  */
 async function resolveAaveUnderlying(
   chain: 'optimism' | 'base',
   desired: 'USDC' | 'USDT',
 ): Promise<`0x${string}` | null> {
-  const c  = rpc(chain)
-  const pl = AAVE_POOL[chain]
+  return memo(`aave:underlying:${chain}:${desired}`, 24 * 60 * 60 * 1000, async () => {
+    const c  = rpc(chain)
+    const pl = AAVE_POOL[chain]
 
-  // 1) Configured address fast-path (works on OP and Base native USDC)
-  try {
-    const addr = (TokenAddresses[desired] as Record<'optimism' | 'base', `0x${string}`>)[chain]
-    await c.readContract({ address: pl, abi: aavePoolAbi, functionName: 'getReserveData', args: [addr] })
-    return addr
-  } catch { /* fallthrough */ }
+    // 1) Configured address fast-path (works on OP and Base native USDC)
+    try {
+      const addr = (TokenAddresses[desired] as Record<'optimism' | 'base', `0x${string}`>)[chain]
+      await c.readContract({ address: pl, abi: aavePoolAbi, functionName: 'getReserveData', args: [addr] })
+      return addr
+    } catch { /* fallthrough */ }
 
-  // 2) Enumerate reserves; pick by symbol (case-insensitive) + decimals
-  try {
-    const reserves = await c.readContract({
-      address: pl,
-      abi: aavePoolListAbi,
-      functionName: 'getReservesList',
-      args: [],
-    }) as readonly `0x${string}`[]
+    // 2) Enumerate reserves; fetch (symbol,decimals) in one multicall round
+    try {
+      const reserves = await c.readContract({
+        address: pl,
+        abi: aavePoolListAbi,
+        functionName: 'getReservesList',
+        args: [],
+      }) as readonly `0x${string}`[]
 
-    const targetSet = desired === 'USDC'
-      ? new Set(['usdc', 'usdbc', 'usdce', 'usdcnative'])
-      : new Set(['usdt'])
+      const calls = reserves.flatMap((addr) => ([
+        { address: addr, abi: erc20MetaAbi, functionName: 'symbol'   } as const,
+        { address: addr, abi: erc20MetaAbi, functionName: 'decimals' } as const,
+      ]))
 
-    let best: `0x${string}` | null = null
-    let bestScore = -1
+      const batched = await (c as any).multicall({
+        allowFailure: true,
+        contracts: calls,
+      }) as Array<{ status: 'success'|'reverted'; result?: unknown }>
 
-    for (const addr of reserves) {
-      try {
-        const [sym, dec] = await Promise.all([
-          c.readContract({ address: addr, abi: erc20MetaAbi, functionName: 'symbol' }) as Promise<string>,
-          c.readContract({ address: addr, abi: erc20MetaAbi, functionName: 'decimals' }) as Promise<number>,
-        ])
+      const targetSet = desired === 'USDC'
+        ? new Set(['usdc', 'usdbc', 'usdce', 'usdcnative'])
+        : new Set(['usdt'])
+
+      let best: `0x${string}` | null = null
+      let bestScore = -1
+
+      for (let i = 0; i < reserves.length; i++) {
+        const symRes = batched[i * 2]
+        const decRes = batched[i * 2 + 1]
+        if (symRes?.status !== 'success' || decRes?.status !== 'success') continue
+
+        const sym = normSym(String(symRes.result))
+        const dec = Number(decRes.result)
         if (dec !== 6) continue
-        const s = normSym(sym) // e.g., 'USDbC' => 'usdbc'
-        if (!targetSet.has(s)) continue
+        if (!targetSet.has(sym)) continue
 
-        // Score exact name first, then variants
+        // score exact symbol highest
         let score = 1
         if (desired === 'USDC') {
-          if (s === 'usdc') score = 3
-          else if (s === 'USDbC') score = 2
+          if (sym === 'usdc') score = 3
+          else if (sym === 'usdbc' || sym === 'usdce') score = 2
         } else if (desired === 'USDT') {
-          if (s === 'usdt') score = 3
+          if (sym === 'usdt') score = 3
         }
+
         if (score > bestScore) {
-          best = addr
+          best = reserves[i]
           bestScore = score
         }
-      } catch { /* ignore */ }
+      }
+      return best
+    } catch {
+      return null
     }
-    return best
-  } catch {
-    return null
-  }
+  })
 }
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* TVL calculators                                                             */
+/* ─────────────────────────────────────────────────────────────────────────── */
 
 /** Aave TVL in USD for stables = scaledTotalSupply * liquidityIndex / RAY (decimals=6) */
 async function aaveStableTvlUsd(chain: 'optimism' | 'base', token: 'USDC' | 'USDT'): Promise<number> {
@@ -165,14 +216,9 @@ async function aaveStableTvlUsd(chain: 'optimism' | 'base', token: 'USDC' | 'USD
     const underlying = await resolveAaveUnderlying(chain, token)
     if (!underlying) return 0
 
-    const res = await c.readContract({
-      address: pool,
-      abi: aavePoolAbi,
-      functionName: 'getReserveData',
-      args: [underlying],
-    }) as any
+    const res = await getAaveReserveDataCached(chain, underlying)
 
-    // liquidityIndex at [1], aTokenAddress at [8] in the tuple (or named fields)
+    // liquidityIndex at [1], aTokenAddress at [8] (or named fields)
     const liquidityIndex: bigint =
       Array.isArray(res) ? (res[1] as bigint) : (res.liquidityIndex as bigint)
     const aToken: `0x${string}` =
@@ -189,7 +235,6 @@ async function aaveStableTvlUsd(chain: 'optimism' | 'base', token: 'USDC' | 'USD
       if (scaled > BigInt(0)) {
         underlyingSupply = (scaled * liquidityIndex) / RAY
       } else {
-        // Fallback to totalSupply()
         const total = await c.readContract({
           address: aToken,
           abi: erc20Abi,
@@ -217,7 +262,7 @@ async function cometTvlUsd(chain: 'optimism' | 'base', token: 'USDC' | 'USDT'): 
   try {
     const c = rpc(chain)
     const comet = COMET_POOLS[chain][token]
-    if (comet.toLowerCase() === '0x0000000000000000000000000000000000000000') return 0
+    if (!comet || comet.toLowerCase() === '0x0000000000000000000000000000000000000000') return 0
 
     const totals = await c.readContract({
       address: comet,
@@ -227,19 +272,6 @@ async function cometTvlUsd(chain: 'optimism' | 'base', token: 'USDC' | 'USDT'): 
 
     const totalSupplyBase = totals[4]
     return Number(formatUnits(totalSupplyBase, 6))
-  } catch {
-    return 0
-  }
-}
-
-async function getEthUsdPrice(): Promise<number> {
-  try {
-    const res = await fetch(
-      'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
-      { cache: 'no-store' },
-    )
-    const j = await res.json()
-    return typeof j?.ethereum?.usd === 'number' ? j.ethereum.usd : 0
   } catch {
     return 0
   }
@@ -283,7 +315,7 @@ export async function getTvlUsd(p: {
   try {
     if (p.protocol === 'Aave v3' && (p.chain === 'optimism' || p.chain === 'base')) {
       // Only stables (USDC/USDT) for this path; skip unsupported combo.
-      const t = p.token === 'USDT' ? 'USDT' : 'USDC' as 'USDC' | 'USDT'
+      const t = (p.token === 'USDT' ? 'USDT' : 'USDC') as 'USDC' | 'USDT'
       if (!isAaveMarketSupported(p.chain, t)) return 0
       return await aaveStableTvlUsd(p.chain, t)
     }

@@ -15,8 +15,7 @@ export async function getBalance(
     args: [user],
   }) as bigint
 
-  return bal;
-
+  return bal
 }
 
 export async function getDualBalances(
