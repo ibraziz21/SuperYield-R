@@ -1,6 +1,7 @@
 // src/components/DepositModal.tsx
 'use client'
 
+import { quoteUsdceOnLisk, smartQuoteUsdt0Lisk } from '@/lib/quotes'
 import { FC, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Dialog,
@@ -289,22 +290,25 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     }
   }, [open, walletClient, snap.protocolKey, snap.token])
 
-  /* ---------------- Bridge quote (if cross-chain) ---------------- */
   useEffect(() => {
     if (!walletClient || !amount) {
       setRoute(null); setFee(BigInt(0)); setReceived(BigInt(0)); setQuoteError(null)
       return
     }
-
+  
     const dest = snap.chain as EvmChain
     const amt  = parseUnits(amount, tokenDecimals)
-
-    // choose source: prefer enough on OP, then Base, else the larger one
+  
+    // what the token becomes on the destination chain (crucial for Lisk)
+    const destOutSymbol = mapCrossTokenForDest(snap.token, dest)
+  
+    // choose source (OP/Base) exactly as you had
     const src: Extract<EvmChain, 'optimism' | 'base'> =
       (opBal ?? BigInt(0)) >= amt ? 'optimism'
       : (baBal ?? BigInt(0)) >= amt ? 'base'
       : ((opBal ?? BigInt(0)) >= (baBal ?? BigInt(0)) ? 'optimism' : 'base')
-
+  
+    // if user is already on the destination chain, it's purely on-chain
     if (src === dest) {
       setRoute('On-chain')
       setFee(BigInt(0))
@@ -312,14 +316,59 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       setQuoteError(null)
       return
     }
-
-    const outSymbol = mapCrossTokenForDest(snap.token, dest)
+  
+    // ── LISK: USDT0 path (USDT bridge + Velodrome USDT->USDT0) ───────────────
+    if (dest === 'lisk' && destOutSymbol === 'USDT0') {
+      smartQuoteUsdt0Lisk({
+        amountIn: amt,
+        opBal,
+        baBal,
+        liUSDT:  liBalUSDT  ?? BigInt(0),
+        liUSDT0: liBalUSDT0 ?? BigInt(0),
+      })
+        .then(q => {
+          setRoute(q.route)
+          setFee(q.bridgeFee)
+          setReceived(q.receivedUSDT0)
+          setQuoteError(q.error) // non-null when swap-only; keeps Confirm disabled until swap is wired
+        })
+        .catch(() => {
+          setRoute(null); setFee(BigInt(0)); setReceived(BigInt(0))
+          setQuoteError('Could not fetch quotes')
+        })
+      return
+    }
+  
+    // ── LISK: USDCe path (Across USDC → USDCe) ───────────────────────────────
+    if (dest === 'lisk' && destOutSymbol === 'USDCe') {
+      // if you already have enough USDCe on Lisk, no bridge
+      if ((liBal ?? BigInt(0)) >= amt) {
+        setRoute('On-chain')
+        setFee(BigInt(0))
+        setReceived(amt)
+        setQuoteError(null)
+        return
+      }
+      quoteUsdceOnLisk({ amountIn: amt, opBal, baBal })
+        .then(q => {
+          setRoute(q.route)
+          setFee(q.bridgeFee)
+          setReceived(q.bridgeOutUSDCe)
+          setQuoteError(null)
+        })
+        .catch(() => {
+          setRoute(null); setFee(BigInt(0)); setReceived(BigInt(0))
+          setQuoteError('Could not fetch bridge quote')
+        })
+      return
+    }
+  
+    // ── Generic fallback (unchanged) ─────────────────────────────────────────
     const inputToken  = tokenAddrFor(snap.token, src)
-    const outputToken = tokenAddrFor(outSymbol, dest)
-
+    const outputToken = tokenAddrFor(destOutSymbol, dest)
     const srcId  = src === 'optimism' ? optimism.id : base.id
     const destId = chainIdOf(dest)
-
+  
     acrossClient.getQuote({
       route: { originChainId: srcId, destinationChainId: destId, inputToken, outputToken },
       inputAmount: amt,
@@ -338,7 +387,11 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       setRoute(null); setFee(BigInt(0)); setReceived(BigInt(0))
       setQuoteError('Could not fetch bridge quote')
     })
-  }, [amount, walletClient, opBal, baBal, snap.chain, snap.token, tokenDecimals])
+  
+  // include Lisk balances so we re-evaluate once they load
+  }, [amount, walletClient, opBal, baBal, liBal, liBalUSDT, liBalUSDT0, snap.chain, snap.token, tokenDecimals])
+  
+
 
   /* ---------------- Actions ---------------- */
   async function handleConfirm() {
@@ -626,8 +679,8 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
             {/* Progress */}
             {showProgress && (
               <div className="space-y-3">
-                <StepCard current={step} label="Bridging liquidity"   k="bridging"     visible={route && route !== 'On-chain'} />
-                <StepCard current={step} label="Waiting for funds"    k="waitingFunds" visible={route && route !== 'On-chain'} />
+                <StepCard current={step} label="Bridging liquidity"   k="bridging"     visible={(route !== 'On-chain')} />
+                <StepCard current={step} label="Waiting for funds"    k="waitingFunds" visible={ route !== 'On-chain'} />
                 <StepCard current={step} label="Switching network"    k="switching"    visible />
                 <StepCard current={step} label="Depositing to protocol" k="depositing"   visible />
               </div>
