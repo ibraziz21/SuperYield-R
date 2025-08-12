@@ -221,15 +221,9 @@ export function Navbar() {
           <div className="mx-auto w-full max-w-6xl px-3 pb-3">
             <nav className="mt-2 grid gap-1">
               <ActiveLink href="/">Dashboard</ActiveLink>
-              <ActiveLink href="/positions">Positions</ActiveLink>
-              <a
-                href="#"
-                className="rounded-full px-3 py-1 text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Docs
-              </a>
+              <ActiveLink href="/markets"> Markets</ActiveLink>
+              <ActiveLink href="/docs"> Docs</ActiveLink>
+              
             </nav>
 
             {!address && (
