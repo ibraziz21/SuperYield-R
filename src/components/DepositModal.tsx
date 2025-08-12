@@ -2,6 +2,10 @@
 'use client'
 
 import { quoteUsdceOnLisk, smartQuoteUsdt0Lisk } from '@/lib/quotes'
+// imports (add)
+import { getSugarPlanUsdtToUsdt0, executeSugarPlan, ensureAllowanceTo } from '@/lib/sugar'
+import type { Address } from 'viem'
+
 import { FC, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Dialog,
@@ -166,7 +170,7 @@ interface DepositModalProps {
   snap: YieldSnapshot
 }
 
-type FlowStep = 'idle' | 'bridging' | 'waitingFunds' | 'switching' | 'depositing' | 'success' | 'error'
+type FlowStep = 'idle' | 'bridging' | 'waitingFunds' | 'switching' | 'depositing' | 'success' | 'error' |'swapping'
 
 export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => {
   const { open: openConnect } = useAppKit()
@@ -177,6 +181,10 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
   const [amount, setAmount] = useState('')
 
   // Wallet balances
+
+const [sugarAmountOut, setSugarAmountOut] = useState<bigint | null>(null)
+const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${string}`; inputs: `0x${string}`[]; value: string }>(null)
+
   const [opBal, setOpBal] = useState<bigint | null>(null)
   const [baBal, setBaBal] = useState<bigint | null>(null)
   const [liBal, setLiBal] = useState<bigint | null>(null)
@@ -319,22 +327,37 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
   
     // ── LISK: USDT0 path (USDT bridge + Velodrome USDT->USDT0) ───────────────
     if (dest === 'lisk' && destOutSymbol === 'USDT0') {
-      smartQuoteUsdt0Lisk({
-        amountIn: amt,
-        opBal,
-        baBal,
-        liUSDT:  liBalUSDT  ?? BigInt(0),
-        liUSDT0: liBalUSDT0 ?? BigInt(0),
-      })
-        .then(q => {
-          setRoute(q.route)
-          setFee(q.bridgeFee)
-          setReceived(q.receivedUSDT0)
-          setQuoteError(q.error) // non-null when swap-only; keeps Confirm disabled until swap is wired
+      const need = amt
+      const have0 = liBalUSDT0 ?? BigInt(0)
+      const toSwap = need > have0 ? (need - have0) : BigInt(0)
+    
+      if (toSwap === BigInt(0)) {
+        setRoute('On-chain')
+        setFee(BigInt(0))
+        setReceived(need)
+        setSugarAmountOut(null)
+        setSugarPlan(null)
+        setQuoteError(null)
+        return
+      }
+    
+      const acct = walletClient.account!.address as Address
+      getSugarPlanUsdtToUsdt0(toSwap, acct, { slippage: 0.003 })
+        .then(({ amountOut, plan }) => {
+          setRoute('On-chain') // swap is local on Lisk
+          setFee(BigInt(0))
+          setSugarAmountOut(amountOut)
+          setSugarPlan(plan)
+          setReceived(have0 + amountOut) // show final expected USDT0
+          setQuoteError(null)
         })
         .catch(() => {
-          setRoute(null); setFee(BigInt(0)); setReceived(BigInt(0))
-          setQuoteError('Could not fetch quotes')
+          setRoute(null)
+          setFee(BigInt(0))
+          setReceived(BigInt(0))
+          setSugarAmountOut(null)
+          setSugarPlan(null)
+          setQuoteError('Could not fetch swap plan')
         })
       return
     }
@@ -393,59 +416,92 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
   
 
 
-  /* ---------------- Actions ---------------- */
   async function handleConfirm() {
     if (!walletClient) {
       openConnect()
       return
     }
-
+  
     setError(null)
-
+  
     try {
       const inputAmt = parseUnits(amount || '0', tokenDecimals)
       const dest = snap.chain as EvmChain
       const destId = chainIdOf(dest)
       const user = walletClient.account!.address as `0x${string}`
-
+  
+      // 1) Bridge (if any) and wait for funds to arrive on dest
       if (!liquidityEnsured && route && route !== 'On-chain') {
         setStep('bridging')
-
+  
         const outSymbol = mapCrossTokenForDest(snap.token, dest)
         const destToken = tokenAddrFor(outSymbol, dest)
+  
+        // snapshot starting dest balance
         destStartBal.current = await readWalletBalance(dest, destToken, user)
-
+  
+        // perform bridge
         await ensureLiquidity(snap.token, inputAmt, dest, walletClient)
         setLiquidityEnsured(true)
-
+  
+        // wait for bridge funds
         setStep('waitingFunds')
         await waitForFunds(dest, destToken, user, destStartBal, destCurrBal)
       } else {
         setLiquidityEnsured(true)
       }
-
+  
+      // 2) If target is USDT0 on Lisk and we don't have enough yet → swap USDT→USDT0 using Sugar (user signs)
+      const destTokenLabel = mapCrossTokenForDest(snap.token, dest)
+      if (dest === 'lisk' && mapCrossTokenForDest(snap.token, dest) === 'USDT0') {
+        const usdt0Addr = tokenAddrFor('USDT0', 'lisk')
+        const have0Now = await readWalletBalance('lisk', usdt0Addr, user)
+        if (have0Now < inputAmt) {
+          const toSwap = inputAmt - have0Now
+          // ensure we have a fresh plan for exactly toSwap
+          let plan = sugarPlan
+          if (!plan || (sugarAmountOut == null)) {
+            const acct = walletClient.account!.address as Address
+            const { amountOut, plan: freshPlan } = await getSugarPlanUsdtToUsdt0(toSwap, acct, { slippage: 0.003 })
+            setSugarAmountOut(amountOut); setSugarPlan(freshPlan)
+            plan = freshPlan
+          }
+  
+          // Approve swapper if needed (planner uses router that pulls tokens from msg.sender)
+          const usdtAddr = tokenAddrFor('USDT', 'lisk')
+          await ensureAllowanceTo(walletClient, usdtAddr as Address, user, plan!.to, toSwap)
+  
+          setStep('swapping')
+          await executeSugarPlan(walletClient, plan!)
+  
+          // wait until USDT0 increases
+          destStartBal.current = have0Now
+          setStep('waitingFunds')
+          await waitForFunds('lisk', usdt0Addr, user, destStartBal, destCurrBal)
+        }
+      }
+  
+      // 3) Switch to destination chain (if needed)
       if (chainId !== destId && switchChainAsync) {
         setStep('switching')
         await switchChainAsync({ chainId: destId })
       }
-
-      let toDeposit: bigint
-      if (route && route !== 'On-chain') {
-        const delta = destCurrBal.current - destStartBal.current
-        toDeposit = delta > BigInt(0) ? delta : received > BigInt(0) ? received : inputAmt
-      } else {
-        toDeposit = received > BigInt(0) ? received : inputAmt
-      }
-
+  
+      // 4) Deposit: read fresh balance of the destination token and deposit up to the intended amount
+      const finalTokenAddr = tokenAddrFor(mapCrossTokenForDest(snap.token, dest), dest)
+      const finalBal = await readWalletBalance(dest, finalTokenAddr, user)
+      const toDeposit = finalBal >= inputAmt ? inputAmt : finalBal
+  
       setStep('depositing')
       await depositToPool(snap, toDeposit, walletClient)
-
+  
       setStep('success')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setStep('error')
     }
   }
+  
 
   async function waitForFunds(
     dest: EvmChain,
@@ -682,6 +738,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                 <StepCard current={step} label="Bridging liquidity"   k="bridging"     visible={(route !== 'On-chain')} />
                 <StepCard current={step} label="Waiting for funds"    k="waitingFunds" visible={ route !== 'On-chain'} />
                 <StepCard current={step} label="Switching network"    k="switching"    visible />
+                <StepCard current={step} label="Swapping on Lisk" k="swapping" visible={destTokenLabel === 'USDT0' && snap.chain === 'lisk'} />
                 <StepCard current={step} label="Depositing to protocol" k="depositing"   visible />
               </div>
             )}
@@ -786,7 +843,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
 
 function StepCard(props: { current: FlowStep, k: Exclude<FlowStep, 'idle'|'success'|'error'>, label: string, visible?: boolean }) {
   if (!props.visible) return null
-  const order: FlowStep[] = ['bridging', 'waitingFunds', 'switching', 'depositing']
+  const order: FlowStep[] = ['bridging', 'waitingFunds', 'switching','swapping', 'depositing']
   const idx = order.indexOf(props.current)
   const my  = order.indexOf(props.k)
   const done = idx > my

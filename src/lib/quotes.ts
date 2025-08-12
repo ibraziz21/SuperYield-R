@@ -66,6 +66,8 @@ export async function quoteUsdceOnLisk(params: {
     bridgeOutUSDCe: BigInt(q.deposit.outputAmount),
   }
 }
+
+
 async function quoteAcrossUSDTtoLiskUSDT(amountIn: bigint, src: Src) {
   const inputToken  = tokenAddrFor('USDT', src)
   const outputToken = tokenAddrFor('USDT', 'lisk')
@@ -141,6 +143,32 @@ async function quoteVelodromeUSDTtoUSDT0(amountIn: bigint): Promise<bigint | nul
  *
  * Returns a single object the modal can use without changing UI.
  */
+// Helper: call our Sugar-backed API to quote USDT -> USDT0 on Lisk
+async function quoteSugarUSDTtoUSDT0(amountIn: bigint): Promise<bigint | null> {
+  try {
+    const r = await fetch('/api/sugar-quote', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ amountInWei: amountIn.toString() }),
+    })
+    const j = await r.json()
+    if (!j?.ok) return null
+    return BigInt(j.amountOut ?? 0)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Smart quote for USDT0 on Lisk using Sugar (swap) + Across (bridge if needed).
+ *
+ * Rules:
+ * 1) If liUSDT0 alone covers amount → no bridge, no swap.
+ * 2) Else if (liUSDT0 + liUSDT) covers → swap-only on Lisk (Sugar).
+ * 3) Else → bridge missing USDT from OP/Base (Across), then swap the available on Lisk (Sugar).
+ *
+ * Returns one object the modal can consume directly.
+ */
 export async function smartQuoteUsdt0Lisk(params: {
   amountIn: bigint
   opBal?: bigint | null
@@ -155,39 +183,40 @@ export async function smartQuoteUsdt0Lisk(params: {
 }> {
   const need  = params.amountIn
   const have0 = params.liUSDT0 ?? BigInt(0)
-  const haveU = params.liUSDT ?? BigInt(0)
+  const haveU = params.liUSDT  ?? BigInt(0)
 
-  // 1) Pure on-chain deposit (already USDT0)
+  // 1) Already have enough USDT0 on Lisk
   if (have0 >= need) {
     return { route: 'On-chain', bridgeFee: BigInt(0), receivedUSDT0: need, error: null }
   }
 
-  // 2) Swap-only on Lisk
+  // 2) Swap-only on Lisk (no bridge)
   if (have0 + haveU >= need) {
     const swapAmount = need - have0
-    const est = await quoteVelodromeUSDTtoUSDT0(swapAmount)
+    const est = await quoteSugarUSDTtoUSDT0(swapAmount)
     if (est == null) {
+      // Couldn’t fetch Sugar quote — return what we have and surface an error
       return { route: 'On-chain', bridgeFee: BigInt(0), receivedUSDT0: have0, error: 'Swap quote unavailable' }
     }
-    const finalOut = have0 + est
-    // We intentionally return an error to disable Confirm (swap execution not wired yet)
-    return { route: 'On-chain', bridgeFee: BigInt(0), receivedUSDT0: finalOut, error: 'Swap required (USDT→USDT0) not implemented yet' }
+    return { route: 'On-chain', bridgeFee: BigInt(0), receivedUSDT0: have0 + est, error: null }
   }
 
-  // 3) Bridge missing USDT, then swap estimate
+  // 3) Bridge missing USDT, then swap the available amount on Lisk
   const deficit = need - (have0 + haveU)
-  const src = chooseSrc(params.opBal, params.baBal, deficit)
+  const src = chooseSrc(params.opBal, params.baBal, deficit) // 'optimism' | 'base'
   const { route, fee, outUSDT } = await quoteAcrossUSDTtoLiskUSDT(deficit, src)
 
-  const totalUSDT = haveU + outUSDT
-  const swapAmount = need - have0
-  const maxSwappable = totalUSDT < swapAmount ? totalUSDT : swapAmount
+  // After bridging, how much can we actually swap?
+  const totalUSDTOnLisk = haveU + outUSDT
+  const swapNeeded = need - have0
+  const maxSwappable = totalUSDTOnLisk < swapNeeded ? totalUSDTOnLisk : swapNeeded
 
-  const est = await quoteVelodromeUSDTtoUSDT0(maxSwappable)
+  const est = await quoteSugarUSDTtoUSDT0(maxSwappable)
   if (est == null) {
+    // Bridge quote OK but swap quote failed — report only existing USDT0
     return { route, bridgeFee: fee, receivedUSDT0: have0, error: 'Swap quote unavailable' }
   }
-  const finalOut = have0 + est
-  // Also disable Confirm (swap execution not wired yet)
-  return { route, bridgeFee: fee, receivedUSDT0: finalOut, error: 'Swap required (USDT→USDT0) not implemented yet' }
+
+  return { route, bridgeFee: fee, receivedUSDT0: have0 + est, error: null }
 }
+
