@@ -300,7 +300,7 @@ export function Navbar() {
               <div className="rounded-2xl border p-3">
                 {!address ? (
                   <>
-                    <div className="mb-2 text-sm">You're not connected</div>
+                    <div className="mb-2 text-sm">You&rsquo;re not connected</div>
                     <Button
                       onClick={() => open({ view: 'Connect' })}
                       className="w-full bg-gradient-to-r from-teal-600 to-cyan-600 text-white hover:from-teal-500 hover:to-cyan-500" title={''}                    >
