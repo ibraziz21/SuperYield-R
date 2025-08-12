@@ -490,7 +490,14 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
       // 4) Deposit: read fresh balance of the destination token and deposit up to the intended amount
       const finalTokenAddr = tokenAddrFor(mapCrossTokenForDest(snap.token, dest), dest)
       const finalBal = await readWalletBalance(dest, finalTokenAddr, user)
-      const toDeposit = finalBal >= inputAmt ? inputAmt : finalBal
+
+      const netArrived = destCurrBal.current > destStartBal.current
+  ? (destCurrBal.current - destStartBal.current)
+  : 0n
+  const cap = inputAmt // user-entered max they intend to deposit
+  const toDeposit = netArrived > 0n
+    ? (netArrived > cap ? cap : netArrived)   // bridged/swapped: deposit what actually arrived (≤ input)
+    : (finalBal >= cap ? cap : finalBal)    
   
       setStep('depositing')
       await depositToPool(snap, toDeposit, walletClient)
