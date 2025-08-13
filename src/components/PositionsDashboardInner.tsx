@@ -1,3 +1,4 @@
+// src/components/PositionsDashboardInner.tsx
 'use client'
 
 import { FC, useMemo, useState } from 'react'
@@ -9,6 +10,7 @@ import { DepositModal } from '@/components/DepositModal'
 import { WithdrawModal } from '@/components/WithdrawModal'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { MORPHO_POOLS } from '@/lib/constants' // ⬅️ add this
 
 type EvmChain = 'optimism' | 'base' | 'lisk'
 type MorphoToken = 'USDCe' | 'USDT0' | 'WETH'
@@ -48,9 +50,23 @@ const CHAIN_LABEL: Record<EvmChain, string> = {
   lisk: 'Lisk',
 }
 
+/* ──────────────────────────────────────────────────────────────── */
+/* Helpers                                                          */
+/* ──────────────────────────────────────────────────────────────── */
+
+function normalizeTokenSymbol(t: string) {
+  return t.replace(/\./g, '').replace(/\s+/g, '').toLowerCase()
+}
+
+const MORPHO_VAULT_BY_TOKEN: Record<MorphoToken, `0x${string}`> = {
+  USDCe: MORPHO_POOLS['usdce-supply'] as `0x${string}`,
+  USDT0: MORPHO_POOLS['usdt0-supply'] as `0x${string}`,
+  WETH:  MORPHO_POOLS['weth-supply']  as `0x${string}`,
+}
+
 export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
   const { data: positionsRaw } = usePositions()
-  const { yields: snapshots } = useYields()
+  const { yields: snapshots, isLoading: yieldsLoading } = useYields()
 
   const positions = (positionsRaw ?? []) as unknown as PositionLike[]
 
@@ -102,19 +118,56 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
     'Morpho Blue': 'morpho-blue',
   }
 
-  /** Given a PositionLike, find matching YieldSnapshot (for APY, addresses, etc). */
+  /** Robust snapshot resolver (tolerant token match + Morpho vault fallback + safe fallback) */
   function findSnapshotForPosition(p: PositionLike): YieldSnapshot {
     const pkey = protoKey[p.protocol as Props['protocol']]
-    const snap = snapshots?.find(
-      (y) =>
-        y.chain === p.chain &&
-        y.token === (p.token as YieldSnapshot['token']) &&
-        y.protocolKey === pkey,
-    )
-    if (!snap) throw new Error('Could not find yield snapshot for position')
-    return snap
+    const normPosToken = normalizeTokenSymbol(String(p.token))
+
+    // 1) direct match (tolerant token compare)
+    const direct =
+      snapshots?.find(
+        (y) =>
+          y.chain === p.chain &&
+          y.protocolKey === pkey &&
+          normalizeTokenSymbol(String(y.token)) === normPosToken,
+      )
+
+    if (direct) return direct
+
+    // 2) Morpho: match by known vault address (poolAddress)
+    if (p.protocol === 'Morpho Blue') {
+      const vault = MORPHO_VAULT_BY_TOKEN[p.token as MorphoToken]
+      if (vault) {
+        const byVault = snapshots?.find(
+          (y) =>
+            y.protocolKey === 'morpho-blue' &&
+            y.chain === 'lisk' &&
+            y.poolAddress?.toLowerCase() === vault.toLowerCase(),
+        )
+        if (byVault) return byVault
+      }
+    }
+
+    // 3) Fallback snapshot (prevents UI crash while yields load or labels differ)
+    const fallback: YieldSnapshot = {
+      id: `fallback-${p.protocol}-${p.chain}-${String(p.token)}`,
+      chain: p.chain as any,
+      protocol: p.protocol as any,
+      protocolKey: pkey,
+      poolAddress:
+        p.protocol === 'Morpho Blue'
+          ? (MORPHO_VAULT_BY_TOKEN[p.token as MorphoToken] ?? '0x0000000000000000000000000000000000000000')
+          : '0x0000000000000000000000000000000000000000',
+      token: p.token as any,
+      apy: 0,
+      tvlUSD: 0,
+      updatedAt: new Date().toISOString(),
+      underlying: '' as const,
+    }
+    return fallback
   }
 
+  const yieldsReady = (snapshots?.length ?? 0) > 0
   const { title, hint } = PROTOCOL_TAG[protocol]
   const totalPositions = subset.length
 
@@ -182,7 +235,9 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
           </div>
         </div>
 
-        <p className="text-xs text-muted-foreground">{hint}</p>
+        <p className="text-xs text-muted-foreground">
+          {hint}{yieldsLoading ? ' • Loading yields…' : ''}
+        </p>
       </div>
 
       {/* Cards */}
@@ -192,29 +247,22 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {subset.map((p, idx) => {
-            // Withdraw disabled for Morpho Blue until implemented in lib/withdraw
-            const allowWithdraw = p.protocol !== 'Morpho Blue'
-
-            return (
-              <PositionCard
-                key={idx}
-                p={p as any}
-                onSupply={(pos) => {
-                  const snap = findSnapshotForPosition(pos as PositionLike)
-                  setDepositSnap(snap)
-                }}
-                onWithdraw={
-                  allowWithdraw
-                    ? (pos) => {
-                        const snap = findSnapshotForPosition(pos as PositionLike)
-                        setWithdrawSnap(snap)
-                      }
-                    : undefined
-                }
-              />
-            )
-          })}
+          {subset.map((p, idx) => (
+            <PositionCard
+              key={idx}
+              p={p as any}
+              onSupply={
+                yieldsReady
+                  ? (pos) => setDepositSnap(findSnapshotForPosition(pos as PositionLike))
+                  : undefined
+              }
+              onWithdraw={
+                yieldsReady
+                  ? (pos) => setWithdrawSnap(findSnapshotForPosition(pos as PositionLike))
+                  : undefined
+              }
+            />
+          ))}
         </div>
       )}
 

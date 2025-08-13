@@ -12,40 +12,53 @@ import { Button } from '@/components/ui/button'
 import { formatUnits } from 'viem'
 import { useAppKit } from '@reown/appkit/react'
 import { useWalletClient, useChainId, useSwitchChain } from 'wagmi'
-import { optimism, base } from 'viem/chains'
+import { optimism, base, lisk } from 'viem/chains'
 
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { withdrawFromPool } from '@/lib/withdraw'
 import { TokenAddresses, AAVE_POOL, COMET_POOLS } from '@/lib/constants'
-import { publicOptimism, publicBase } from '@/lib/clients'
+import { publicOptimism, publicBase, publicLisk } from '@/lib/clients'
 import aaveAbi from '@/lib/abi/aavePool.json'
 import { erc20Abi } from 'viem'
 import { Loader2, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react'
 
 /* ──────────────────────────────────────────────────────────────── */
 
-type EvmChain = 'optimism' | 'base'
+type EvmChain = 'optimism' | 'base' | 'lisk'
 const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1)
 
 function clientFor(chain: EvmChain) {
-  return chain === 'base' ? publicBase : publicOptimism
+  if (chain === 'base') return publicBase
+  if (chain === 'optimism') return publicOptimism
+  return publicLisk
 }
 
 function explorerTxBaseUrl(chain: EvmChain) {
-  return chain === 'base'
-    ? 'https://basescan.org/tx/'
-    : 'https://optimistic.etherscan.io/tx/'
+  if (chain === 'base') return 'https://basescan.org/tx/'
+  if (chain === 'optimism') return 'https://optimistic.etherscan.io/tx/'
+  return 'https://blockscout.lisk.com/tx/'
 }
 
+/** Minimal ERC-4626 read ABI (for Morpho Lisk vaults) */
+const erc4626ReadAbi = [
+  {
+    type: 'function',
+    name: 'convertToAssets',
+    stateMutability: 'view',
+    inputs: [{ name: 'shares', type: 'uint256' }],
+    outputs: [{ type: 'uint256' }],
+  },
+] as const
+
 async function getAaveSuppliedBalance(params: {
-  chain: EvmChain
+  chain: Extract<EvmChain, 'optimism' | 'base'>
   token: 'USDC' | 'USDT'
   user: `0x${string}`
 }): Promise<bigint> {
   const { chain, token, user } = params
   const client = clientFor(chain)
-  const pool   = AAVE_POOL[chain]
-  const asset  = (TokenAddresses[token] as Record<EvmChain, `0x${string}`>)[chain]
+  const pool = AAVE_POOL[chain]
+  const asset = (TokenAddresses[token] as Record<'optimism' | 'base', `0x${string}`>)[chain]
 
   // getReserveData(asset) -> contains aTokenAddress
   const reserve = await client.readContract({
@@ -57,10 +70,10 @@ async function getAaveSuppliedBalance(params: {
 
   const aToken =
     (Array.isArray(reserve) ? reserve[7] : (reserve as { aTokenAddress?: `0x${string}` }).aTokenAddress) as
-    | `0x${string}`
-    | undefined
+      | `0x${string}`
+      | undefined
 
-  if (!aToken) return BigInt(0)
+  if (!aToken) return 0n
 
   const bal = await client.readContract({
     address: aToken,
@@ -73,13 +86,13 @@ async function getAaveSuppliedBalance(params: {
 }
 
 async function getCometSuppliedBalance(params: {
-  chain: EvmChain
+  chain: Extract<EvmChain, 'optimism' | 'base'>
   token: 'USDC' | 'USDT'
   user: `0x${string}`
 }): Promise<bigint> {
   const { chain, token, user } = params
   const comet = COMET_POOLS[chain][token]
-  if (comet === '0x0000000000000000000000000000000000000000') return BigInt(0)
+  if (comet === '0x0000000000000000000000000000000000000000') return 0n
 
   const client = clientFor(chain)
   const bal = await client.readContract({
@@ -98,6 +111,31 @@ async function getCometSuppliedBalance(params: {
   }) as bigint
 
   return bal // token units (USDC/USDT -> 6)
+}
+
+async function getMorphoLiskSuppliedAssets(params: {
+  vault: `0x${string}`     // ERC-4626 vault address (snap.poolAddress)
+  user: `0x${string}`
+}): Promise<bigint> {
+  const { vault, user } = params
+
+  const shares = await publicLisk.readContract({
+    address: vault,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [user],
+  }) as bigint
+
+  if (shares === 0n) return 0n
+
+  const assets = await publicLisk.readContract({
+    address: vault,
+    abi: erc4626ReadAbi,
+    functionName: 'convertToAssets',
+    args: [shares],
+  }) as bigint
+
+  return assets // underlying units (USDCe/USDT0: 1e6, WETH: 1e18)
 }
 
 /* ──────────────────────────────────────────────────────────────── */
@@ -125,16 +163,26 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   const [supplied, setSupplied] = useState<bigint | null>(null)
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null)
 
-  // USDC/USDT on OP/Base
-  const decimals = 6
   const evmChain = snap.chain as EvmChain
-  const needChainId = evmChain === 'base' ? base.id : optimism.id
+  const needChainId =
+    evmChain === 'base' ? base.id :
+    evmChain === 'optimism' ? optimism.id :
+    lisk.id
+
+  const decimals = useMemo(() => (snap.token === 'WETH' ? 18 : 6), [snap.token])
 
   const title = useMemo(() => {
     return snap.protocolKey === 'aave-v3' ? 'Withdraw (Aave v3)' :
            snap.protocolKey === 'compound-v3' ? 'Withdraw (Compound v3)' :
+           snap.protocolKey === 'morpho-blue' ? 'Withdraw (Morpho Blue)' :
            'Withdraw'
   }, [snap.protocolKey])
+
+  const CHAIN_NAME: Record<EvmChain, string> = {
+    optimism: 'Optimism',
+    base: 'Base',
+    lisk: 'Lisk',
+  }
 
   // Reset transient UI state when modal opens/changes
   useEffect(() => {
@@ -147,45 +195,58 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   // Load user's supplied amount for the specific protocol/chain/token
   useEffect(() => {
     if (!open || !walletClient) return
-    if (snap.chain !== 'optimism' && snap.chain !== 'base') {
-      setSupplied(BigInt(0))
-      return
-    }
 
     const user = walletClient.account?.address as `0x${string}` | undefined
     if (!user) return
 
     ;(async () => {
       try {
-        if (snap.token !== 'USDC' && snap.token !== 'USDT') {
-          setSupplied(BigInt(0))
+        // AAVE (OP/Base, USDC/USDT)
+        if (snap.protocolKey === 'aave-v3' && (snap.chain === 'optimism' || snap.chain === 'base')) {
+          if (snap.token !== 'USDC' && snap.token !== 'USDT') {
+            setSupplied(0n); return
+          }
+          const bal = await getAaveSuppliedBalance({
+            chain: snap.chain,
+            token: snap.token,
+            user,
+          })
+          setSupplied(bal)
           return
         }
 
-        if (snap.protocolKey === 'aave-v3') {
-          const bal = await getAaveSuppliedBalance({
-            chain: evmChain,
-            token: snap.token,
-            user,
-          })
-          setSupplied(bal)
-        } else if (snap.protocolKey === 'compound-v3') {
+        // COMPOUND (OP/Base, USDC/USDT)
+        if (snap.protocolKey === 'compound-v3' && (snap.chain === 'optimism' || snap.chain === 'base')) {
+          if (snap.token !== 'USDC' && snap.token !== 'USDT') {
+            setSupplied(0n); return
+          }
           const bal = await getCometSuppliedBalance({
-            chain: evmChain,
+            chain: snap.chain,
             token: snap.token,
             user,
           })
           setSupplied(bal)
-        } else {
-          setSupplied(BigInt(0))
+          return
         }
+
+        // MORPHO BLUE (Lisk, ERC-4626 vault: poolAddress)
+        if (snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk') {
+          const vault = snap.poolAddress as `0x${string}` | undefined
+          if (!vault) { setSupplied(0n); return }
+          const assets = await getMorphoLiskSuppliedAssets({ vault, user })
+          setSupplied(assets)
+          return
+        }
+
+        // Fallback if unsupported combo
+        setSupplied(0n)
       } catch (e) {
         console.error('[WithdrawModal] fetch supplied error', e)
         setError('Failed to load balance')
-        setSupplied(BigInt(0))
+        setSupplied(0n)
       }
     })()
-  }, [open, walletClient, snap.protocolKey, snap.chain, snap.token, evmChain])
+  }, [open, walletClient, snap.protocolKey, snap.chain, snap.token, snap.poolAddress])
 
   async function handleWithdrawAll() {
     if (!walletClient) {
@@ -212,6 +273,10 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
       } else if (snap.protocolKey === 'compound-v3') {
         if (supplied == null) throw new Error('Balance not loaded')
         amount = supplied // exact base-asset balance
+      } else if (snap.protocolKey === 'morpho-blue') {
+        if (supplied == null) throw new Error('Balance not loaded')
+        // ERC-4626 withdraw expects "assets"; we pre-fetched assets via convertToAssets
+        amount = supplied
       } else {
         throw new Error(`Unsupported protocol: ${snap.protocol}`)
       }
@@ -235,7 +300,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   const isActionDisabled =
     status === 'switching' ||
     status === 'withdrawing' ||
-    (typeof supplied === 'bigint' && supplied === BigInt(0))
+    (typeof supplied === 'bigint' && supplied === 0n)
 
   /* ─────────── Small UI helpers ─────────── */
 
@@ -287,7 +352,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
         <div className="mt-2 flex items-center justify-between">
           <span className="text-gray-600">Network</span>
           <span className="font-medium">
-            {evmChain === 'base' ? 'Base' : 'Optimism'}
+            {CHAIN_NAME[evmChain]}
             {switching && ' (switching…)'}
           </span>
         </div>
@@ -297,7 +362,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
 
   function ProgressCard() {
     const isSwitch = status === 'switching'
-    const isWithd  = status === 'withdrawing'
+    const isWithd = status === 'withdrawing'
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-4">
         <div className="flex items-center gap-3">
@@ -329,7 +394,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-gray-500">Network</span>
-            <span className="font-medium">{evmChain === 'base' ? 'Base' : 'Optimism'}</span>
+            <span className="font-medium">{CHAIN_NAME[evmChain]}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-gray-500">Amount</span>

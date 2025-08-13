@@ -1,14 +1,18 @@
+// src/components/positions/ProtocolTabs.tsx
 'use client'
 
 import { useState, useMemo } from 'react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { PositionsDashboardInner } from './PositionsDashboardInner'
 import { usePositions } from '@/hooks/usePositions'
+import { MerklRewardsPanel } from '@/components/MerklRewardsPanel'
+import { useMerklRewards } from '@/hooks/useMerklRewards'
 
 const PROTOCOLS = [
-  { value: 'Aave v3', label: 'Aave' },
+  { value: 'Aave v3',     label: 'Aave' },
   { value: 'Compound v3', label: 'Compound' },
   { value: 'Morpho Blue', label: 'Morpho' },
+  { value: 'Rewards',     label: 'Rewards' },  // ⬅️ NEW
 ] as const
 
 type TabValue = (typeof PROTOCOLS)[number]['value']
@@ -16,6 +20,7 @@ type TabValue = (typeof PROTOCOLS)[number]['value']
 export function ProtocolTabs() {
   const [tab, setTab] = useState<TabValue>('Aave v3')
   const { data: positions } = usePositions()
+  const { totalCount: rewardsCount } = useMerklRewards()
 
   // counts per protocol for nice badges on triggers
   const counts = useMemo(() => {
@@ -27,8 +32,9 @@ export function ProtocolTabs() {
         if (map.has(key)) map.set(key, (map.get(key) ?? 0) + 1)
       })
     }
+    map.set('Rewards', rewardsCount) // ⬅️ show pending rewards on tab
     return map
-  }, [positions])
+  }, [positions, rewardsCount])
 
   return (
     <div className="mx-auto w-full max-w-6xl">
@@ -40,18 +46,9 @@ export function ProtocolTabs() {
         </p>
       </div>
 
-      <Tabs
-        value={tab}
-        onValueChange={(value) => setTab(value as TabValue)}
-        className="w-full"
-      >
+      <Tabs value={tab} onValueChange={(value) => setTab(value as TabValue)} className="w-full">
         {/* Triggers with badges */}
-        <TabsList
-          className="
-            inline-flex rounded-full bg-muted/50 p-1 ring-1 ring-border/60
-            dark:bg-white/10
-          "
-        >
+        <TabsList className="inline-flex rounded-full bg-muted/50 p-1 ring-1 ring-border/60 dark:bg-white/10">
           {PROTOCOLS.map(({ value, label }) => {
             const count = counts.get(value) ?? 0
             return (
@@ -79,11 +76,10 @@ export function ProtocolTabs() {
         </TabsList>
 
         {/* Panels */}
-        {PROTOCOLS.map(({ value }) => (
-          <TabsContent value={value} key={value} className="mt-6">
-            <PositionsDashboardInner protocol={value} />
-          </TabsContent>
-        ))}
+        <TabsContent value="Aave v3"     className="mt-6"><PositionsDashboardInner protocol="Aave v3" /></TabsContent>
+        <TabsContent value="Compound v3" className="mt-6"><PositionsDashboardInner protocol="Compound v3" /></TabsContent>
+        <TabsContent value="Morpho Blue" className="mt-6"><PositionsDashboardInner protocol="Morpho Blue" /></TabsContent>
+        <TabsContent value="Rewards"     className="mt-6"><MerklRewardsPanel /></TabsContent>
       </Tabs>
     </div>
   )
