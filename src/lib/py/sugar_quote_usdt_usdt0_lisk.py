@@ -89,7 +89,7 @@ async def run(amount_wei: int, rpc: str,  account: str, slippage: float | None):
 
         return {
             "ok": True,
-            "amountOut": int(out_wei),
+            "amountOut": int(to_human(out_wei,6)),
             "plan": {
                 "to": swapper,
                 "commands": commands_hex,
