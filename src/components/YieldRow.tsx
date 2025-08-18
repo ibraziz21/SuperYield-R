@@ -6,7 +6,7 @@ import type { YieldSnapshot } from '@/hooks/useYields'
 import { useAppKitAccount, useAppKit } from '@reown/appkit/react'
 import { Button } from '@/components/ui/button'
 import { TokenBadge } from '@/components/TokenBadge'
-import { DepositModal } from '@/components/DepositModal'
+import { DepositModal } from '@/components/deposit/DepositModal'
 
 export const YieldRow: FC<{ snap: YieldSnapshot }> = ({ snap }) => {
   const { address } = useAppKitAccount()

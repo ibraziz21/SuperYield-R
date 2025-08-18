@@ -170,7 +170,7 @@ interface DepositModalProps {
   snap: YieldSnapshot
 }
 
-type FlowStep = 'idle' | 'bridging' | 'waitingFunds' | 'switching' | 'depositing' | 'success' | 'error' |'swapping'
+type FlowStep = 'idle' | 'bridging' | 'waitingFunds' | 'switching' | 'depositing' | 'success' | 'error' 
 
 export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => {
   const { open: openConnect } = useAppKit()
@@ -430,56 +430,51 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
       const destId = chainIdOf(dest)
       const user = walletClient.account!.address as `0x${string}`
   
-      // 1) Bridge (if any) and wait for funds to arrive on dest
+         // 1) Single call: bridge (if needed) AND wait for funds to land
       if (!liquidityEnsured && route && route !== 'On-chain') {
-        setStep('bridging')
-  
-        const outSymbol = mapCrossTokenForDest(snap.token, dest)
-        const destToken = tokenAddrFor(outSymbol, dest)
-  
-        // snapshot starting dest balance
-        destStartBal.current = await readWalletBalance(dest, destToken, user)
-  
-        // perform bridge
-        await ensureLiquidity(snap.token, inputAmt, dest, walletClient)
-        setLiquidityEnsured(true)
-  
-        // wait for bridge funds
-        setStep('waitingFunds')
-        await waitForFunds(dest, destToken, user, destStartBal, destCurrBal)
-      } else {
-        setLiquidityEnsured(true)
-      }
-  
-      // 2) If target is USDT0 on Lisk and we don't have enough yet → swap USDT→USDT0 using Sugar (user signs)
-      const destTokenLabel = mapCrossTokenForDest(snap.token, dest)
-      if (dest === 'lisk' && mapCrossTokenForDest(snap.token, dest) === 'USDT0') {
-        const usdt0Addr = tokenAddrFor('USDT0', 'lisk')
-        const have0Now = await readWalletBalance('lisk', usdt0Addr, user)
-        if (have0Now < inputAmt) {
-          const toSwap = inputAmt - have0Now
-          // ensure we have a fresh plan for exactly toSwap
-          let plan = sugarPlan
-          if (!plan || (sugarAmountOut == null)) {
-            const acct = walletClient.account!.address as Address
-            const { amountOut, plan: freshPlan } = await getSugarPlanUsdtToUsdt0(toSwap, acct, { slippage: 0.003 })
-            setSugarAmountOut(amountOut); setSugarPlan(freshPlan)
-            plan = freshPlan
-          }
-  
-          // Approve swapper if needed (planner uses router that pulls tokens from msg.sender)
-          const usdtAddr = tokenAddrFor('USDT', 'lisk')
-          await ensureAllowanceTo(walletClient, usdtAddr as Address, user, plan!.to, toSwap)
-  
-          setStep('swapping')
-          await executeSugarPlan(walletClient, plan!)
-  
-          // wait until USDT0 increases
-          destStartBal.current = have0Now
-          setStep('waitingFunds')
-          await waitForFunds('lisk', usdt0Addr, user, destStartBal, destCurrBal)
+          setStep('bridging')
+          const wantDestToken = mapCrossTokenForDest(snap.token, dest) // e.g., 'USDT0' on Lisk
+          await ensureLiquidity(wantDestToken, inputAmt, dest, walletClient, {
+            onStatus: (s) => {
+              if (s === 'waiting') setStep('waitingFunds')
+              else if (s === 'bridging') setStep('bridging')
+            },
+          })
+          setLiquidityEnsured(true)
+        } else {
+          setLiquidityEnsured(true)
         }
-      }
+      // 2) If target is USDT0 on Lisk and we don't have enough yet → swap USDT→USDT0 using Sugar (user signs)
+      // const destTokenLabel = mapCrossTokenForDest(snap.token, dest)
+      // if (dest === 'lisk' && mapCrossTokenForDest(snap.token, dest) === 'USDT0') {
+      //   const usdt0Addr = tokenAddrFor('USDT0', 'lisk')
+      //   const have0Now = await readWalletBalance('lisk', usdt0Addr, user)
+      //   if (have0Now < inputAmt) {
+      //     const toSwap = inputAmt - have0Now
+      //     // ensure we have a fresh plan for exactly toSwap
+      //     let plan = sugarPlan
+      //     if (!plan || (sugarAmountOut == null)) {
+      //       const acct = walletClient.account!.address as Address
+      //       const { amountOut, plan: freshPlan } = await getSugarPlanUsdtToUsdt0(toSwap, acct, { slippage: 0.003 })
+      //       setSugarAmountOut(amountOut); setSugarPlan(freshPlan)
+      //       plan = freshPlan
+      //     }
+  
+      //     // Approve swapper if needed (planner uses router that pulls tokens from msg.sender)
+      //     const usdtAddr = tokenAddrFor('USDT', 'lisk')
+      //     await ensureAllowanceTo(walletClient, usdtAddr as Address, user, plan!.to, toSwap)
+  
+      //     setStep('swapping')
+      //     await executeSugarPlan(walletClient, plan!)
+  
+      //     // wait until USDT0 increases
+      //     destStartBal.current = have0Now
+      //     setStep('waitingFunds')
+      //     await waitForFunds('lisk', usdt0Addr, user, destStartBal, destCurrBal)
+      //   }
+      // }
+
+
   
       // 3) Switch to destination chain (if needed)
       if (chainId !== destId && switchChainAsync) {
@@ -487,17 +482,11 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
         await switchChainAsync({ chainId: destId })
       }
   
-      // 4) Deposit: read fresh balance of the destination token and deposit up to the intended amount
+   // 3) Deposit: read fresh balance of the destination token and deposit up to the intended amount
       const finalTokenAddr = tokenAddrFor(mapCrossTokenForDest(snap.token, dest), dest)
       const finalBal = await readWalletBalance(dest, finalTokenAddr, user)
-
-      const netArrived = destCurrBal.current > destStartBal.current
-  ? (destCurrBal.current - destStartBal.current)
-  : 0n
-  const cap = inputAmt // user-entered max they intend to deposit
-  const toDeposit = netArrived > 0n
-    ? (netArrived > cap ? cap : netArrived)   // bridged/swapped: deposit what actually arrived (≤ input)
-    : (finalBal >= cap ? cap : finalBal)    
+      const cap = inputAmt
+      const toDeposit = finalBal >= cap ? cap : finalBal
   
       setStep('depositing')
       await depositToPool(snap, toDeposit, walletClient)
@@ -510,28 +499,7 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
   }
   
 
-  async function waitForFunds(
-    dest: EvmChain,
-    token: `0x${string}`,
-    user: `0x${string}`,
-    startRef: React.MutableRefObject<bigint>,
-    currRef: React.MutableRefObject<bigint>,
-  ) {
-    const timeoutMs = 15 * 60 * 1000
-    const intervalMs = 10_000
-    const started = Date.now()
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const now = Date.now()
-      if (now - started > timeoutMs) throw new Error('Timeout waiting for bridged funds')
-
-      const bal = await readWalletBalance(dest, token, user)
-      currRef.current = bal
-      if (bal > startRef.current) break
-      await new Promise((r) => setTimeout(r, intervalMs))
-    }
-  }
 
   /* =============================================================================
      Derived UI values
@@ -675,7 +643,7 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
                     </div>
                     {route && route !== 'On-chain' ? (
                       <span className="inline-flex items-center gap-2 text-xs text-gray-500">
-                        <span className="rounded-md bg-gray-100 px-2 py-1">Bridging via Across</span>
+                        <span className="rounded-md bg-gray-100 px-2 py-1">Bridging via Li.Fi</span>
                       </span>
                     ) : (
                       <span className="text-xs text-gray-500">On-chain</span>
@@ -745,7 +713,6 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
                 <StepCard current={step} label="Bridging liquidity"   k="bridging"     visible={(route !== 'On-chain')} />
                 <StepCard current={step} label="Waiting for funds"    k="waitingFunds" visible={ route !== 'On-chain'} />
                 <StepCard current={step} label="Switching network"    k="switching"    visible />
-                <StepCard current={step} label="Swapping on Lisk" k="swapping" visible={destTokenLabel === 'USDT0' && snap.chain === 'lisk'} />
                 <StepCard current={step} label="Depositing to protocol" k="depositing"   visible />
               </div>
             )}
@@ -850,7 +817,7 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
 
 function StepCard(props: { current: FlowStep, k: Exclude<FlowStep, 'idle'|'success'|'error'>, label: string, visible?: boolean }) {
   if (!props.visible) return null
-  const order: FlowStep[] = ['bridging', 'waitingFunds', 'switching','swapping', 'depositing']
+  const order: FlowStep[] = ['bridging', 'waitingFunds', 'switching', 'depositing']
   const idx = order.indexOf(props.current)
   const my  = order.indexOf(props.k)
   const done = idx > my

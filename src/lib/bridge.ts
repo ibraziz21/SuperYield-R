@@ -1,26 +1,20 @@
 // src/lib/bridge.ts
-import { client } from './across'
+'use client'
+
 import {
-  configurePublicClients,
-  type ConfiguredWalletClient,
-} from '@across-protocol/app-sdk'
+  createConfig,
+  EVM,
+  getQuote,
+  convertQuoteToRoute,
+  executeRoute
+} from '@lifi/sdk'
 import type { WalletClient } from 'viem'
+import { optimism, base, lisk } from 'viem/chains'
 import { TokenAddresses } from './constants'
 import type { ChainId, TokenSymbol } from './constants'
-import { optimism, base, lisk } from 'viem/chains'
 
 /* ────────────────────────────────────────────────────────────────
-   Across public clients (created once)
-   ──────────────────────────────────────────────────────────────── */
-export const configuredPublicClients = configurePublicClients(
-  [optimism, base, lisk],
-  1000, // polling ms
-  {},
-  {},
-)
-
-/* ────────────────────────────────────────────────────────────────
-   Chain helpers
+   Chain + symbol helpers
    ──────────────────────────────────────────────────────────────── */
 const CHAIN_ID: Record<ChainId, number> = {
   optimism: optimism.id,
@@ -28,12 +22,12 @@ const CHAIN_ID: Record<ChainId, number> = {
   lisk: lisk.id,
 }
 
-/** Map UI symbol to symbol that actually exists on a given chain. */
+/** Map UI symbol to the *actual* representation on a chain. */
 function resolveSymbolForChain(token: TokenSymbol, chain: ChainId): TokenSymbol {
   if (chain === 'lisk') {
-    if (token === 'USDC') return 'USDCe'
-    if (token === 'USDT') return 'USDT'
-    return token // USDCe/USDT0/WETH pass through
+    if (token === 'USDC')  return 'USDCe'
+    // Lisk has both USDT and USDT0; keep as provided
+    return token
   }
   // OP/Base cannot have USDCe/USDT0
   if (token === 'USDCe') return 'USDC'
@@ -50,78 +44,106 @@ function tokenAddress(token: TokenSymbol, chain: ChainId): `0x${string}` {
   return addr as `0x${string}`
 }
 
+const toHexChain = (id: number) => `0x${id.toString(16)}`
+
 /* ────────────────────────────────────────────────────────────────
-   Bridge
+   LI.FI provider wiring (idempotent)
+   ──────────────────────────────────────────────────────────────── */
+let _configured = false
+let _activeWallet: WalletClient | null = null
+
+export function configureLifiWith(walletClient: WalletClient) {
+  _activeWallet = walletClient
+  if (_configured) return
+  createConfig({
+    integrator: 'superyldr',
+    providers: [
+      EVM({
+        getWalletClient: async () => {
+          if (!_activeWallet) throw new Error('Wallet not set for LI.FI')
+          return _activeWallet
+        },
+        switchChain: async (chainId) => {
+          if (!_activeWallet) throw new Error('Wallet not set for LI.FI')
+          await _activeWallet.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: toHexChain(chainId) }],
+          })
+          return _activeWallet
+        },
+      }),
+    ],
+  })
+  _configured = true
+}
+
+/* ────────────────────────────────────────────────────────────────
+   Public API: bridgeTokens
    ──────────────────────────────────────────────────────────────── */
 
 /**
- * Bridge `token` from -> to (token is a UI/canonical symbol).
- * - For Lisk:
- *    - USDC paths resolve to USDCe on Lisk
- *    - USDT paths resolve to USDT on Lisk (not USDT0)
+ * Bridge in one shot (bridge+swap if needed).
+ * Examples:
+ *   - USDT (OP/Base) -> USDT0 (Lisk)   ✅
+ *   - USDC (OP/Base) -> USDCe (Lisk)   ✅
+ *   - USDT/USDC between OP/Base        ✅ (single-asset)
  */
 export async function bridgeTokens(
-  token: TokenSymbol,
-  amount: bigint,
+  token: TokenSymbol,        // the token you want to end up with on `to`
+  amount: bigint,            // human-selected amount (in token decimals)
   from: ChainId,
   to: ChainId,
   walletClient: WalletClient,
+  opts?: {
+    slippage?: number        // e.g. 0.003 for 0.3%
+    allowBridges?: string[]
+    allowExchanges?: string[]
+    onUpdate?: (route: any) => void
+    onRateChange?: (nextToAmount: string) => Promise<boolean> | boolean
+  }
 ) {
-  if (!walletClient.account) throw new Error('No account found on WalletClient – connect a wallet first')
+  const account = walletClient.account?.address as `0x${string}` | undefined
+  if (!account) throw new Error('No account found on WalletClient – connect a wallet first')
+
+  configureLifiWith(walletClient)
 
   const originChainId      = CHAIN_ID[from]
   const destinationChainId = CHAIN_ID[to]
 
-  const inputToken  = tokenAddress(token, from)
-  const outputToken = tokenAddress(token, to)
+  const inputToken  = tokenAddress(token, from) // maps USDT0->USDT on OP/Base
+  const outputToken = tokenAddress(token, to)   // maps USDC->USDCe on Lisk, keeps USDT0 on Lisk
 
-  const originClient      = configuredPublicClients.get(originChainId)
-  const destinationClient = configuredPublicClients.get(destinationChainId)
-  if (!originClient || !destinationClient) {
-    throw new Error(`Across public clients not configured for ${from}(${originChainId}) or ${to}(${destinationChainId})`)
-  }
-
-  const cfgWalletClient = walletClient as unknown as ConfiguredWalletClient
-
-  const fees = await client.getSuggestedFees({
-    originChainId,
-    destinationChainId,
-    inputToken,
-    outputToken,
-    amount,
+  // Get an executable quote
+  const quote = await getQuote({
+    fromChain: originChainId,
+    toChain: destinationChainId,
+    fromToken: inputToken,
+    toToken: outputToken,
+    fromAmount: amount.toString(),
+    fromAddress: account,
+    slippage: opts?.slippage ?? 0.003,
+    allowBridges: opts?.allowBridges,
+    allowExchanges: opts?.allowExchanges,
   })
-  console.debug('[Across] suggested fees:', fees)
 
-  const quote = await client.getQuote({
-    route: {
-      originChainId,
-      destinationChainId,
-      inputToken,
-      outputToken,
+  const route = convertQuoteToRoute(quote)
+
+  // Execute + surface progress
+  const executed = await executeRoute(route, {
+    updateRouteHook: (updated) => opts?.onUpdate?.(updated),
+    switchChainHook: async (chainId) => {
+      await walletClient.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: toHexChain(chainId) }],
+      })
+      return walletClient
     },
-    inputAmount: amount,
-  })
-  console.debug('[Across] quote:', quote)
-
-  const tx = await client.executeQuote({
-    deposit: quote.deposit,
-    walletClient: cfgWalletClient,
-    originClient,
-    destinationClient,
-    infiniteApproval: true,
-    onProgress: (progress) => {
-      console.log(`[Across] step=${progress.step} status=${progress.status}`)
-      if (progress.step === 'approve' && progress.status === 'txSuccess') {
-        console.log('✅ Approved:', progress.txReceipt)
-      }
-      if (progress.step === 'deposit' && progress.status === 'txSuccess') {
-        console.log('✅ Deposit submitted. ID:', progress.depositId)
-      }
-      if (progress.step === 'fill' && progress.status === 'txSuccess') {
-        console.log('✅ Funds received on destination:', progress.txReceipt)
-      }
+    acceptExchangeRateUpdateHook: async (p) => {
+      // default: auto-accept minor price updates
+      if (opts?.onRateChange) return await opts.onRateChange(p.newToAmount)
+      return true
     },
   })
 
-  return tx
+  return executed
 }
