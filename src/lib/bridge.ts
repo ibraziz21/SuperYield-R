@@ -89,17 +89,19 @@ export function configureLifiWith(walletClient: WalletClient) {
  *   - USDT/USDC between OP/Base        ✅ (single-asset)
  */
 export async function bridgeTokens(
-  token: TokenSymbol,        // the token you want to end up with on `to`
-  amount: bigint,            // human-selected amount (in token decimals)
+  token: TokenSymbol,        // token you want to receive on `to`
+  amount: bigint,
   from: ChainId,
   to: ChainId,
   walletClient: WalletClient,
   opts?: {
-    slippage?: number        // e.g. 0.003 for 0.3%
+    slippage?: number
     allowBridges?: string[]
     allowExchanges?: string[]
     onUpdate?: (route: any) => void
     onRateChange?: (nextToAmount: string) => Promise<boolean> | boolean
+    /** NEW: force the source-side token (e.g. 'USDC') even if dest wants 'USDT0' */
+    sourceToken?: Extract<TokenSymbol, 'USDC' | 'USDT'>
   }
 ) {
   const account = walletClient.account?.address as `0x${string}` | undefined
@@ -110,10 +112,10 @@ export async function bridgeTokens(
   const originChainId      = CHAIN_ID[from]
   const destinationChainId = CHAIN_ID[to]
 
-  const inputToken  = tokenAddress(token, from) // maps USDT0->USDT on OP/Base
-  const outputToken = tokenAddress(token, to)   // maps USDC->USDCe on Lisk, keeps USDT0 on Lisk
+  // 👉 if sourceToken is provided, use it for fromToken; else keep the current mapping logic
+  const inputToken  = tokenAddress(opts?.sourceToken ?? token, from)
+  const outputToken = tokenAddress(token, to)
 
-  // Get an executable quote
   const quote = await getQuote({
     fromChain: originChainId,
     toChain: destinationChainId,
@@ -128,7 +130,6 @@ export async function bridgeTokens(
 
   const route = convertQuoteToRoute(quote)
 
-  // Execute + surface progress
   const executed = await executeRoute(route, {
     updateRouteHook: (updated) => opts?.onUpdate?.(updated),
     switchChainHook: async (chainId) => {
@@ -139,7 +140,6 @@ export async function bridgeTokens(
       return walletClient
     },
     acceptExchangeRateUpdateHook: async (p) => {
-      // default: auto-accept minor price updates
       if (opts?.onRateChange) return await opts.onRateChange(p.newToAmount)
       return true
     },

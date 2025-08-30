@@ -1,3 +1,4 @@
+// src/components/DepositModal.tsx
 'use client'
 
 import { FC, useEffect, useMemo, useState } from 'react'
@@ -5,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useAppKit } from '@reown/appkit/react'
 import { useWalletClient, useChainId, useSwitchChain } from 'wagmi'
 import { formatUnits, parseUnits } from 'viem'
-import { base, optimism, lisk as liskChain } from 'viem/chains'
+
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { ensureLiquidity } from '@/lib/smartbridge'
 import { depositToPool } from '@/lib/depositor'
@@ -18,12 +19,25 @@ import { SuppliedCard } from '../SuppliedCard'
 import { ProgressSteps } from '../Progress'
 import { ActionBar } from '../ActionBar'
 
-import { ChainPill } from '../ui'
-import { getAaveSuppliedBalance, getCometSuppliedBalance, isCometToken, clientFor, readWalletBalance, symbolForWalletDisplay, mapCrossTokenForDest, tokenAddrFor, chainIdOf } from '../helpers'
+import {
+  getAaveSuppliedBalance,
+  getCometSuppliedBalance,
+  isCometToken,
+  readWalletBalance,
+  symbolForWalletDisplay,
+  mapCrossTokenForDest,
+  tokenAddrFor,
+  chainIdOf,
+  clientFor,
+} from '../helpers'
 import type { EvmChain, FlowStep } from '../types'
 import { TokenAddresses } from '@/lib/constants'
 
-interface DepositModalProps { open: boolean; onClose: () => void; snap: YieldSnapshot }
+interface DepositModalProps {
+  open: boolean
+  onClose: () => void
+  snap: YieldSnapshot
+}
 
 export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => {
   const { open: openConnect } = useAppKit()
@@ -31,14 +45,24 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
   const chainId = useChainId()
   const { switchChainAsync, error: switchError } = useSwitchChain()
 
+  // ── local state ─────────────────────────────────────────────────
   const [amount, setAmount] = useState('')
 
-  // Wallet balances
+  // Let user choose USDC or USDT as the *source asset* on OP/Base when target is Lisk:USDT0
+  const [sourceAsset, setSourceAsset] = useState<'USDC' | 'USDT'>('USDT')
+
+  // Wallet balances (generic per displayed token)
   const [opBal, setOpBal] = useState<bigint | null>(null)
   const [baBal, setBaBal] = useState<bigint | null>(null)
   const [liBal, setLiBal] = useState<bigint | null>(null)
   const [liBalUSDT, setLiBalUSDT] = useState<bigint | null>(null)
   const [liBalUSDT0, setLiBalUSDT0] = useState<bigint | null>(null)
+
+  // EXTRA balances for USDC/USDT on OP/Base (for correct MAX + display)
+  const [opUsdcBal, setOpUsdcBal] = useState<bigint | null>(null)
+  const [baUsdcBal, setBaUsdcBal] = useState<bigint | null>(null)
+  const [opUsdtBal, setOpUsdtBal] = useState<bigint | null>(null)
+  const [baUsdtBal, setBaUsdtBal] = useState<bigint | null>(null)
 
   // Supplied balances (Aave/Comet display only)
   const [poolOp, setPoolOp] = useState<bigint | null>(null)
@@ -54,10 +78,17 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
   const [liquidityEnsured, setLiquidityEnsured] = useState(false)
 
   // Reset when inputs change
-  useEffect(() => { setLiquidityEnsured(false); setStep('idle'); setError(null) }, [open, amount, snap.chain, snap.token, snap.protocolKey])
+  useEffect(() => {
+    setLiquidityEnsured(false)
+    setStep('idle')
+    setError(null)
+  }, [open, amount, snap.chain, snap.token, snap.protocolKey])
 
   const tokenDecimals = useMemo(() => (snap.token === 'WETH' ? 18 : 6), [snap.token])
-  const poolDecimals = useMemo(() => (snap.protocolKey === 'aave-v3' ? 8 : snap.protocolKey === 'compound-v3' ? 6 : tokenDecimals), [snap.protocolKey, tokenDecimals])
+  const poolDecimals = useMemo(
+    () => (snap.protocolKey === 'aave-v3' ? 8 : snap.protocolKey === 'compound-v3' ? 6 : tokenDecimals),
+    [snap.protocolKey, tokenDecimals],
+  )
 
   /* ---------------- Wallet balances (OP/Base/Lisk) ---------------- */
   useEffect(() => {
@@ -93,13 +124,30 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       reads.push(Promise.resolve(null), Promise.resolve(null))
     }
 
+    // Extra OP/Base USDC+USDT balances (for MAX + UX when targeting Lisk:USDT0)
+    const opUsdc = addrOrNull('USDC', 'optimism')
+    const baUsdc = addrOrNull('USDC', 'base')
+    const opUsdt = addrOrNull('USDT', 'optimism')
+    const baUsdt = addrOrNull('USDT', 'base')
+
+    if (opUsdc) reads.push(readWalletBalance('optimism', opUsdc, user)); else reads.push(Promise.resolve(null))
+    if (baUsdc) reads.push(readWalletBalance('base',     baUsdc, user)); else reads.push(Promise.resolve(null))
+    if (opUsdt) reads.push(readWalletBalance('optimism', opUsdt, user)); else reads.push(Promise.resolve(null))
+    if (baUsdt) reads.push(readWalletBalance('base',     baUsdt, user)); else reads.push(Promise.resolve(null))
+
     Promise.allSettled(reads).then((vals) => {
-      const [op, ba, li, liU, liU0] = vals.map((r) => (r.status === 'fulfilled' ? (r as any).value as bigint | null : null))
+      // base three + (liU, liU0) + (opUSDC, baUSDC, opUSDT, baUSDT)
+      const v = vals.map((r) => (r.status === 'fulfilled' ? (r as any).value as bigint | null : null))
+      const [op, ba, li, liU, liU0, _opUsdc, _baUsdc, _opUsdt, _baUsdt] = v
       setOpBal(op ?? null)
       setBaBal(ba ?? null)
       setLiBal(li ?? null)
       setLiBalUSDT(liU ?? null)
       setLiBalUSDT0(liU0 ?? null)
+      setOpUsdcBal(_opUsdc ?? null)
+      setBaUsdcBal(_baUsdc ?? null)
+      setOpUsdtBal(_opUsdt ?? null)
+      setBaUsdtBal(_baUsdt ?? null)
     })
   }, [open, walletClient, snap.token])
 
@@ -130,9 +178,23 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     } else { setPoolOp(null); setPoolBa(null) }
   }, [open, walletClient, snap.protocolKey, snap.token])
 
+  /* ---------------- Source-asset defaulting heuristic ---------------- */
+  useEffect(() => {
+    if (!amount) return
+    // Default USDT for USDT-family (USDT0 on Lisk), else USDC
+    if (snap.chain === 'lisk' && (snap.token === 'USDT' || snap.token === 'USDT0')) {
+      setSourceAsset('USDT')
+    } else {
+      setSourceAsset('USDC')
+    }
+  }, [amount, snap.chain, snap.token])
+
   /* ---------------- Quote (LI.FI) ---------------- */
   useEffect(() => {
-    if (!walletClient || !amount) { setRoute(null); setFee(0n); setReceived(0n); setQuoteError(null); return }
+    if (!walletClient || !amount) {
+      setRoute(null); setFee(0n); setReceived(0n); setQuoteError(null)
+      return
+    }
 
     const dest = snap.chain as EvmChain
     const amt  = parseUnits(amount, tokenDecimals)
@@ -140,36 +202,57 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     // token form on destination (e.g., Lisk USDT0/USDCe)
     const destOutSymbol = mapCrossTokenForDest(snap.token, dest)
 
-    // choose source (OP/Base)
+    // choose source (OP/Base) – use generic balances to pick a chain
+    const op = opBal ?? 0n
+    const ba = baBal ?? 0n
     const src: Extract<EvmChain, 'optimism' | 'base'> =
-      (opBal ?? 0n) >= amt ? 'optimism' : (baBal ?? 0n) >= amt ? 'base' : ( (opBal ?? 0n) >= (baBal ?? 0n) ? 'optimism' : 'base')
+      op >= amt ? 'optimism' : ba >= amt ? 'base' : (op >= ba ? 'optimism' : 'base')
 
-    if (src === dest) { setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null); return }
+    if (src === dest) {
+      setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null)
+      return
+    }
 
-    // Lisk USDT0 wrapper
+    // Lisk USDT0 path — allow USDC/USDT toggle
     if (dest === 'lisk' && destOutSymbol === 'USDT0') {
-      smartQuoteUsdt0Lisk({ amountIn: amt, opBal, baBal, fromAddress: walletClient.account!.address })
+      smartQuoteUsdt0Lisk({
+        amountIn: amt,
+        opBal, baBal,
+        fromAddress: walletClient.account!.address as `0x${string}`,
+        sourceToken: sourceAsset, // << NEW
+      })
         .then((q) => { setRoute(q.route); setFee(q.bridgeFee); setReceived(q.bridgeOutUSDT0); setQuoteError(null) })
         .catch(() => { setRoute(null); setFee(0n); setReceived(0n); setQuoteError('Could not fetch bridge quote') })
       return
     }
 
-    // Lisk USDCe wrapper (short-circuit if already enough on Lisk)
+    // Lisk USDCe path (short-circuit if already enough on Lisk)
     if (dest === 'lisk' && destOutSymbol === 'USDCe') {
       if ((liBal ?? 0n) >= amt) { setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null); return }
-      quoteUsdceOnLisk({ amountIn: amt, opBal, baBal, fromAddress: walletClient.account!.address })
+      quoteUsdceOnLisk({
+        amountIn: amt,
+        opBal, baBal,
+        fromAddress: walletClient.account!.address as `0x${string}`,
+      })
         .then((q) => { setRoute(q.route); setFee(q.bridgeFee); setReceived(q.bridgeOutUSDCe); setQuoteError(null) })
         .catch(() => { setRoute(null); setFee(0n); setReceived(0n); setQuoteError('Could not fetch bridge quote') })
       return
     }
 
     // Generic LI.FI quote for other cross-chain cases
-    getBridgeQuote({ token: destOutSymbol as any, amount: amt, from: src, to: dest, fromAddress: walletClient.account!.address })
+    getBridgeQuote({
+      token: destOutSymbol as any,
+      amount: amt,
+      from: src,
+      to: dest,
+      fromAddress: walletClient.account!.address as `0x${string}`,
+    })
       .then((q) => { setRoute(q.route); setFee(q.bridgeFeeTotal); setReceived(q.bridgeOutAmount); setQuoteError(null) })
       .catch(() => { setRoute(null); setFee(0n); setReceived(0n); setQuoteError('Could not fetch bridge quote') })
   // include balances so we re-evaluate once they load
-  }, [amount, walletClient, opBal, baBal, liBal, liBalUSDT, liBalUSDT0, snap.chain, snap.token, tokenDecimals])
+  }, [amount, walletClient, opBal, baBal, liBal, liBalUSDT, liBalUSDT0, snap.chain, snap.token, tokenDecimals, sourceAsset])
 
+  /* ---------------- Confirm (balance-driven bridging) ---------------- */
   async function handleConfirm() {
     if (!walletClient) { openConnect(); return }
     setError(null)
@@ -180,32 +263,51 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       const destId = chainIdOf(dest)
       const user = walletClient.account!.address as `0x${string}`
 
+      // Resolve destination token form (e.g. USDT0 on Lisk for USDT family)
+      const wantDestToken = mapCrossTokenForDest(snap.token, dest)
+      const finalTokenAddr = tokenAddrFor(wantDestToken, dest)
+
+      // Read pre-bridge balance on destination
+      const preBal = await readWalletBalance(dest, finalTokenAddr, user)
+
       let bridgedDelta: bigint = 0n
 
-      // 1) Single call: bridge (if needed) AND wait for funds to land
-      if (!liquidityEnsured && route && route !== 'On-chain') {
+      // Bridge if we don't already have enough of the destination token on the destination chain
+      if (!liquidityEnsured && preBal < inputAmt) {
         setStep('bridging')
-        const wantDestToken = mapCrossTokenForDest(snap.token, dest) // e.g., 'USDT0' on Lisk
-        const res = await ensureLiquidity(wantDestToken, inputAmt, dest, walletClient, {
-          onStatus: (s) => { if (s === 'waiting') setStep('waitingFunds'); else if (s === 'bridging') setStep('bridging') },
-        })
+        const res = await ensureLiquidity(
+          wantDestToken,
+          inputAmt,
+          dest,
+          walletClient,
+          {
+            onStatus: (s) => { if (s === 'waiting') setStep('waitingFunds'); else if (s === 'bridging') setStep('bridging') },
+            // Respect user's USDC/USDT choice when targeting Lisk:USDT0
+            preferredSourceToken: (dest === 'lisk' && wantDestToken === 'USDT0') ? sourceAsset : undefined,
+          }
+        )
         bridgedDelta = res.delta
         setLiquidityEnsured(true)
-      } else { setLiquidityEnsured(true) }
+      } else {
+        setLiquidityEnsured(true)
+      }
 
-      // 2) Switch to destination chain (if needed)
-      if (chainId !== destId && switchChainAsync) { setStep('switching'); await switchChainAsync({ chainId: destId }) }
+      // Switch to destination chain (if needed)
+      if (chainId !== destId && switchChainAsync) {
+        setStep('switching')
+        await switchChainAsync({ chainId: destId })
+      }
 
-      // 3) Deposit: read fresh balance of the destination token and deposit up to the intended amount
-      const finalTokenAddr = tokenAddrFor(mapCrossTokenForDest(snap.token, dest), dest)
-      const finalBal = await readWalletBalance(dest, finalTokenAddr, user)
+      // Read fresh balance & cap deposit to intended amount
+      const postBal = await readWalletBalance(dest, finalTokenAddr, user)
       const cap = inputAmt
-           const toDeposit =
-             route !== 'On-chain'
-               ? (bridgedDelta > 0n ? (bridgedDelta > cap ? cap : bridgedDelta) : (finalBal >= cap ? cap : finalBal))
-               : (finalBal >= cap ? cap : finalBal)
-      
-           if (toDeposit === 0n) throw new Error('No funds available to deposit yet')
+
+      const toDeposit =
+        bridgedDelta > 0n
+          ? (bridgedDelta > cap ? cap : bridgedDelta)
+          : (postBal >= cap ? cap : postBal)
+
+      if (toDeposit === 0n) throw new Error('No funds available to deposit yet')
 
       setStep('depositing')
       await depositToPool(snap, toDeposit, walletClient)
@@ -263,7 +365,34 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                   liBal={liBal}
                   liBalUSDT={liBalUSDT}
                   liBalUSDT0={liBalUSDT0}
+                  // NEW bits:
+                  sourceAsset={sourceAsset}
+                  opUsdcBal={opUsdcBal}
+                  baUsdcBal={baUsdcBal}
+                  opUsdtBal={opUsdtBal}
+                  baUsdtBal={baUsdtBal}
                 />
+
+                {/* Source-asset selector (only for Lisk:USDT0 bridging) */}
+                {isLiskTarget && destTokenLabel === 'USDT0' && (
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div className="text-xs text-muted-foreground">
+                      Source asset on OP/Base
+                    </div>
+                    <div className="inline-flex rounded-md bg-gray-100 p-1">
+                      {(['USDC','USDT'] as const).map(a => (
+                        <button
+                          key={a}
+                          type="button"
+                          onClick={() => setSourceAsset(a)}
+                          className={`px-3 py-1 text-xs rounded ${sourceAsset === a ? 'bg-white shadow font-medium' : 'opacity-70'}`}
+                        >
+                          {a}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <BalanceStrip
                   tokenDecimals={tokenDecimals}
@@ -276,6 +405,11 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                   liBal={liBal}
                   liBalUSDT={liBalUSDT}
                   liBalUSDT0={liBalUSDT0}
+                  // OPTIONAL extra display (backward compatible)
+                  opUsdcBal={opUsdcBal}
+                  baUsdcBal={baUsdcBal}
+                  opUsdtBal={opUsdtBal}
+                  baUsdtBal={baUsdtBal}
                 />
 
                 <RouteFeesCard
@@ -287,10 +421,16 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                   quoteError={quoteError}
                   destChainLabel={(snap.chain as string).toUpperCase()}
                   destTokenLabel={destTokenLabel}
+                  sourceAsset={isLiskTarget && destTokenLabel === 'USDT0' ? sourceAsset : undefined}
                 />
 
                 {(poolOp != null || poolBa != null) && (
-                  <SuppliedCard poolOp={poolOp} poolBa={poolBa} poolDecimals={poolDecimals} tokenSymbol={snap.token} />
+                  <SuppliedCard
+                    poolOp={poolOp}
+                    poolBa={poolBa}
+                    poolDecimals={poolDecimals}
+                    tokenSymbol={snap.token}
+                  />
                 )}
 
                 {switchError && <p className="text-xs text-red-600">Network switch failed: {switchError.message}</p>}
@@ -298,14 +438,20 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
               </>
             )}
 
-            <ProgressSteps step={step} show={showProgress} crossChain={route !== 'On-chain'} />
+            <ProgressSteps step={step} show={showProgress} crossChain />
+            {/* ^ show crossChain steps since bridging is balance-driven now */}
 
             {showSuccess && (
               <div className="flex flex-col items-center gap-3 py-6">
-                <svg className="h-10 w-10 text-green-600" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" stroke="currentColor" strokeWidth="2"/></svg>
+                <svg className="h-10 w-10 text-green-600" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" stroke="currentColor" strokeWidth="2"/>
+                </svg>
                 <div className="text-center">
                   <div className="text-lg font-semibold">Deposit successful</div>
-                  <div className="mt-1 text-sm text-muted-foreground">Your {snap.token} has been supplied to {snap.protocol}.</div>
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    Your {snap.token} has been supplied to {snap.protocol}.
+                  </div>
                 </div>
               </div>
             )}

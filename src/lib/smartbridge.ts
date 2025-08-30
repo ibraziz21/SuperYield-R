@@ -51,6 +51,8 @@ async function getBalanceOnChain(
  *
  * `onStatus`: 'bridging' | 'waiting' | 'done'
  */
+// src/lib/smartbridge.ts  (replace only the ensureLiquidity function)
+
 export async function ensureLiquidity(
   symbol: TokenSymbol,   // desired token on the target chain (e.g., 'USDT0' on Lisk)
   amount: bigint,
@@ -60,6 +62,8 @@ export async function ensureLiquidity(
     timeoutMs?: number
     pollMs?: number
     onStatus?: (s: 'bridging' | 'waiting' | 'done') => void
+    /** Optional hint from UI; we'll prefer it but fall back automatically */
+    preferredSourceToken?: Extract<TokenSymbol, 'USDC' | 'USDT'>
   }
 ) {
   const user = wallet.account?.address as `0x${string}`
@@ -78,60 +82,104 @@ export async function ensureLiquidity(
     return { finalBalance: startBal, delta: 0n }
   }
 
-  // Determine source side token & chain balances
-  const chains: ChainId[] = ['optimism', 'base', 'lisk']
-  const balances: Record<ChainId, bigint> = { optimism: 0n, base: 0n, lisk: 0n }
+  // Compute how much we're short on the destination chain
+  const missing = amount - startBal
 
-  // Read displayed token on each chain (for target, it's the final form e.g. USDT0)
-  await Promise.all(chains.map(async (c) => {
-    try {
-      const addr = addressOnChain(symbol, c)
-      balances[c] = await getBalanceOnChain(c, addr, user)
-    } catch {
-      balances[c] = 0n
-    }
-  }))
+  // ───────────────────────────────────────────────────────────────
+  // PICK SOURCE CHAIN + TOKEN (now robust with fallback)
+  // ───────────────────────────────────────────────────────────────
 
-  const missing = amount - balances[target]
+  // What tokens are valid sources for this destination token?
+  // - If target is Lisk and symbol is USDT0 or USDCe, both USDT and USDC are valid sources
+  // - Otherwise, the source token is just `symbol` (mapped per chain for reads)
+  const isLisk = target === 'lisk'
+  const wantsUsdt0 = isLisk && symbol === 'USDT0'
+  const wantsUsdce = isLisk && symbol === 'USDCe'
 
-  if (missing > 0n) {
-    // For bridging, decide which **source representation** to use on OP/Base
-    // (USDT0 → USDT, USDCe → USDC)
-    let bridgeTokenForSource: TokenSymbol = symbol
-    if (target === 'lisk') {
-      if (symbol === 'USDCe') bridgeTokenForSource = 'USDC'
-      else if (symbol === 'USDT0') bridgeTokenForSource = 'USDT'
-    }
+  const candidateSourceTokens: Extract<TokenSymbol, 'USDC' | 'USDT'>[] =
+    wantsUsdt0 || wantsUsdce
+      ? (opts?.preferredSourceToken
+          ? [opts.preferredSourceToken, (opts.preferredSourceToken === 'USDC' ? 'USDT' : 'USDC')]
+          : ['USDC', 'USDT']) // try both if no preference
+      : [symbol as Extract<TokenSymbol, 'USDC' | 'USDT'>] // non-Lisk or other assets
 
-    const sources: ChainId[] = target === 'lisk' ? ['optimism', 'base'] : ['optimism', 'base', 'lisk']
-    const sourceBalances: Record<ChainId, bigint> = { optimism: 0n, base: 0n, lisk: 0n }
+  // Source chains we can bridge from
+  const sources: ChainId[] = isLisk ? ['optimism', 'base'] : ['optimism', 'base', 'lisk']
+
+  // Helper to find a source (chain, token) that has at least `need`
+  const findSourceWith = async (tok: Extract<TokenSymbol, 'USDC' | 'USDT'>, need: bigint) => {
+    const balances: Record<ChainId, bigint> = { optimism: 0n, base: 0n, lisk: 0n }
     await Promise.all(sources.map(async (c) => {
       try {
-        const addr = addressOnChain(bridgeTokenForSource, c)
-        sourceBalances[c] = await getBalanceOnChain(c, addr, user)
+        const addr = addressOnChain(tok, c) // symbolOnChainForRead maps to OP/Base canonical
+        balances[c] = await getBalanceOnChain(c, addr, user)
       } catch {
-        sourceBalances[c] = 0n
+        balances[c] = 0n
       }
     }))
-
-    const from = sources.find((c) => sourceBalances[c] >= missing)
-    if (!from) throw new Error(`Insufficient liquidity: need ${missing} ${symbol} on ${target}`)
-
-    // Which token should we **receive** on the target chain?
-    const tokenToReceiveOnDest: TokenSymbol =
-      target === 'lisk' && symbol === 'USDT0' ? 'USDT0'
-      : target === 'lisk' && symbol === 'USDCe' ? 'USDCe'
-      : symbol
-
-    // Execute LI.FI (single call)
-    opts?.onStatus?.('bridging')
-    await bridgeTokens(tokenToReceiveOnDest, missing, from, target, wallet)
+    // prefer chain with highest balance that covers `need`
+    const ordered = sources.sort((a, b) => Number(balances[b] - balances[a]))
+    const from = ordered.find((c) => balances[c] >= need)
+    return { from, balances }
   }
 
-  // Wait until balance increases on target
+  // Try candidates in order; pick the first that can fully satisfy the missing amount on a single source chain
+  let picked: { from?: ChainId, token?: Extract<TokenSymbol, 'USDC' | 'USDT'> } = {}
+  for (const t of candidateSourceTokens) {
+    const { from } = await findSourceWith(t, missing)
+    if (from) { picked = { from, token: t }; break }
+  }
+
+  if (!picked.from) {
+    // As a last resort, allow partial bridging from the best (largest) candidate if any balance exists.
+    // (Keeps previous behavior if you prefer strict-all-or-nothing: just throw here.)
+    const totals: Array<{token: 'USDC' | 'USDT', chain: ChainId, bal: bigint}> = []
+    for (const t of candidateSourceTokens) {
+      const { balances } = await (async () => {
+        const bs: Record<ChainId, bigint> = { optimism: 0n, base: 0n, lisk: 0n }
+        await Promise.all(sources.map(async (c) => {
+          try { bs[c] = await getBalanceOnChain(c, addressOnChain(t, c), user) } catch { bs[c] = 0n }
+        }))
+        return { balances: bs }
+      })()
+      const bestChain = sources.sort((a,b) => Number(balances[b] - balances[a]))[0]
+      totals.push({ token: t, chain: bestChain, bal: balances[bestChain] })
+    }
+    totals.sort((a, b) => Number(b.bal - a.bal))
+    const best = totals[0]
+    if (!best || best.bal === 0n) {
+      throw new Error(`Insufficient liquidity: need ${missing} ${symbol} on ${target}`)
+    }
+    picked = { from: best.chain, token: best.token }
+  }
+
+  // Which token should we receive on the target chain?
+  const tokenToReceiveOnDest: TokenSymbol =
+    wantsUsdt0 ? 'USDT0'
+    : wantsUsdce ? 'USDCe'
+    : symbol
+
+  // ───────────────────────────────────────────────────────────────
+  // BRIDGE
+  // ───────────────────────────────────────────────────────────────
+  opts?.onStatus?.('bridging')
+  await bridgeTokens(
+    tokenToReceiveOnDest, // receive on Lisk as USDT0/USDCe
+    missing,              // only bridge what's missing
+    picked.from!,         // chosen source chain
+    target,
+    wallet,
+    {
+      // critical: pass the *source* token we picked (USDC or USDT)
+      sourceToken: picked.token,
+    }
+  )
+
+  // ───────────────────────────────────────────────────────────────
+  // WAIT FOR FUNDS
+  // ───────────────────────────────────────────────────────────────
   opts?.onStatus?.('waiting')
   const started = Date.now()
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     if (Date.now() - started > timeoutMs) {
       throw new Error('Timeout waiting for bridged funds')

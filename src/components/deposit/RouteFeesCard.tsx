@@ -1,3 +1,4 @@
+// src/components/RouteFeesCard.tsx
 'use client'
 import { FC } from 'react'
 import { ShieldCheck, ArrowRight, AlertTriangle } from 'lucide-react'
@@ -14,7 +15,12 @@ export const RouteFeesCard: FC<{
   quoteError: string | null
   destChainLabel: string
   destTokenLabel: YieldSnapshot['token']
-}> = ({ route, fee, received, tokenDecimals, tokenSymbol, quoteError, destChainLabel, destTokenLabel }) => {
+  /** NEW: show the *selected* source asset (USDC/USDT) for clarity */
+  sourceAsset?: 'USDC' | 'USDT'
+}> = ({ route, fee, received, tokenDecimals, tokenSymbol, quoteError, destChainLabel, destTokenLabel, sourceAsset }) => {
+  // derive source chain badge from route if present
+  const sourceChainLabel = (route?.split('→')?.[0] ?? '').trim().toUpperCase() || 'OP'
+
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
       <div className="flex items-center justify-between">
@@ -33,17 +39,26 @@ export const RouteFeesCard: FC<{
 
       {/* Pretty route line */}
       <div className="mt-3 flex items-center gap-2 text-sm">
-        <ChainPill label={(route?.split(' ')[0] ?? 'OP').replace('→', '').trim()} subtle />
+        <ChainPill label={sourceChainLabel} subtle />
         <ArrowRight className="h-4 w-4 text-gray-400" />
         <ChainPill label={destChainLabel} subtle />
-        <span className="ml-auto text-xs text-gray-500">{tokenSymbol} → {destTokenLabel}</span>
+        <span className="ml-auto text-xs text-gray-500">
+          {sourceAsset ? `${sourceAsset} → ${destTokenLabel}` : `${tokenSymbol} → ${destTokenLabel}`}
+        </span>
       </div>
 
       <div className="mt-3 space-y-1.5">
         {fee > 0n && (
-          <StatRow label="Bridge fee" value={`${formatUnits(fee, tokenDecimals)} ${tokenSymbol}`} />
+          <StatRow
+            label="Bridge fee"
+            value={`${formatUnits(fee, tokenDecimals)} ${sourceAsset ?? tokenSymbol}`}
+          />
         )}
-        <StatRow label="Will deposit" value={`${formatUnits(received, tokenDecimals)} ${tokenSymbol}`} emphasize />
+        <StatRow
+          label="Will deposit"
+          value={`${formatUnits(received, tokenDecimals)} ${destTokenLabel}`}
+          emphasize
+        />
         {quoteError && (
           <div className="text-xs text-red-600 flex items-center gap-1">
             <AlertTriangle className="h-3.5 w-3.5" /> {quoteError}

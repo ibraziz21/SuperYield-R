@@ -1,3 +1,4 @@
+// src/components/AmountCard.tsx
 'use client'
 import { FC } from 'react'
 import { Input } from '@/components/ui/input'
@@ -20,19 +21,60 @@ interface Props {
   liBal: bigint | null
   liBalUSDT: bigint | null
   liBalUSDT0: bigint | null
+  /** NEW: user-chosen source asset when bridging to Lisk:USDT0 */
+  sourceAsset?: 'USDC' | 'USDT'
+  /** NEW: extra OP/Base balances for USDC and USDT (optional) */
+  opUsdcBal?: bigint | null
+  baUsdcBal?: bigint | null
+  opUsdtBal?: bigint | null
+  baUsdtBal?: bigint | null
 }
 
-export const AmountCard: FC<Props> = ({ amount, setAmount, tokenDecimals, snap, isLiskTarget, destTokenLabel, isUsdtFamily, opBal, baBal, liBal, liBalUSDT, liBalUSDT0 }) => {
+export const AmountCard: FC<Props> = ({
+  amount, setAmount, tokenDecimals, snap, isLiskTarget, destTokenLabel, isUsdtFamily,
+  opBal, baBal, liBal, liBalUSDT, liBalUSDT0,
+  sourceAsset,
+  opUsdcBal, baUsdcBal, opUsdtBal, baUsdtBal,
+}) => {
   const max = () => {
     const dec = tokenDecimals
-    if (isLiskTarget && destTokenLabel === 'USDT0' && isUsdtFamily) {
-      const a = liBalUSDT ?? 0n
-      const b = liBalUSDT0 ?? 0n
-      return formatUnits(a > b ? a : b, dec)
+
+    // If bridging to Lisk:USDT0, MAX should reflect the chosen source asset (USDC/USDT) on OP/Base,
+    // but still consider existing balances on Lisk (USDT/USDT0) if they’re larger.
+    if (isLiskTarget && destTokenLabel === 'USDT0') {
+      // Lisk-side possible max (USDT or USDT0 if present)
+      const liskSideMax = (() => {
+        if (isUsdtFamily) {
+          const a = liBalUSDT ?? 0n
+          const b = liBalUSDT0 ?? 0n
+          return a > b ? a : b
+        }
+        return liBal ?? 0n
+      })()
+
+      // OP/Base-side possible max for the chosen source asset
+      const opBaseSide = (() => {
+        if (sourceAsset === 'USDC') {
+          const a = opUsdcBal ?? 0n
+          const b = baUsdcBal ?? 0n
+          return a > b ? a : b
+        } else {
+          const a = opUsdtBal ?? 0n
+          const b = baUsdtBal ?? 0n
+          return a > b ? a : b
+        }
+      })()
+
+      const best = opBaseSide > liskSideMax ? opBaseSide : liskSideMax
+      return formatUnits(best, dec)
     }
+
+    // Non-USDT0 on Lisk
     if (isLiskTarget && destTokenLabel !== 'USDT0') {
       return formatUnits(liBal ?? 0n, dec)
     }
+
+    // OP/Base single-asset case (keep original behavior)
     const a = opBal ?? 0n
     const b = baBal ?? 0n
     return formatUnits(a > b ? a : b, dec)
