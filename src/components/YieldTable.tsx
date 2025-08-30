@@ -4,9 +4,7 @@
 import { FC, useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import { useYields } from '@/hooks/useYields'
-import { isAaveMarketSupported } from '@/lib/tvl'
 import { YieldRow } from './YieldRow'
 
 type Chain = 'optimism' | 'base' | 'lisk'
@@ -26,43 +24,33 @@ const PROTO_LABEL: Record<Proto, string> = {
 
 const PROTO_ORDER: Proto[] = ['aave-v3', 'compound-v3', 'morpho-blue']
 
+/** Hard filter: only show Lisk + Morpho Blue */
+const HARD_FILTER = (y: { chain: Chain; protocolKey: Proto }) =>
+  y.chain === 'lisk' && y.protocolKey === 'morpho-blue'
+
 export const YieldTable: FC = () => {
   const { yields, isLoading, error } = useYields()
 
-  // UI: search / filters / sort
+  // UI: search / sort (filters are hard-coded to Lisk + Morpho Blue)
   const [query, setQuery] = useState('')
-  const [activeProto, setActiveProto] = useState<'all' | Proto>('all')
-  const [chainEnabled, setChainEnabled] = useState<Record<Chain, boolean>>({
-    optimism: true,
-    base: true,
-    lisk: true,
-  })
   const [sort, setSort] = useState<'apy_desc' | 'apy_asc' | 'tvl_desc' | 'tvl_asc'>('apy_desc')
 
   const rows = useMemo(() => {
     if (!yields) return []
     const q = query.trim().toLowerCase()
 
-    const filtered = yields.filter((y) => {
-      // Hide unsupported Aave markets (e.g., Base + USDT)
-      if (
-        y.protocolKey === 'aave-v3' &&
-        (y.chain === 'optimism' || y.chain === 'base') &&
-        (y.token === 'USDC' || y.token === 'USDT') &&
-        !isAaveMarketSupported(y.chain, y.token)
-      ) return false
+    // 1) Enforce Lisk + Morpho Blue only
+    const onlyLiskMorpho = yields.filter((y) => HARD_FILTER(y as any))
 
-      if (activeProto !== 'all' && y.protocolKey !== activeProto) return false
-      if (!chainEnabled[y.chain as Chain]) return false
-
-      if (q) {
-        const hay = `${y.token} ${y.protocol} ${y.chain}`.toLowerCase()
-        if (!hay.includes(q)) return false
-      }
-      return true
+    // 2) Optional text filter
+    const filtered = onlyLiskMorpho.filter((y) => {
+      if (!q) return true
+      const hay = `${y.token} ${y.protocol} ${y.chain}`.toLowerCase()
+      return hay.includes(q)
     })
 
-    const sorted = filtered.slice().sort((a, b) => {
+    // 3) Sort
+    const sortedPrimary = filtered.slice().sort((a, b) => {
       const apyA = a.apy ?? 0
       const apyB = b.apy ?? 0
       const tvlA = a.tvlUSD ?? 0
@@ -75,15 +63,13 @@ export const YieldTable: FC = () => {
       }
     })
 
-    // Keep protocol grouping stable
-    return sorted.sort((a, b) => {
+    // 4) Keep protocol grouping stable (not strictly necessary now, but harmless)
+    return sortedPrimary.sort((a, b) => {
       const ia = PROTO_ORDER.indexOf(a.protocolKey as Proto)
       const ib = PROTO_ORDER.indexOf(b.protocolKey as Proto)
       return ia - ib
     })
-  }, [yields, query, activeProto, chainEnabled, sort])
-
-  const toggleChain = (c: Chain) => setChainEnabled((prev) => ({ ...prev, [c]: !prev[c] }))
+  }, [yields, query, sort])
 
   return (
     <Card className="mx-auto w-full max-w-6xl overflow-hidden rounded-xl md:rounded-2xl">
@@ -94,47 +80,16 @@ export const YieldTable: FC = () => {
           <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground md:text-xs">
             {rows.length} {rows.length === 1 ? 'pool' : 'pools'}
           </span>
+          <span className="hidden rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700 md:inline-block">
+            Showing {CHAIN_LABEL.lisk} • {PROTO_LABEL['morpho-blue']} only
+          </span>
         </div>
 
         <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:flex-wrap md:items-center md:justify-end">
-          {/* protocol filter chips (scrollable on mobile) */}
-          <div className="flex gap-1 overflow-x-auto rounded-full bg-muted/60 p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {(['all', ...PROTO_ORDER] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setActiveProto(p)}
-                className={`rounded-full px-3 py-1 text-[11px] transition md:text-xs ${
-                  activeProto === p
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-muted'
-                }`}
-                title={p === 'all' ? 'All protocols' : PROTO_LABEL[p]}
-              >
-                {p === 'all' ? 'All' : PROTO_LABEL[p]}
-              </button>
-            ))}
-          </div>
-
-          {/* chain toggles */}
-          <div className="flex gap-1">
-            {(Object.keys(CHAIN_LABEL) as Chain[]).map((c) => (
-              <Button
-                key={c}
-                size="sm"
-                variant={chainEnabled[c] ? 'default' : 'outline'}
-                onClick={() => toggleChain(c)}
-                title={CHAIN_LABEL[c]}
-                className="h-8 px-3 text-[11px] md:h-8 md:text-xs"
-              >
-                {CHAIN_LABEL[c]}
-              </Button>
-            ))}
-          </div>
-
           {/* search */}
           <div className="w-full md:w-64">
             <Input
-              placeholder="Search token, protocol, chain…"
+              placeholder="Search token…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               aria-label="Search markets"
@@ -204,7 +159,7 @@ export const YieldTable: FC = () => {
                 {!isLoading && !error && rows.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-3 py-10 text-center text-muted-foreground md:px-4">
-                      No pools match your filters.
+                      No Lisk • Morpho Blue pools match your search.
                     </td>
                   </tr>
                 )}
@@ -221,7 +176,7 @@ export const YieldTable: FC = () => {
         {!isLoading && !error && (
           <div className="flex items-center justify-between border-t px-3 py-3 text-[11px] text-muted-foreground md:px-4 md:text-xs">
             <span>Showing <strong>{rows.length}</strong> pool{rows.length === 1 ? '' : 's'}</span>
-            <span className="hidden md:block">Tip: Filter by protocol and chain, then sort by APY or TVL.</span>
+            <span className="hidden md:block">Lisk • Morpho Blue only.</span>
           </div>
         )}
       </CardContent>
