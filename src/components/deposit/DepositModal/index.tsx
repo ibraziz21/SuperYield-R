@@ -5,7 +5,8 @@ import { FC, useEffect, useMemo, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAppKit } from '@reown/appkit/react'
 import { useWalletClient, useChainId, useSwitchChain } from 'wagmi'
-import { formatUnits, parseUnits } from 'viem'
+import { formatUnits, parseUnits, keccak256, toBytes, toHex } from 'viem'
+import { lisk as liskChain } from 'viem/chains'
 
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { ensureLiquidity } from '@/lib/smartbridge'
@@ -18,6 +19,8 @@ import { RouteFeesCard } from '../RouteFeesCard'
 import { SuppliedCard } from '../SuppliedCard'
 import { ProgressSteps } from '../Progress'
 import { ActionBar } from '../ActionBar'
+import {  bridgeAndDepositViaRouter,bridgeAndDepositViaRouterPush } from '@/lib/bridge'
+import { adapterKeyForSnapshot } from '@/lib/adapters'
 
 import {
   getAaveSuppliedBalance,
@@ -31,7 +34,7 @@ import {
   clientFor,
 } from '../helpers'
 import type { EvmChain, FlowStep } from '../types'
-import { TokenAddresses } from '@/lib/constants'
+import { TokenAddresses, MORPHO_POOLS, ADAPTER_KEYS, LISK_EXECUTOR_ADDRESS } from '@/lib/constants'
 
 interface DepositModalProps {
   open: boolean
@@ -252,27 +255,175 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
   // include balances so we re-evaluate once they load
   }, [amount, walletClient, opBal, baBal, liBal, liBalUSDT, liBalUSDT0, snap.chain, snap.token, tokenDecimals, sourceAsset])
 
-  /* ---------------- Confirm (balance-driven bridging) ---------------- */
+  // helper to build & sign the EIP-712 intent for the executor
+  async function signDepositIntent(params: {
+    user: `0x${string}`
+    key:  `0x${string}`
+    asset:`0x${string}`
+    amount: bigint
+    minAmount?: bigint
+  }) {
+    if (!walletClient) throw new Error('No wallet')
+  
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 30 * 60)
+    const nonce    = BigInt(Date.now())
+    const refId    = keccak256(toBytes(`${params.user}-${Date.now()}-${params.asset}-${params.amount.toString()}`))
+  
+    const domain = {
+      name: 'SuperYLDR-LiskExecutor',
+      version: '1',
+      chainId: BigInt(liskChain.id),                     // MUST be Lisk
+      verifyingContract: LISK_EXECUTOR_ADDRESS as `0x${string}`,
+    } as const
+  
+    const types = {
+      DepositIntent: [
+        { name: 'user',      type: 'address' },
+        { name: 'key',       type: 'bytes32' },
+        { name: 'asset',     type: 'address' },
+        { name: 'amount',    type: 'uint256' },
+        { name: 'minAmount', type: 'uint256' },
+        { name: 'deadline',  type: 'uint256' },
+        { name: 'nonce',     type: 'uint256' },
+        { name: 'refId',     type: 'bytes32' },
+      ],
+    } as const
+  
+    const message = {
+      user: params.user,
+      key: params.key,
+      asset: params.asset,
+      amount: params.amount,
+      minAmount: params.minAmount ?? 0n,
+      deadline,
+      nonce,
+      refId,
+    }
+  
+    // ⬇️ NEW: temporarily switch the wallet to Lisk for signing
+    const want = toHex(liskChain.id) as `0x${string}`
+    const current = (await walletClient.request({ method: 'eth_chainId' })) as `0x${string}`
+    const mustSwitch = current.toLowerCase() !== want.toLowerCase()
+  
+    async function ensureLisk() {
+      try {
+        await walletClient!.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: want }],
+        })
+      } catch (e: any) {
+        // If Lisk isn’t added, add it then switch (optional, fill in your RPC/explorer)
+        if (e?.code === 4902) {
+          await walletClient!.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: want,
+              chainName: 'Lisk',
+              nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+              rpcUrls: [process.env.NEXT_PUBLIC_LISK_RPC_URL ?? 'https://rpc.api.lisk.com'],
+              blockExplorerUrls: ['https://blockscout.lisk.com'],
+            }],
+          })
+          await walletClient!.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: want }],
+          })
+        } else {
+          throw e
+        }
+      }
+    }
+  
+    if (mustSwitch) await ensureLisk()
+    try {
+      const signature = await walletClient.signTypedData({
+        account: params.user,
+        domain, types, primaryType: 'DepositIntent', message,
+      })
+      return { message, signature }
+    } finally {
+      // switch back to the original chain if we changed it
+      if (mustSwitch) {
+        await walletClient.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: current }],
+        })
+      }
+    }
+  }
+
+  /* ---------------- Confirm (bridge → sign intent → server relayer call) ---------------- */
   async function handleConfirm() {
     if (!walletClient) { openConnect(); return }
     setError(null)
-
+  
     try {
       const inputAmt = parseUnits(amount || '0', tokenDecimals)
       const dest = snap.chain as EvmChain
-      const destId = chainIdOf(dest)
       const user = walletClient.account!.address as `0x${string}`
+  
+      // ─────────────────────────────────────────────────────────────
+      // NEW: 1-click route for Lisk + Morpho (bridge → router.deposit)
+      // ─────────────────────────────────────────────────────────────
+      if (dest === 'lisk' && snap.protocolKey === 'morpho-blue') {
+        setStep('bridging') // covers the combined bridge + contract-call route
+  
+        const destTokenLabel = mapCrossTokenForDest(snap.token, 'lisk') as 'USDT0' | 'USDCe' | 'WETH'
+        const adapterKey = adapterKeyForSnapshot(snap)
+  
+        // Pick source-chain **for the chosen source token**
+        const pickSrcBy = (op: bigint | null, ba: bigint | null): 'optimism' | 'base' => {
+          const _op = op ?? 0n
+          const _ba = ba ?? 0n
+          if (_op >= inputAmt) return 'optimism'
+          if (_ba >= inputAmt) return 'base'
+          return _op >= _ba ? 'optimism' : 'base'
+        }
+  
+        // Source token respecting the USDT/USDC toggle for USDT0
+        const srcToken =
+          destTokenLabel === 'USDT0' ? sourceAsset :
+          destTokenLabel === 'USDCe' ? 'USDC' :
+          'WETH'
+  
+        // Choose the right balances to decide source chain
+        let srcChain: 'optimism' | 'base'
+        if (srcToken === 'USDC') {
+          srcChain = pickSrcBy(opUsdcBal, baUsdcBal)
+        } else if (srcToken === 'USDT') {
+          srcChain = pickSrcBy(opUsdtBal, baUsdtBal)
+        } else {
+          // WETH fallback: use generic displayed balances
+          srcChain = pickSrcBy(opBal, baBal)
+        }
 
-      // Resolve destination token form (e.g. USDT0 on Lisk for USDT family)
+        console.log("From: ", srcToken, " to: ", destTokenLabel)
+  
+        await bridgeAndDepositViaRouterPush({
+          user,
+          destToken: destTokenLabel as 'USDT0' | 'USDCe' | 'WETH',
+          srcChain: srcChain,                             // 'optimism' | 'base'
+          srcToken: srcToken as 'USDC' | 'USDT' | 'WETH',
+          amount: inputAmt,
+          adapterKey,                                         // from adapterKeyForSnapshot(snap)
+          walletClient,
+        })
+  
+        setStep('success')
+        return
+      }
+  
+      // ─────────────────────────────────────────────────────────────
+      // Existing path for Aave/Comet or non-Lisk destinations
+      // (balance-driven bridging + on-chain deposit via Router)
+      // ─────────────────────────────────────────────────────────────
+      const destId = chainIdOf(dest)
       const wantDestToken = mapCrossTokenForDest(snap.token, dest)
       const finalTokenAddr = tokenAddrFor(wantDestToken, dest)
-
-      // Read pre-bridge balance on destination
       const preBal = await readWalletBalance(dest, finalTokenAddr, user)
-
+  
       let bridgedDelta: bigint = 0n
-
-      // Bridge if we don't already have enough of the destination token on the destination chain
+  
       if (!liquidityEnsured && preBal < inputAmt) {
         setStep('bridging')
         const res = await ensureLiquidity(
@@ -281,8 +432,10 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
           dest,
           walletClient,
           {
-            onStatus: (s) => { if (s === 'waiting') setStep('waitingFunds'); else if (s === 'bridging') setStep('bridging') },
-            // Respect user's USDC/USDT choice when targeting Lisk:USDT0
+            onStatus: (s) => {
+              if (s === 'waiting') setStep('waitingFunds')
+              else if (s === 'bridging') setStep('bridging')
+            },
             preferredSourceToken: (dest === 'lisk' && wantDestToken === 'USDT0') ? sourceAsset : undefined,
           }
         )
@@ -291,33 +444,31 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       } else {
         setLiquidityEnsured(true)
       }
-
-      // Switch to destination chain (if needed)
+  
       if (chainId !== destId && switchChainAsync) {
         setStep('switching')
         await switchChainAsync({ chainId: destId })
       }
-
-      // Read fresh balance & cap deposit to intended amount
+  
       const postBal = await readWalletBalance(dest, finalTokenAddr, user)
       const cap = inputAmt
-
       const toDeposit =
         bridgedDelta > 0n
           ? (bridgedDelta > cap ? cap : bridgedDelta)
           : (postBal >= cap ? cap : postBal)
-
+  
       if (toDeposit === 0n) throw new Error('No funds available to deposit yet')
-
+  
       setStep('depositing')
       await depositToPool(snap, toDeposit, walletClient)
-
+  
       setStep('success')
     } catch (e: any) {
       setError(e instanceof Error ? e.message : String(e))
       setStep('error')
     }
   }
+  
 
   /* =============================================================================
      Derived UI flags
@@ -439,7 +590,6 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
             )}
 
             <ProgressSteps step={step} show={showProgress} crossChain />
-            {/* ^ show crossChain steps since bridging is balance-driven now */}
 
             {showSuccess && (
               <div className="flex flex-col items-center gap-3 py-6">
@@ -450,7 +600,9 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                 <div className="text-center">
                   <div className="text-lg font-semibold">Deposit successful</div>
                   <div className="mt-1 text-sm text-muted-foreground">
-                    Your {snap.token} has been supplied to {snap.protocol}.
+                    {snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk'
+                      ? `Your ${snap.token} was bridged to Lisk and deposited via our relayer.`
+                      : `Your ${snap.token} has been supplied to ${snap.protocol}.`}
                   </div>
                 </div>
               </div>

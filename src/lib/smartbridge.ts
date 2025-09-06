@@ -1,7 +1,7 @@
 // src/lib/smartbridge.ts
 import { publicOptimism, publicBase, publicLisk } from './clients'
 import { erc20Abi } from 'viem'
-import { TokenAddresses, type ChainId, type TokenSymbol } from './constants'
+import { TokenAddresses, type ChainId, type TokenSymbol, LISK_EXECUTOR_ADDRESS } from './constants'
 import { bridgeTokens } from './bridge'
 import type { WalletClient } from 'viem'
 
@@ -43,16 +43,14 @@ async function getBalanceOnChain(
 }
 
 /**
- * Ensure user has `amount` of the **destination token form** on `target`
+ * Ensure recipient has `amount` of the **destination token form** on `target`
  * and wait until funds actually arrive (single call).
  *
- * - If target=Lisk + USDT0 → we source USDT on OP/Base, but **bridge to USDT0** directly (LI.FI).
- * - If target=Lisk + USDCe → we source USDC on OP/Base, but **bridge to USDCe**.
+ * - If target=Lisk + USDT0/USDCe → we bridge to the **Executor** on Lisk (not the user).
+ * - Otherwise (OP/Base or same-chain) we bridge to the user.
  *
  * `onStatus`: 'bridging' | 'waiting' | 'done'
  */
-// src/lib/smartbridge.ts  (replace only the ensureLiquidity function)
-
 export async function ensureLiquidity(
   symbol: TokenSymbol,   // desired token on the target chain (e.g., 'USDT0' on Lisk)
   amount: bigint,
@@ -72,9 +70,12 @@ export async function ensureLiquidity(
   const timeoutMs = opts?.timeoutMs ?? 15 * 60 * 1000
   const pollMs    = opts?.pollMs    ?? 10_000
 
-  // Destination token & starting balance snapshot
+  // Destination token & starting balance snapshot — note recipient:
   const destTokenAddr = addressOnChain(symbol, target)
-  const startBal = await getBalanceOnChain(target, destTokenAddr, user)
+  const recipient: `0x${string}` =
+    target === 'lisk' ? (LISK_EXECUTOR_ADDRESS as `0x${string}`) : user
+
+  const startBal = await getBalanceOnChain(target, destTokenAddr, recipient)
 
   // Already enough? Done.
   if (startBal >= amount) {
@@ -89,9 +90,6 @@ export async function ensureLiquidity(
   // PICK SOURCE CHAIN + TOKEN (now robust with fallback)
   // ───────────────────────────────────────────────────────────────
 
-  // What tokens are valid sources for this destination token?
-  // - If target is Lisk and symbol is USDT0 or USDCe, both USDT and USDC are valid sources
-  // - Otherwise, the source token is just `symbol` (mapped per chain for reads)
   const isLisk = target === 'lisk'
   const wantsUsdt0 = isLisk && symbol === 'USDT0'
   const wantsUsdce = isLisk && symbol === 'USDCe'
@@ -111,7 +109,7 @@ export async function ensureLiquidity(
     const balances: Record<ChainId, bigint> = { optimism: 0n, base: 0n, lisk: 0n }
     await Promise.all(sources.map(async (c) => {
       try {
-        const addr = addressOnChain(tok, c) // symbolOnChainForRead maps to OP/Base canonical
+        const addr = addressOnChain(tok, c)
         balances[c] = await getBalanceOnChain(c, addr, user)
       } catch {
         balances[c] = 0n
@@ -132,16 +130,12 @@ export async function ensureLiquidity(
 
   if (!picked.from) {
     // As a last resort, allow partial bridging from the best (largest) candidate if any balance exists.
-    // (Keeps previous behavior if you prefer strict-all-or-nothing: just throw here.)
     const totals: Array<{token: 'USDC' | 'USDT', chain: ChainId, bal: bigint}> = []
     for (const t of candidateSourceTokens) {
-      const { balances } = await (async () => {
-        const bs: Record<ChainId, bigint> = { optimism: 0n, base: 0n, lisk: 0n }
-        await Promise.all(sources.map(async (c) => {
-          try { bs[c] = await getBalanceOnChain(c, addressOnChain(t, c), user) } catch { bs[c] = 0n }
-        }))
-        return { balances: bs }
-      })()
+      const balances: Record<ChainId, bigint> = { optimism: 0n, base: 0n, lisk: 0n }
+      await Promise.all(sources.map(async (c) => {
+        try { balances[c] = await getBalanceOnChain(c, addressOnChain(t, c), user) } catch { balances[c] = 0n }
+      }))
       const bestChain = sources.sort((a,b) => Number(balances[b] - balances[a]))[0]
       totals.push({ token: t, chain: bestChain, bal: balances[bestChain] })
     }
@@ -170,13 +164,12 @@ export async function ensureLiquidity(
     target,
     wallet,
     {
-      // critical: pass the *source* token we picked (USDC or USDT)
-      sourceToken: picked.token,
+      sourceToken: picked.token,                       // picked source token
     }
   )
 
   // ───────────────────────────────────────────────────────────────
-  // WAIT FOR FUNDS
+  // WAIT FOR FUNDS (in recipient = user or executor)
   // ───────────────────────────────────────────────────────────────
   opts?.onStatus?.('waiting')
   const started = Date.now()
@@ -184,7 +177,7 @@ export async function ensureLiquidity(
     if (Date.now() - started > timeoutMs) {
       throw new Error('Timeout waiting for bridged funds')
     }
-    const bal = await getBalanceOnChain(target, destTokenAddr, user)
+    const bal = await getBalanceOnChain(target, destTokenAddr, recipient)
     if (bal > startBal) {
       opts?.onStatus?.('done')
       return { finalBalance: bal, delta: bal - startBal }

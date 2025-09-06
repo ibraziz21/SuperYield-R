@@ -31,7 +31,7 @@ export type AdapterKeyName = keyof typeof ADAPTER_KEYS
 export const ROUTERS: Record<'optimism' | 'base' | 'lisk', `0x${string}`> = {
   optimism: '0x74298D4c82f06797029b90ca7e50B1AEB9edB501',
   base:     '0x7AE3e0e585b1663Dc876e8b36B47494166d38F2F',
-  lisk:     '0x5133C942c1b7962D62a3851Fe01876D750d02AA7',
+  lisk:     '0xb533CB94DeaBDd37F870E47510a03539C413CEFF',
 } as const
 
 /** 3-chain token map */
@@ -95,3 +95,6 @@ export const VELODROME_LISK = {
 
 export type ChainId = 'optimism' | 'base' | 'lisk'
 export type TokenSymbol = 'USDC' | 'USDT' | 'USDCe' | 'USDT0' | 'WETH'
+
+/** NEW: Lisk Executor (funds land here; relayer settles & deposits) */
+export const LISK_EXECUTOR_ADDRESS = '0x8F60907f41593d4B41f5e0cEa48415cd61854a79' as const

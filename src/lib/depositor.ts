@@ -121,7 +121,12 @@ export async function depositToPool(
   const owner = wallet.account?.address as `0x${string}` | undefined
   if (!owner) throw new Error('Wallet not connected')
 
-  const chain: ChainId = snap.protocolKey === 'morpho-blue' ? 'lisk' : (snap.chain as ChainId)
+  // NEW: prevent user-side Lisk deposit; executor/relayer handles Morpho on Lisk
+  if (snap.protocolKey === 'morpho-blue') {
+    throw new Error('Lisk deposits are executed by the relayer; no user action on Lisk required.')
+  }
+
+  const chain: ChainId = (snap.chain as ChainId)
   const router = ROUTERS[chain]
   if (!router || router.toLowerCase() === ZERO_ADDR) throw new Error(`Router missing for ${chain}`)
 
