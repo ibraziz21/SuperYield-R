@@ -56,7 +56,9 @@ export async function fetchMerklRewards(params: {
   const qs = chainIds.map((id) => `chainId=${id}`).join('&')
   const url = `${apiBase}/v4/users/${user}/rewards?${qs}`
 
+
   const res = await fetch(url, { cache: 'no-store' })
+ 
   if (!res.ok) throw new Error(`Merkl API error: ${res.status}`)
   const data = (await res.json()) as MerklRewardsByChain[]
   return data
