@@ -20,27 +20,24 @@ import { TokenAddresses, AAVE_POOL, COMET_POOLS } from '@/lib/constants'
 import { publicOptimism, publicBase, publicLisk } from '@/lib/clients'
 import aaveAbi from '@/lib/abi/aavePool.json'
 import { erc20Abi } from 'viem'
-import { Loader2, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react'
+import { Loader2, CheckCircle2, AlertTriangle } from 'lucide-react'
 
-// LI.FI-backed bridge orchestrator
-import { ensureLiquidity } from '@/lib/smartbridge'
-import { getQuote } from '@lifi/sdk'
+// Quote + Bridge
+import { getBridgeQuote } from '@/lib/quotes'
+import { bridgeTokens } from '@/lib/bridge'
 
 /* ──────────────────────────────────────────────────────────────── */
 
 type EvmChain = 'optimism' | 'base' | 'lisk'
 const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1)
+const LOG = (...args: any[]) => console.log('[WithdrawModal]', ...args)
+const WARN = (...args: any[]) => console.warn('[WithdrawModal]', ...args)
+const ERR = (...args: any[]) => console.error('[WithdrawModal]', ...args)
 
 function clientFor(chain: EvmChain) {
   if (chain === 'base') return publicBase
   if (chain === 'optimism') return publicOptimism
   return publicLisk
-}
-
-function explorerTxBaseUrl(chain: EvmChain) {
-  if (chain === 'base') return 'https://basescan.org/tx/'
-  if (chain === 'optimism') return 'https://optimistic.etherscan.io/tx/'
-  return 'https://blockscout.lisk.com/tx/'
 }
 
 /** Minimal ERC-4626 read ABI (for Morpho Lisk vaults) */
@@ -53,13 +50,6 @@ const erc4626AssetAbi = [
   { type: 'function', name: 'asset', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
 ] as const
 
-/** token address lookup from constants */
-function tokenAddrFor(sym: string, chain: EvmChain): `0x${string}` {
-  const addr = (TokenAddresses as any)?.[sym]?.[chain]
-  if (!addr) throw new Error(`Token ${sym} not supported on ${chain}`)
-  return addr as `0x${string}`
-}
-
 /** Map Lisk token address -> known symbol key in TokenAddresses */
 function liskSymbolByAddress(addr: `0x${string}`): 'USDCe' | 'USDT0' | 'USDT' | 'WETH' | null {
   const TA = TokenAddresses as any
@@ -69,6 +59,20 @@ function liskSymbolByAddress(addr: `0x${string}`): 'USDCe' | 'USDT0' | 'USDT' | 
     if (a && a.toLowerCase() === addr.toLowerCase()) return k
   }
   return null
+}
+
+/** Read wallet balance for a token on a chain */
+async function readWalletBalance(
+  chain: EvmChain,
+  token: `0x${string}`,
+  user: `0x${string}`,
+): Promise<bigint> {
+  return await clientFor(chain).readContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [user],
+  }) as bigint
 }
 
 /* ────────────────────────────────────────────────────────────────
@@ -94,7 +98,7 @@ async function getAaveSuppliedBalance(params: {
 
   const aToken =
     (Array.isArray(reserve) ? reserve[7] : (reserve as { aTokenAddress?: `0x${string}` }).aTokenAddress) as
-      | `0x${string}` | undefined
+    | `0x${string}` | undefined
 
   if (!aToken) return 0n
 
@@ -179,7 +183,6 @@ type Status =
   | 'withdrawn'     // ✅ Withdrawal complete (show quote + Bridge CTA)
   | 'quoting'
   | 'bridging'
-  | 'waitingFunds'
   | 'bridged'       // ✅ Bridging complete
   | 'error'
 
@@ -194,7 +197,6 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
   const [supplied, setSupplied] = useState<bigint | null>(null)
-  const [txHash, setTxHash] = useState<`0x${string}` | null>(null)
 
   // Morpho Lisk → OP bridge UI
   const [dest, setDest] = useState<Destination>('local')
@@ -203,21 +205,25 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   const [quoteError, setQuoteError] = useState<string | null>(null)
   const [underlyingLiskSym, setUnderlyingLiskSym] = useState<'USDCe' | 'USDT0' | 'USDT' | 'WETH' | null>(null)
   const [underlyingAddr, setUnderlyingAddr] = useState<`0x${string}` | null>(null)
-  const [withdrawnAmount, setWithdrawnAmount] = useState<bigint>(0n)
+
+  // strictly measured amounts on Lisk (USDCe path)
+  const [preWithdrawBal, setPreWithdrawBal] = useState<bigint | null>(null)
+  const [receivedLiskAmount, setReceivedLiskAmount] = useState<bigint>(0n)
+  const [quoteAttempted, setQuoteAttempted] = useState(false) // guard against loops
 
   const evmChain = snap.chain as EvmChain
   const needChainId =
     evmChain === 'base' ? base.id :
-    evmChain === 'optimism' ? optimism.id :
-    liskChain.id
+      evmChain === 'optimism' ? optimism.id :
+        liskChain.id
 
   const decimals = useMemo(() => (snap.token === 'WETH' ? 18 : 6), [snap.token])
 
   const title = useMemo(() => {
     return snap.protocolKey === 'aave-v3' ? 'Withdraw (Aave v3)' :
-           snap.protocolKey === 'compound-v3' ? 'Withdraw (Compound v3)' :
-           snap.protocolKey === 'morpho-blue' ? 'Withdraw (Morpho Blue)' :
-           'Withdraw'
+      snap.protocolKey === 'compound-v3' ? 'Withdraw (Compound v3)' :
+        snap.protocolKey === 'morpho-blue' ? 'Withdraw (Morpho Blue)' :
+          'Withdraw'
   }, [snap.protocolKey])
 
   const CHAIN_NAME: Record<EvmChain, string> = { optimism: 'Optimism', base: 'Base', lisk: 'Lisk' }
@@ -225,16 +231,18 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   // reset per-open
   useEffect(() => {
     if (!open) return
+    LOG('open modal with snapshot', { id: snap.id, chain: snap.chain, protocolKey: snap.protocolKey, token: snap.token })
     setStatus('idle')
     setError(null)
-    setTxHash(null)
     setDest('local')
     setRoute(null)
     setBridgeReceive(0n)
     setQuoteError(null)
     setUnderlyingLiskSym(null)
     setUnderlyingAddr(null)
-    setWithdrawnAmount(0n)
+    setPreWithdrawBal(null)
+    setReceivedLiskAmount(0n)
+    setQuoteAttempted(false)
   }, [open, snap.id])
 
   // Load supplied amount + underlying for Morpho (and Aave/Compound on OP/Base)
@@ -243,179 +251,285 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
     const user = walletClient.account?.address as `0x${string}` | undefined
     if (!user) return
 
-    ;(async () => {
-      try {
-        // Aave OP/Base
-        if (snap.protocolKey === 'aave-v3' && (snap.chain === 'optimism' || snap.chain === 'base')) {
-          if (snap.token !== 'USDC' && snap.token !== 'USDT') { setSupplied(0n); return }
-          const bal = await getAaveSuppliedBalance({ chain: snap.chain, token: snap.token, user })
-          setSupplied(bal); return
-        }
+      ; (async () => {
+        try {
+          if (snap.protocolKey === 'aave-v3' && (snap.chain === 'optimism' || snap.chain === 'base')) {
+            LOG('loading Aave supplied balance', { chain: snap.chain, token: snap.token, user })
+            if (snap.token !== 'USDC' && snap.token !== 'USDT') { setSupplied(0n); return }
+            const bal = await getAaveSuppliedBalance({ chain: snap.chain, token: snap.token, user })
+            LOG('Aave supplied balance loaded', formatUnits(bal, 6))
+            setSupplied(bal); return
+          }
 
-        // Compound OP/Base
-        if (snap.protocolKey === 'compound-v3' && (snap.chain === 'optimism' || snap.chain === 'base')) {
-          if (snap.token !== 'USDC' && snap.token !== 'USDT') { setSupplied(0n); return }
-          const bal = await getCometSuppliedBalance({ chain: snap.chain, token: snap.token, user })
-          setSupplied(bal); return
-        }
+          if (snap.protocolKey === 'compound-v3' && (snap.chain === 'optimism' || snap.chain === 'base')) {
+            LOG('loading Comet supplied balance', { chain: snap.chain, token: snap.token, user })
+            if (snap.token !== 'USDC' && snap.token !== 'USDT') { setSupplied(0n); return }
+            const bal = await getCometSuppliedBalance({ chain: snap.chain, token: snap.token, user })
+            LOG('Comet supplied balance loaded', formatUnits(bal, 6))
+            setSupplied(bal); return
+          }
 
-        // Morpho Lisk (ERC-4626)
-        if (snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk') {
-          const vault = snap.poolAddress as `0x${string}` | undefined
-          if (!vault) { setSupplied(0n); setUnderlyingLiskSym(null); setUnderlyingAddr(null); return }
-          const { assets, underlyingAddr, underlyingSym } = await getMorphoLiskSuppliedAssets({ vault, user })
-          setSupplied(assets)
-          setUnderlyingAddr(underlyingAddr)
-          setUnderlyingLiskSym(underlyingSym)
-          return
-        }
+          if (snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk') {
+            const vault = snap.poolAddress as `0x${string}` | undefined
+            LOG('loading Morpho Lisk assets', { vault, user })
+            if (!vault) { setSupplied(0n); setUnderlyingLiskSym(null); setUnderlyingAddr(null); return }
+            const { assets, underlyingAddr, underlyingSym } = await getMorphoLiskSuppliedAssets({ vault, user })
+            LOG('Morpho Lisk assets loaded', { assets: formatUnits(assets, 6), underlyingAddr, underlyingSym })
+            setSupplied(assets)
+            setUnderlyingAddr(underlyingAddr)
+            setUnderlyingLiskSym(underlyingSym)
+            return
+          }
 
-        setSupplied(0n)
-      } catch (e) {
-        console.error('[WithdrawModal] fetch supplied error', e)
-        setError('Failed to load balance')
-        setSupplied(0n)
-      }
-    })()
+          setSupplied(0n)
+        } catch (e) {
+          ERR('fetch supplied error', e)
+          setError('Failed to load balance')
+          setSupplied(0n)
+        }
+      })()
   }, [open, walletClient, snap.protocolKey, snap.chain, snap.token, snap.poolAddress])
 
   /* ────────────────────────────────────────────────────────────────
-     STEP 1 — Withdraw
+     STEP 1 — Withdraw (and measure actual received USDCe on Lisk)
      ──────────────────────────────────────────────────────────────── */
 
-  async function handleWithdrawAll() {
-    if (!walletClient) { openConnect(); return }
+  async function waitForBalanceIncrease(params: {
+    chain: EvmChain
+    token: `0x${string}`
+    user: `0x${string}`
+    before: bigint
+    timeoutMs?: number
+    pollMs?: number
+  }): Promise<bigint> {
+    const { chain, token, user, before, timeoutMs = 120_000, pollMs = 5_000 } = params
+    LOG('waiting for balance increase', { chain, token, user, before: before.toString(), timeoutMs, pollMs })
+    const t0 = Date.now()
+    while (true) {
+      const nowBal = await readWalletBalance(chain, token, user)
+      if (nowBal > before) {
+        LOG('balance increase detected', { before: before.toString(), now: nowBal.toString(), delta: (nowBal - before).toString() })
+        return nowBal - before
+      }
+      if (Date.now() - t0 > timeoutMs) {
+        WARN('timeout waiting for balance increase')
+        return 0n
+      }
+      await new Promise((r) => setTimeout(r, pollMs))
+    }
+  }
 
+  async function doBridge(amount: bigint) {
+    if (!walletClient) return
+    if (!(snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk' && dest === 'optimism')) return
+    if (!underlyingAddr || underlyingLiskSym !== 'USDCe') {
+      setError('Only USDCe path supported.')
+      setStatus('error')
+      return
+    }
+    if (amount <= 0n) {
+      setError('No USDCe received from withdraw yet.')
+      setStatus('error')
+      return
+    }
+  
     try {
       setError(null)
-      setTxHash(null)
-
-      // switch to chain of the position
-      if (chainId !== needChainId && switchChainAsync) {
-        setStatus('switching')
-        await switchChainAsync({ chainId: needChainId })
-      }
-
-      // compute amount
-      let amount: bigint
-      if (snap.protocolKey === 'aave-v3') {
-        amount = MAX_UINT256
-      } else if (snap.protocolKey === 'compound-v3') {
-        if (supplied == null) throw new Error('Balance not loaded')
-        amount = supplied
-      } else if (snap.protocolKey === 'morpho-blue') {
-        if (supplied == null) throw new Error('Balance not loaded')
-        amount = supplied
-      } else {
-        throw new Error(`Unsupported protocol: ${snap.protocol}`)
-      }
-
-      // withdraw
-      setStatus('withdrawing')
-      const hash = await withdrawFromPool(snap, amount, walletClient)
-      if (typeof hash === 'string' && hash.startsWith('0x')) setTxHash(hash as `0x${string}`)
-
-      // Cross-chain path: stop at "Withdrawal complete", then quote & show Bridge CTA
-      if (snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk' && dest === 'optimism') {
-        setWithdrawnAmount(amount)
-        setStatus('withdrawn')
-        return
-      }
-
-      // Same-chain: finished
-      setStatus('bridged') // use same banner style for "complete"
+      setStatus('bridging')
+      LOG('auto-bridging via LI.FI', {
+        from: 'lisk', to: 'optimism', tokenDest: 'USDC', amount: amount.toString(),
+      })
+  
+      await bridgeTokens('USDC', amount, 'lisk', 'optimism', walletClient)
+  
+      LOG('bridge complete')
+      setStatus('bridged')
     } catch (e) {
-      console.error('[WithdrawModal] withdraw error', e)
+      ERR('bridge error', e)
       setError(e instanceof Error ? e.message : String(e))
       setStatus('error')
     }
   }
 
+  async function handleWithdrawAll() {
+    if (!walletClient) { openConnect(); return }
+  
+    try {
+      setError(null)
+  
+      // 1) Ensure we’re on the right chain
+      if (chainId !== needChainId && switchChainAsync) {
+        LOG('switch chain', { from: chainId, to: needChainId })
+        setStatus('switching')
+        await switchChainAsync({ chainId: needChainId })
+      }
+  
+      // 2) Work out amount to withdraw
+      let amount: bigint
+      if (snap.protocolKey === 'aave-v3') {
+        amount = MAX_UINT256
+      } else if (snap.protocolKey === 'compound-v3' || snap.protocolKey === 'morpho-blue') {
+        if (supplied == null) throw new Error('Balance not loaded')
+        amount = supplied
+      } else {
+        throw new Error(`Unsupported protocol: ${snap.protocol}`)
+      }
+  
+      const user = walletClient.account?.address as `0x${string}`
+      LOG('withdraw begin', { protocolKey: snap.protocolKey, chain: snap.chain, amount: amount.toString(), user })
+  
+      // 3) Snapshot USDCe balance if we’re doing Lisk → Optimism
+      let beforeBal: bigint | null = null
+      const willBridgeAfter =
+        snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk' && dest === 'optimism'
+  
+      if (willBridgeAfter) {
+        if (!underlyingAddr || underlyingLiskSym !== 'USDCe') {
+          throw new Error('Cross-chain path supports USDCe only.')
+        }
+        beforeBal = await readWalletBalance('lisk', underlyingAddr, user)
+        setPreWithdrawBal(beforeBal)
+        LOG('pre-withdraw USDCe', { before: formatUnits(beforeBal, 6) })
+      }
+  
+      // 4) Withdraw
+      setStatus('withdrawing')
+      const tx = await withdrawFromPool(snap, amount, walletClient)
+      LOG('withdraw tx submitted', tx)
+  
+      // 5) If cross-chain: wait for USDCe to land, then quote immediately
+      if (willBridgeAfter) {
+        if (!underlyingAddr || underlyingLiskSym !== 'USDCe' || beforeBal == null) {
+          WARN('missing underlying / beforeBal; marking withdrawn without delta')
+          setStatus('withdrawn')
+          return
+        }
+  
+        const delta = await waitForBalanceIncrease({
+          chain: 'lisk',
+          token: underlyingAddr,
+          user,
+          before: beforeBal,
+          timeoutMs: 180_000,
+          pollMs: 6_000,
+        })
+  
+        setReceivedLiskAmount(delta)
+        LOG('withdrawal delta measured', { delta: formatUnits(delta, 6) })
+  
+        // Show “Withdrawal complete”, then kick off quote imperatively
+        setStatus('withdrawn')
+        void quoteAfterWithdrawal(delta)
+        return
+      }
+  
+      // 6) Same-chain path ends here
+      setStatus('bridged')
+    } catch (e) {
+      ERR('withdraw error', e)
+      setError(e instanceof Error ? e.message : String(e))
+      setStatus('error')
+    }
+  }
+  
   /* ────────────────────────────────────────────────────────────────
-     STEP 2 — Quote (after withdrawn) & Bridge
+     STEP 2 — Quote after withdrawn, for EXACT `receivedLiskAmount`
+     (guarded, with timeout)
      ──────────────────────────────────────────────────────────────── */
 
-  // Quote only AFTER we’re in 'withdrawn' state on Morpho-Lisk → Optimism
-  useEffect(() => {
-    if (!open) return
-    if (status !== 'withdrawn') return
-    if (snap.protocolKey !== 'morpho-blue' || snap.chain !== 'lisk' || dest !== 'optimism') return
-
-    if (!underlyingAddr || !(underlyingLiskSym === 'USDCe' || underlyingLiskSym === 'USDT0')) {
-      setRoute(null); setBridgeReceive(0n); setQuoteError('Only USDCe/USDT0 supported for cross-chain withdraw'); return
-    }
-
-    let cancelled = false
-    const QUOTE_TIMEOUT_MS = 15000
-
-    const fetchQuote = async () => {
-      setStatus('quoting')
-      setQuoteError(null)
-      setRoute(null)
+  // put near other handlers
+  async function quoteAfterWithdrawal(exactAmount: bigint) {
+    if (!walletClient) return
+    if (!underlyingAddr || underlyingLiskSym !== 'USDCe') {
+      setRoute('—')
       setBridgeReceive(0n)
-
-      const fromAmount =
-        (withdrawnAmount && withdrawnAmount > 0n) ? withdrawnAmount : (supplied ?? 0n)
-
-      const quotePromise = getQuote({
-        fromChain: liskChain.id,
-        toChain: optimism.id,
-        fromToken: underlyingAddr,                    // underlying asset(), not the vault
-        toToken: tokenAddrFor('USDC', 'optimism'),
-        fromAmount: fromAmount.toString(),
-        fromAddress: walletClient?.account?.address as `0x${string}`, // Add fromAddress
-        slippage: 0.003,
-      })
-
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('LI.FI quote timeout')), QUOTE_TIMEOUT_MS)
-      )
-
-      try {
-        const q: any = await Promise.race([quotePromise, timeoutPromise])
-        if (cancelled) return
-        setRoute('LI.FI • Lisk → Optimism')
-        setBridgeReceive(BigInt(q.toAmount ?? '0'))
-        setQuoteError(null)
-      } catch (e) {
-        if (cancelled) return
-        console.debug('[LI.FI quote failed after withdraw]', (e as any)?.message ?? e)
-        setRoute('—')
-        setBridgeReceive(0n)
-        setQuoteError('Could not fetch LI.FI quote (you can still bridge).')
-      } finally {
-        if (!cancelled) setStatus('withdrawn') // return to "Withdrawal complete" + Bridge CTA
-      }
+      setQuoteError('Only USDCe supported for cross-chain withdraw.')
+      // still proceed to bridge the exact amount without a pre-shown quote
+      return void doBridge(exactAmount)
     }
+  
+    const user = walletClient.account?.address as `0x${string}`
+    LOG('starting LI.FI quote', {
+      from: 'lisk', to: 'optimism', tokenFrom: 'USDCe', tokenTo: 'USDC',
+      amount: exactAmount.toString(), fromAddress: user
+    })
+  
+    setStatus('quoting')
+    setQuoteError(null)
+    setRoute(null)
+    setBridgeReceive(0n)
+  
+    const timeout = new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error('quote-timeout')), 15_000)
+    )
+  
+    console.time('[WithdrawModal] quote')
+    try {
+      const q = await Promise.race([
+        getBridgeQuote({
+          token: 'USDC',
+          amount: exactAmount,
+          from: 'lisk',
+          to: 'optimism',
+          fromAddress: user,
+          slippage: 0.003,
+          walletClient: walletClient,
+        }),
+        timeout,
+      ])
+  
+      console.groupCollapsed('[WithdrawModal] LI.FI quote result')
+      LOG('normalized quote', q)
+      LOG('quote.estimate', q.estimate)
+      LOG('quote.raw',     q.raw)
+      console.groupEnd()
+  
+      setRoute(q.route)
+      setBridgeReceive(q.bridgeOutAmount)
+  
+      console.timeEnd('[WithdrawModal] quote')
+      // 🚀 auto-bridge immediately with the exact withdrawn amount
+      return void doBridge(exactAmount)
+    } catch (e) {
+      console.timeEnd('[WithdrawModal] quote')
+      ERR('quote failed (auto-bridging without pre-shown quote)', e)
+      setRoute('—')
+      setBridgeReceive(0n)
+      setQuoteError('Could not fetch bridge quote.')
+  
+      // Still proceed to bridge; bridgeTokens will obtain its own route/quote internally.
+      return void doBridge(exactAmount)
+    }
+  }
+  
 
-    fetchQuote()
-    return () => { cancelled = true }
-  }, [open, status, dest, underlyingAddr, underlyingLiskSym, withdrawnAmount, supplied, snap.protocolKey, snap.chain])
+  /* ────────────────────────────────────────────────────────────────
+     STEP 3 — Bridge exactly what arrived on Lisk → Optimism
+     ──────────────────────────────────────────────────────────────── */
 
   async function handleBridge() {
     if (!walletClient) return
     if (!(snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk' && dest === 'optimism')) return
+    if (!underlyingAddr || underlyingLiskSym !== 'USDCe') { setError('Only USDCe path supported.'); setStatus('error'); return }
+    if (receivedLiskAmount <= 0n) { setError('No USDCe received from withdraw yet.'); setStatus('error'); return }
 
     try {
       setError(null)
       setStatus('bridging')
+      LOG('bridging via LI.FI', { from: 'lisk', to: 'optimism', tokenDest: 'USDC', amount: receivedLiskAmount.toString() })
 
-      const amount =
-        (withdrawnAmount && withdrawnAmount > 0n)
-          ? withdrawnAmount
-          : (supplied ?? 0n)
+      await bridgeTokens(
+        'USDC',                       // receive on Optimism
+        receivedLiskAmount,           // exact credited amount
+        'lisk',
+        'optimism',
+        walletClient,
+      )
 
-      await ensureLiquidity('USDC', amount, 'optimism', walletClient, {
-        onStatus: (s) => {
-          if (s === 'bridging') setStatus('bridging')
-          else if (s === 'waiting') setStatus('waitingFunds')
-        },
-        preferredSourceToken: 'USDC',
-      })
-
+      LOG('bridge complete')
       setStatus('bridged')
     } catch (e) {
-      console.error('[WithdrawModal] bridge error', e)
+      ERR('bridge error', e)
       setError(e instanceof Error ? e.message : String(e))
       setStatus('error')
     }
@@ -429,14 +543,15 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
     status === 'idle' &&
     !(typeof supplied === 'bigint' && supplied === 0n)
 
-  // Allow bridging both in 'withdrawn' and while 'quoting' (so the user isn't blocked)
   const canBridge =
-    (status === 'withdrawn' || status === 'quoting') &&
-    (dest === 'optimism') &&
-    (snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk') &&
-    (underlyingLiskSym === 'USDCe' || underlyingLiskSym === 'USDT0')
+    status === 'withdrawn' &&
+    dest === 'optimism' &&
+    snap.protocolKey === 'morpho-blue' &&
+    snap.chain === 'lisk' &&
+    underlyingLiskSym === 'USDCe' &&
+    receivedLiskAmount > 0n
 
-  /* ─────────── UI ─────────── */
+  /* ─────────── UI helpers ─────────── */
 
   function HeaderBar() {
     return (
@@ -467,7 +582,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
         <div className="text-right">
           <div className="text-xs text-gray-500">Supplied</div>
           <div className="text-lg font-semibold">
-            {['switching','withdrawing','bridging','waitingFunds','quoting'].includes(status)
+            {['switching', 'withdrawing', 'bridging', 'quoting'].includes(status)
               ? '…'
               : suppliedPretty}
           </div>
@@ -478,7 +593,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
 
   function DestinationCard() {
     if (!(snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk')) return null
-    const showQuote = dest === 'optimism' && ['withdrawn','quoting'].includes(status)
+    const showQuote = dest === 'optimism' && ['withdrawn', 'quoting'].includes(status)
 
     return (
       <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
@@ -486,14 +601,14 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           <span className="text-gray-600">Destination</span>
           <div className="inline-flex rounded-full border bg-white p-1">
             <button
-              onClick={() => setDest('local')}
+              onClick={() => { LOG('set destination -> local'); setDest('local') }}
               disabled={status !== 'idle'}
               className={`px-3 py-1.5 rounded-full text-xs font-medium ${dest === 'local' ? 'bg-teal-600 text-white' : 'text-gray-700'} ${status !== 'idle' ? 'opacity-60' : ''}`}
             >
               Keep on Lisk
             </button>
             <button
-              onClick={() => setDest('optimism')}
+              onClick={() => { LOG('set destination -> optimism'); setDest('optimism') }}
               disabled={status !== 'idle'}
               className={`px-3 py-1.5 rounded-full text-xs font-medium ${dest === 'optimism' ? 'bg-teal-600 text-white' : 'text-gray-700'} ${status !== 'idle' ? 'opacity-60' : ''}`}
             >
@@ -522,12 +637,18 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
             </div>
             {quoteError && (
               <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
-                {quoteError}
+                {quoteError}{' '}
+                <button
+                  className="ml-2 underline"
+                  onClick={() => { LOG('retry quote clicked'); setQuoteAttempted(false) }}
+                >
+                  Try again
+                </button>
               </p>
             )}
-            {underlyingLiskSym && (
+            {receivedLiskAmount > 0n && (
               <p className="mt-1 text-xs text-gray-500">
-                Underlying on Lisk: <span className="font-medium">{underlyingLiskSym}</span> → Receiving on Optimism: <span className="font-medium">USDC</span>
+                Detected received on Lisk: <span className="font-medium">{formatUnits(receivedLiskAmount, 6)} USDCe</span>
               </p>
             )}
           </div>
@@ -570,11 +691,11 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
         : CHAIN_NAME[evmChain]
 
     const actionLabel =
-      (['withdrawn','quoting'].includes(status) && dest === 'optimism')
+      (status === 'withdrawn' && dest === 'optimism')
         ? 'Bridge to Optimism'
         : (snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk' && dest === 'optimism'
-            ? 'Withdraw, then Bridge'
-            : 'Withdraw full balance')
+          ? 'Withdraw, then Bridge'
+          : 'Withdraw full balance')
 
     return (
       <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
@@ -595,19 +716,18 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
 
   function ProgressCard() {
     const label =
-      status === 'switching'    ? 'Switching network…'
-    : status === 'withdrawing'  ? 'Withdrawing…'
-    : status === 'quoting'      ? 'Fetching LI.FI quote…'
-    : status === 'bridging'     ? 'Bridging liquidity…'
-    : status === 'waitingFunds' ? 'Waiting for funds on Optimism…'
-    : ''
+      status === 'switching' ? 'Switching network…'
+        : status === 'withdrawing' ? 'Withdrawing…'
+          : status === 'quoting' ? 'Fetching bridge quote…'
+            : status === 'bridging' ? 'Bridging liquidity…'
+              : ''
 
     const desc =
       status === 'switching' ? 'Confirm the network switch in your wallet.'
-      : status === 'withdrawing' ? 'Confirm the withdrawal transaction in your wallet.'
-      : status === 'quoting' ? 'Looking for best route and estimating received amount.'
-      : status === 'bridging' ? 'Confirm the bridge transaction in your wallet.'
-      : 'This can take a few minutes depending on the bridge.'
+        : status === 'withdrawing' ? 'Confirm the withdrawal transaction in your wallet.'
+          : status === 'quoting' ? 'Looking for best route and estimating received amount.'
+            : status === 'bridging' ? 'Confirm the bridge transaction in your wallet.'
+              : ''
 
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -615,7 +735,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           <Loader2 className="h-4 w-4 animate-spin text-teal-600" />
           <div className="text-sm font-medium">{label}</div>
         </div>
-        <p className="mt-2 text-xs text-gray-500">{desc}</p>
+        {!!desc && <p className="mt-2 text-xs text-gray-500">{desc}</p>}
       </div>
     )
   }
@@ -637,7 +757,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   /* ─────────── Render ─────────── */
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(v) => { LOG('onOpenChange', v); onClose() }}>
       <DialogContent
         className="
           w-[min(100vw-1rem,40rem)] sm:w-auto sm:max-w-md
@@ -657,12 +777,12 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
             <StageBanner />
 
             {/* Progress strips */}
-            {(status === 'switching' || status === 'withdrawing' || status === 'bridging' || status === 'waitingFunds' || status === 'quoting') && (
+            {(status === 'switching' || status === 'withdrawing' || status === 'bridging' || status === 'quoting') && (
               <ProgressCard />
             )}
 
             {/* Summary */}
-            {['idle','withdrawn','bridged'].includes(status) && <SummaryCard />}
+            {['idle', 'withdrawn', 'bridged'].includes(status) && <SummaryCard />}
 
             {switchErr && (
               <p className="rounded-md bg-red-50 p-2 text-xs text-red-600">
@@ -684,7 +804,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
                 <>
                   <Button
                     variant="secondary"
-                    onClick={onClose}
+                    onClick={() => { LOG('Cancel clicked'); onClose() }}
                     className="h-12 w-full rounded-full sm:h-9 sm:w-auto"
                     title="Cancel"
                   >
@@ -703,12 +823,12 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
                 </>
               )}
 
-              {/* Step 2: Bridge (after withdrawal — allow even while quoting) */}
+              {/* Step 2: Bridge (after withdrawal; enabled only if we measured credited amount) */}
               {canBridge && (
                 <>
                   <Button
                     variant="secondary"
-                    onClick={onClose}
+                    onClick={() => { LOG('Close clicked'); onClose() }}
                     className="h-12 w-full rounded-full sm:h-9 sm:w-auto"
                     title="Close"
                   >
@@ -719,15 +839,13 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
                     className="h-12 w-full rounded-full bg-teal-600 hover:bg-teal-500 sm:h-9 sm:w-auto"
                     title="Bridge to Optimism"
                   >
-                    {status === 'quoting'
-                      ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Bridge to Optimism</span>
-                      : 'Bridge to Optimism (Step 2 of 2)'}
+                    {quoteError ? 'Bridge without quote' : 'Bridge to Optimism (Step 2 of 2)'}
                   </Button>
                 </>
               )}
 
               {/* Busy states */}
-              {['switching','withdrawing','bridging','waitingFunds'].includes(status) && (
+              {['switching', 'withdrawing', 'bridging'].includes(status) && (
                 <>
                   <Button variant="secondary" disabled className="h-12 w-full rounded-full sm:h-9 sm:w-auto" title="Busy…">Cancel</Button>
                   <Button disabled className="h-12 w-full rounded-full bg-teal-600 sm:h-9 sm:w-auto" title="Processing…">
@@ -741,7 +859,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
 
               {status === 'bridged' && (
                 <Button
-                  onClick={onClose}
+                  onClick={() => { LOG('Done clicked'); onClose() }}
                   className="h-12 w-full rounded-full bg-teal-600 hover:bg-teal-500 sm:h-9 sm:w-auto"
                   title="Done"
                 >
@@ -753,14 +871,14 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
                 <div className="flex w-full gap-2 sm:justify-end">
                   <Button
                     variant="secondary"
-                    onClick={onClose}
+                    onClick={() => { LOG('Close (error) clicked'); onClose() }}
                     className="h-12 w-full rounded-full sm:h-9 sm:w-auto"
                     title="Close"
                   >
                     Close
                   </Button>
                   <Button
-                    onClick={handleWithdrawAll}
+                    onClick={() => { LOG('Retry Withdraw clicked'); handleWithdrawAll() }}
                     className="h-12 w-full rounded-full bg-teal-600 hover:bg-teal-500 sm:h-9 sm:w-auto"
                     title="Retry Withdraw"
                   >

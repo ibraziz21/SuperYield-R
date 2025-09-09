@@ -67,7 +67,7 @@ export async function getBridgeQuote(params: {
   slippage?: number            // e.g. 0.003
   walletClient?: WalletClient  // optional (only needed if LI.FI needs provider)
   /** force the *source side* token symbol (USDC|USDT) */
-  fromTokenSym?: Extract<TokenSymbol, 'USDC' | 'USDT'>
+  fromTokenSym?: Extract<TokenSymbol, 'USDC' | 'USDT' | 'USDCe' | 'USDT0'>
 }) {
   const { token, amount, from, to, fromAddress, slippage, walletClient, fromTokenSym } = params
 
