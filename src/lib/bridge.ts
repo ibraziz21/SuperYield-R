@@ -16,6 +16,10 @@ import { optimism, base, lisk } from 'viem/chains'
 import { ADAPTER_KEYS, ROUTERS, TokenAddresses } from './constants'
 import type { ChainId, TokenSymbol } from './constants'
 import { BigNumber, BigNumberish } from 'ethers'
+import 'dotenv/config'
+
+
+const API = process.env.LIFI_API as string
 
 /* ────────────────────────────────────────────────────────────────
    Chain + symbol helpers
@@ -69,7 +73,8 @@ export function configureLifiWith(walletClient: WalletClient) {
   _activeWallet = walletClient
   if (_configured) return
   createConfig({
-    integrator: 'superyldr',
+    integrator: 'superYLDR',
+    apiKey: API,
     providers: [
       EVM({
         getWalletClient: async () => {
