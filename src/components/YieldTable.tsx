@@ -9,6 +9,7 @@ import { YieldRow } from './YieldRow'
 
 type Chain = 'optimism' | 'base' | 'lisk'
 type Proto = 'aave-v3' | 'compound-v3' | 'morpho-blue'
+type Token = 'USDC' | 'USDT' | 'WETH' // display tokens in snapshots
 
 const CHAIN_LABEL: Record<Chain, string> = {
   optimism: 'Optimism',
@@ -24,14 +25,14 @@ const PROTO_LABEL: Record<Proto, string> = {
 
 const PROTO_ORDER: Proto[] = ['aave-v3', 'compound-v3', 'morpho-blue']
 
-/** Hard filter: only show Lisk + Morpho Blue */
-const HARD_FILTER = (y: { chain: Chain; protocolKey: Proto }) =>
-  y.chain === 'lisk' && y.protocolKey === 'morpho-blue'
+/** Hard filter: only show Lisk + Morpho Blue + USDCe (displayed as USDC) */
+const HARD_FILTER = (y: { chain: Chain; protocolKey: Proto; token: Token }) =>
+  y.chain === 'lisk' && y.protocolKey === 'morpho-blue' && y.token === 'USDC'
 
 export const YieldTable: FC = () => {
   const { yields, isLoading, error } = useYields()
 
-  // UI: search / sort (filters are hard-coded to Lisk + Morpho Blue)
+  // UI: search / sort (filters are hard-coded to Lisk + Morpho Blue + USDCe)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<'apy_desc' | 'apy_asc' | 'tvl_desc' | 'tvl_asc'>('apy_desc')
 
@@ -39,11 +40,11 @@ export const YieldTable: FC = () => {
     if (!yields) return []
     const q = query.trim().toLowerCase()
 
-    // 1) Enforce Lisk + Morpho Blue only
-    const onlyLiskMorpho = yields.filter((y) => HARD_FILTER(y as any))
+    // 1) Enforce Lisk + Morpho Blue + USDCe (display token is 'USDC')
+    const onlyLiskMorphoUSDCe = yields.filter((y) => HARD_FILTER(y as any))
 
     // 2) Optional text filter
-    const filtered = onlyLiskMorpho.filter((y) => {
+    const filtered = onlyLiskMorphoUSDCe.filter((y) => {
       if (!q) return true
       const hay = `${y.token} ${y.protocol} ${y.chain}`.toLowerCase()
       return hay.includes(q)
@@ -63,7 +64,7 @@ export const YieldTable: FC = () => {
       }
     })
 
-    // 4) Keep protocol grouping stable (not strictly necessary now, but harmless)
+    // 4) Keep protocol grouping stable (harmless here)
     return sortedPrimary.sort((a, b) => {
       const ia = PROTO_ORDER.indexOf(a.protocolKey as Proto)
       const ib = PROTO_ORDER.indexOf(b.protocolKey as Proto)
@@ -81,7 +82,7 @@ export const YieldTable: FC = () => {
             {rows.length} {rows.length === 1 ? 'pool' : 'pools'}
           </span>
           <span className="hidden rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700 md:inline-block">
-            Showing {CHAIN_LABEL.lisk} • {PROTO_LABEL['morpho-blue']} only
+            Showing {CHAIN_LABEL.lisk} • {PROTO_LABEL['morpho-blue']} • USDCe only
           </span>
         </div>
 
@@ -159,7 +160,7 @@ export const YieldTable: FC = () => {
                 {!isLoading && !error && rows.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-3 py-10 text-center text-muted-foreground md:px-4">
-                      No Lisk • Morpho Blue pools match your search.
+                      No USDCe pool found on Lisk • Morpho Blue.
                     </td>
                   </tr>
                 )}
@@ -176,7 +177,7 @@ export const YieldTable: FC = () => {
         {!isLoading && !error && (
           <div className="flex items-center justify-between border-t px-3 py-3 text-[11px] text-muted-foreground md:px-4 md:text-xs">
             <span>Showing <strong>{rows.length}</strong> pool{rows.length === 1 ? '' : 's'}</span>
-            <span className="hidden md:block">Lisk • Morpho Blue only.</span>
+            <span className="hidden md:block">Lisk • Morpho Blue • USDCe only.</span>
           </div>
         )}
       </CardContent>

@@ -15,7 +15,12 @@ function clientFor(chain: ChainId) {
 
 /** Map a requested symbol to what exists on a chain for **balance reads**. */
 function symbolOnChainForRead(symbol: TokenSymbol, chain: ChainId): TokenSymbol {
-  if (chain === 'lisk') return symbol // USDCe/USDT0/WETH/USDT all exist as declared
+  if (chain === 'lisk') {
+    // Map canonical → Lisk’s representations for balance reads
+    if (symbol === 'USDC') return 'USDCe'
+    // Lisk has both USDT and USDT0; keep whichever the caller provided
+    return symbol
+  }
   // OP/Base cannot read USDCe/USDT0; map to canonical
   if (symbol === 'USDCe') return 'USDC'
   if (symbol === 'USDT0') return 'USDT'
