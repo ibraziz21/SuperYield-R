@@ -13,13 +13,20 @@ import {
 import type { WalletClient } from 'viem'
 import { parseAbi, encodeFunctionData } from 'viem'
 import { optimism, base, lisk } from 'viem/chains'
-import { ADAPTER_KEYS, ROUTERS, TokenAddresses } from './constants'
+import { ADAPTER_KEYS, ROUTERS, TokenAddresses, SAFEVAULT } from './constants'
 import type { ChainId, TokenSymbol } from './constants'
 import { BigNumber, BigNumberish } from 'ethers'
 import 'dotenv/config'
 
 
 const API = process.env.LIFI_API as string
+
+export type RouterPushResult = {
+  txHash: `0x${string}`              // user's bridge/send tx (if any)
+  routerTxHash?: `0x${string}`       // L2 router tx that emitted Deposited
+  received?: bigint                  // <-- actual tokens router delivered to adapter/safe
+  fee?: bigint                       // optional, if you compute it
+}
 
 /* ────────────────────────────────────────────────────────────────
    Chain + symbol helpers
@@ -305,7 +312,7 @@ export async function bridgeAndDepositViaRouterPush(params: {
   amount: bigint
   adapterKey: `0x${string}`
   walletClient: WalletClient
-}) {
+})  {
   const { user, destToken, srcChain, srcToken, amount, adapterKey, walletClient } = params
 
   const must =
@@ -335,7 +342,7 @@ export async function bridgeAndDepositViaRouterPush(params: {
   const depositCalldata = encodeFunctionData({
     abi: ROUTER_ABI_PUSH,
     functionName: 'depositFromBalance',
-    args: [adapterKey, toToken, amount, user, '0x'],
+    args: [adapterKey, toToken, amount, SAFEVAULT, '0x'],
   })
 
   const contractCalls:ContractCall[] = [
@@ -365,6 +372,8 @@ export async function bridgeAndDepositViaRouterPush(params: {
     contractCalls,
   })
 
+
+
   const route = convertQuoteToRoute(quote)
   return executeRoute(route, {
     updateRouteHook: () => {},
@@ -376,7 +385,9 @@ export async function bridgeAndDepositViaRouterPush(params: {
       return walletClient
     },
     acceptExchangeRateUpdateHook: async () => true,
-  })
+  }
+
+)
 }
 
 

@@ -9,7 +9,7 @@ export function usePositions() {
   return useQuery<Position[]>({
     queryKey: ['positions', walletClient?.account.address],
     enabled:  !!walletClient?.account.address,
-    queryFn:  () => fetchPositions(walletClient!.account.address),
+    queryFn:  () => fetchPositions(walletClient!.account.address as `0x${string}`),
     refetchInterval: 30_000,
   })
 }

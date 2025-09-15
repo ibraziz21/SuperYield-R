@@ -1,109 +1,173 @@
 import type { WalletClient } from 'viem'
-import { optimism, base, lisk } from 'viem/chains'
-import type { YieldSnapshot } from '@/hooks/useYields'
-import { TokenAddresses, AAVE_POOL, COMET_POOLS } from './constants'
-import aaveAbi   from './abi/aavePool.json'
-import cometAbi  from './abi/comet.json'
+import { optimism, lisk } from 'viem/chains'
+import { parseAbi, encodeFunctionData } from 'viem'
+import { TokenAddresses } from './constants'
+import { configureLifiWith } from './bridge'
+import { getQuote, convertQuoteToRoute, executeRoute } from '@lifi/sdk'
 
-/** Minimal ERC-4626 withdraw ABI (for Morpho vaults) */
-const erc4626WithdrawAbi = [
-  {
-    type: 'function',
-    name: 'withdraw',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'assets',   type: 'uint256' },
-      { name: 'receiver', type: 'address' },
-      { name: 'owner',    type: 'address' },
-    ],
-    outputs: [{ type: 'uint256' }],
-  },
-] as const
+/* ──────────────────────────────────────────────────────────────── */
+/* Relayer bundle                                                   */
+/* ──────────────────────────────────────────────────────────────── */
+type RelayerBundle = {
+  clientFor: (chainId: number) => WalletClient
+  lisk: WalletClient
+  optimism: WalletClient
+}
 
-type OpBase = 'optimism' | 'base'
 
-export async function withdrawFromPool(
-  snap: YieldSnapshot,
-  amount: bigint,
-  wallet: WalletClient,
-) {
-  const owner = wallet.account?.address as `0x${string}` | undefined
-  if (!owner) throw new Error('Wallet not connected')
 
-  /** prefer protocolKey if present */
-  const key = snap.protocolKey ?? (
-    snap.protocol === 'Aave v3'     ? 'aave-v3' :
-    snap.protocol === 'Compound v3' ? 'compound-v3' :
-    snap.protocol === 'Morpho Blue' ? 'morpho-blue' :
-    (snap.protocol as string)
-  )
+/* ──────────────────────────────────────────────────────────────── */
+/* ABIs                                                             */
+/* ──────────────────────────────────────────────────────────────── */
 
-  /* ─────────────────────────── AAVE v3 (OP/Base) ─────────────────────────── */
-  if (key === 'aave-v3') {
-    const chain = snap.chain as OpBase
-    if (chain !== 'optimism' && chain !== 'base')
-      throw new Error(`Aave withdraw only on OP/Base, got ${snap.chain}`)
+// Safe v1.3 execTransaction
+const SAFE_ABI = parseAbi([
+  'function execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures) public payable returns (bool success)',
+])
 
-    // Underlying token (USDC/USDT) on that chain
-    const tokenMap = TokenAddresses[snap.token as 'USDC' | 'USDT'] as
-      Record<OpBase, `0x${string}`>
-    const underlying = tokenMap?.[chain]
-    if (!underlying)
-      throw new Error(`Unsupported Aave underlying on ${chain}: ${snap.token}`)
+// Minimal ERC-4626 withdraw
+const ERC4626_ABI = parseAbi([
+  'function withdraw(uint256 assets,address receiver,address owner) external returns (uint256 shares)',
+])
 
-    const poolAddr = AAVE_POOL[chain]
+/* ──────────────────────────────────────────────────────────────── */
+/* Helpers                                                          */
+/* ──────────────────────────────────────────────────────────────── */
 
-    return wallet.writeContract({
-      address: poolAddr,
-      abi: aaveAbi,
-      functionName: 'withdraw',               // Pool.withdraw(underlying, amount, to)
-      args: [underlying, amount, owner],
-      chain: chain === 'base' ? base : optimism,
-      account: owner,
+// Safe pre-validated signature for a single owner (relayer must be a Safe owner; threshold=1)
+function prevalidatedSignature(owner: `0x${string}`): `0x${string}` {
+  const r = `0x${owner.slice(2).padStart(64, '0')}`
+  const s = `0x${''.padStart(64, '0')}`
+  const v = '01'
+  return `${r}${s.slice(2)}${v}` as `0x${string}`
+}
+
+/** Bridge USDC.e (Lisk) → USDC (OP) directly to the user */
+async function bridgeLiskToOpToUser(params: {
+  relayer: RelayerBundle
+  fromToken: `0x${string}`  // USDC.e on Lisk
+  toToken: `0x${string}`    // USDC on Optimism
+  amount: bigint
+  to: `0x${string}`         // user on OP
+}) {
+  const { relayer, fromToken, toToken, amount, to } = params
+  const fromAddr = relayer.lisk.account?.address as `0x${string}`
+
+  configureLifiWith(relayer.lisk)
+
+  const quote = await getQuote({
+    fromChain: lisk.id,
+    toChain: optimism.id,
+    fromToken,
+    toToken,
+    fromAmount: amount.toString(),
+    fromAddress: fromAddr,
+    toAddress: to,
+  })
+
+  const route = convertQuoteToRoute(quote)
+  return executeRoute(route, {
+    switchChainHook: async (chainId) => relayer.clientFor(chainId),
+    acceptExchangeRateUpdateHook: async () => true,
+  })
+}
+
+/* ──────────────────────────────────────────────────────────────── */
+/* Safe.execTransaction → vault.withdraw(assets, relayer, SAFE)     */
+/* ──────────────────────────────────────────────────────────────── */
+async function safeWithdrawErc4626(params: {
+  relayer: RelayerBundle
+  safe: `0x${string}`                  // Lisk Safe (owner of the assets)
+  vault: `0x${string}`                 // ERC-4626 vault on Lisk (USDC.e MetaMorpho)
+  assets: bigint                       // USDC.e amount in wei
+  receiver?: `0x${string}`             // default = relayer
+}) {
+  const { relayer, safe, vault, assets } = params
+  const receiver = params.receiver ?? (relayer.lisk.account!.address as `0x${string}`)
+
+  const data = encodeFunctionData({
+    abi: ERC4626_ABI,
+    functionName: 'withdraw',
+    args: [assets, receiver, safe],
+  })
+
+  const signatures = prevalidatedSignature(relayer.lisk.account!.address as `0x${string}`)
+
+  await relayer.lisk.writeContract({
+      address: safe,
+      abi: SAFE_ABI,
+      functionName: 'execTransaction',
+      args: [
+        vault, 0n, data,
+        0,     // CALL
+        0n, 0n, 0n,
+        '0x0000000000000000000000000000000000000000',
+        '0x0000000000000000000000000000000000000000',
+        signatures,
+      ],
+      chain: lisk, // Add the chain property
+      account: relayer.lisk.account!.address as `0x${string}`, // Add the account property
     })
-  }
+}
 
-  if (key === 'compound-v3') {
-    const chain = snap.chain as OpBase
-    if (chain !== 'optimism' && chain !== 'base')
-      throw new Error(`Comet withdraw only on OP/Base, got ${snap.chain}`)
-  
-    if (snap.token !== 'USDC' && snap.token !== 'USDT')
-      throw new Error(`Unsupported Comet token: ${snap.token}`)
-  
-    const comet = COMET_POOLS[chain][snap.token]
-    if (comet === '0x0000000000000000000000000000000000000000')
-      throw new Error(`Comet market not available for ${snap.token} on ${chain}`)
-  
-    // underlying ERC20 (USDC/USDT) for this chain
-    const asset = TokenAddresses[snap.token][chain] as `0x${string}`
-  
-    // Option A: send to msg.sender (owner)
-    return wallet.writeContract({
-      address: comet,
-      abi: cometAbi,
-      functionName: 'withdraw',              // withdraw(address asset, uint256 amount)
-      args: [asset, amount],
-      chain: chain === 'base' ? base : optimism,
-      account: owner,
-    })
-  }
+/* ──────────────────────────────────────────────────────────────── */
+/* Main flow                                                        */
+/* ──────────────────────────────────────────────────────────────── */
+/**
+ * 1) Burn sAVault on OP (relayer must be onlyAllowed)
+ * 2) Safe.execTransaction on Lisk → vault.withdraw(assets, relayer, SAFE)
+ * 3) Bridge USDC.e → USDC (OP) to the user
+ */
+export async function withdrawMorphoCrosschain(params: {
+  relayer: RelayerBundle
+  user: `0x${string}`
 
-  /* ───────────────────────── MORPHO BLUE (Lisk, ERC-4626) ─────────────────── */
-  if (key === 'morpho-blue') {
-    // Withdraw underlying assets from the vault (snap.poolAddress is the ERC-4626)
-    const vault = snap.poolAddress as `0x${string}`
-    if (!vault) throw new Error('Missing vault address for Morpho Blue snapshot')
+  // Burn on OP
+  savaultAddress: `0x${string}`
+  burnAbi: readonly any[]
+  burnFunction: 'burn'
+  sharesToBurn: bigint
+  burnOwner: `0x${string}`
 
-    return wallet.writeContract({
-      address: vault,
-      abi: erc4626WithdrawAbi,
-      functionName: 'withdraw',               // withdraw(assets, receiver, owner)
-      args: [amount, owner, owner],
-      chain: lisk,
-      account: owner,
-    })
-  }
+  // Safe on Lisk
+  liskSafe: `0x${string}`
+  liskVault: `0x${string}`       // ERC-4626 MetaMorpho vault
+  amountAssets: bigint           // USDC.e to withdraw
 
-  throw new Error(`Unsupported protocol for direct withdraw: ${key}`)
+  // Bridge
+  liskAssetUSDCe?: `0x${string}`
+}) {
+  const {
+    relayer, user,
+    savaultAddress, burnAbi, burnFunction, sharesToBurn, burnOwner,
+    liskSafe, liskVault, amountAssets,
+    liskAssetUSDCe,
+  } = params
+
+  // 1) Burn receipt token on Optimism
+  await relayer.optimism.writeContract({
+    address: savaultAddress,
+    abi: burnAbi,
+    functionName: burnFunction, // burn(address account, uint256 amount)
+    args: [burnOwner, sharesToBurn],
+    chain: optimism, // Add the chain property
+    account: relayer.optimism.account!.address as `0x${string}`, // Add the account property
+  })
+
+  // 2) Execute Safe tx to withdraw USDC.e to relayer
+  await safeWithdrawErc4626({
+    relayer,
+    safe: liskSafe,
+    vault: liskVault,
+    assets: amountAssets,
+  })
+
+  // 3) Bridge USDC.e → USDC to the user (OP)
+  await bridgeLiskToOpToUser({
+    relayer,
+    fromToken: (liskAssetUSDCe ?? TokenAddresses.USDCe.lisk) as `0x${string}`,
+    toToken: TokenAddresses.USDC.optimism as `0x${string}`,
+    amount: amountAssets,
+    to: user,
+  })
 }

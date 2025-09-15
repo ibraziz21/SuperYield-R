@@ -5,16 +5,18 @@ import {
   AAVE_POOL,
   COMET_POOLS,
   MORPHO_POOLS,
+  TokenAddresses,
   type TokenSymbol,
 } from './constants'
 
 import aaveAbi   from './abi/aavePool.json'
 import cometAbi  from './abi/comet.json'
-import { erc20Abi } from 'viem'
+import { erc20Abi, parseUnits } from 'viem'
 import type { Address } from 'viem'
 
 // NEW: per-asset Aave balance helper (aToken balance)
 import { getATokenAddress as _unused, getAaveATokenBalance } from './aave'
+import { userAgent } from 'next/server'
 
 /* ──────────────────────────────────────────────────────────────── */
 /* Chains & helpers                                                 */
@@ -151,9 +153,9 @@ const MORPHO_VAULT_BY_TOKEN: Record<
   Extract<TokenSymbol, 'USDCe' | 'USDT0' | 'WETH'>,
   `0x${string}`
 > = {
-  USDCe: MORPHO_POOLS['usdce-supply'] as Address,
-  USDT0: MORPHO_POOLS['usdt0-supply'] as Address,
-  WETH:  MORPHO_POOLS['weth-supply']  as Address,
+  USDCe: MORPHO_POOLS['usdce-supply'] as `0x${string}`,
+  USDT0: MORPHO_POOLS['usdt0-supply'] as `0x${string}`,
+  WETH:  MORPHO_POOLS['weth-supply']  as `0x${string}`,
 }
 
 async function morphoSupplyLisk(
@@ -232,4 +234,17 @@ export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
 
   const raw = await Promise.all(tasks)
   return raw.filter((p) => p.amount > BigInt(0))
+}
+
+// src/lib/positions.ts
+export async function fetchVaultPosition(user: `0x${string}`): Promise<bigint> {
+  const amount = await publicOptimism.readContract({
+    address: TokenAddresses.sVault.optimism,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [user],
+  }) as bigint
+
+  // return the raw on-chain balance (already in token units, e.g. 18d)
+  return amount
 }

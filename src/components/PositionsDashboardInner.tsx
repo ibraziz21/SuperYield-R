@@ -1,7 +1,7 @@
 // src/components/PositionsDashboardInner.tsx
 'use client'
 
-import { FC, useMemo, useState } from 'react'
+import { FC, useMemo, useState, useEffect } from 'react'
 import { usePositions } from '@/hooks/usePositions'
 import { useYields, type YieldSnapshot } from '@/hooks/useYields'
 import { type Position as BasePosition } from '@/lib/positions'
@@ -10,12 +10,11 @@ import { DepositModal } from '@/components/DepositModal'
 import { WithdrawModal } from '@/components/WithdrawModal'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { MORPHO_POOLS } from '@/lib/constants' // ⬅️ add this
+import { MORPHO_POOLS } from '@/lib/constants'
 
 type EvmChain = 'optimism' | 'base' | 'lisk'
 type MorphoToken = 'USDCe' | 'USDT0' | 'WETH'
 
-/** Extend the base Position shape locally to allow Morpho/Lisk too. */
 type PositionLike =
   | BasePosition
   | {
@@ -30,18 +29,9 @@ interface Props {
 }
 
 const PROTOCOL_TAG: Record<Props['protocol'], { title: string; hint: string }> = {
-  'Aave v3': {
-    title: 'Aave v3',
-    hint: 'Supply & borrow across Optimism and Base.',
-  },
-  'Compound v3': {
-    title: 'Compound v3',
-    hint: 'Isolated markets on Optimism and Base.',
-  },
-  'Morpho Blue': {
-    title: 'Morpho Blue (Lisk)',
-    hint: 'MetaMorpho vaults live on Lisk.',
-  },
+  'Aave v3': { title: 'Aave v3', hint: 'Supply & borrow across Optimism and Base.' },
+  'Compound v3': { title: 'Compound v3', hint: 'Isolated markets on Optimism and Base.' },
+  'Morpho Blue': { title: 'Morpho Blue (Lisk)', hint: 'MetaMorpho vaults live on Lisk.' },
 }
 
 const CHAIN_LABEL: Record<EvmChain, string> = {
@@ -49,10 +39,6 @@ const CHAIN_LABEL: Record<EvmChain, string> = {
   base: 'Base',
   lisk: 'Lisk',
 }
-
-/* ──────────────────────────────────────────────────────────────── */
-/* Helpers                                                          */
-/* ──────────────────────────────────────────────────────────────── */
 
 function normalizeTokenSymbol(t: string) {
   return t.replace(/\./g, '').replace(/\s+/g, '').toLowerCase()
@@ -68,16 +54,31 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
   const { data: positionsRaw } = usePositions()
   const { yields: snapshots, isLoading: yieldsLoading } = useYields()
 
+  // DEBUG: initial mount + upstream data
+  useEffect(() => {
+    console.log('[PositionsDashboardInner] mounted for protocol', protocol)
+  }, [protocol])
+
+  useEffect(() => {
+    console.log('[PositionsDashboardInner] positionsRaw', positionsRaw)
+  }, [positionsRaw])
+
+  useEffect(() => {
+    console.log('[PositionsDashboardInner] snapshots', {
+      count: snapshots?.length ?? 0,
+      ids: snapshots?.map(s => s.id).slice(0, 5),
+      loading: yieldsLoading,
+    })
+  }, [snapshots, yieldsLoading])
+
   const positions = (positionsRaw ?? []) as unknown as PositionLike[]
 
-  /** Default chains per protocol */
   const defaultChains: Record<EvmChain, boolean> = {
     optimism: protocol !== 'Morpho Blue',
     base: protocol !== 'Morpho Blue',
     lisk: protocol === 'Morpho Blue',
   }
 
-  // ── UI state
   const [query, setQuery] = useState('')
   const [chainEnabled, setChainEnabled] = useState<Record<EvmChain, boolean>>(
     () => ({ ...defaultChains }),
@@ -87,43 +88,58 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
   const toggleChain = (c: EvmChain) =>
     setChainEnabled((prev) => ({ ...prev, [c]: !prev[c] }))
 
-  // ── Filter positions for this protocol, chain chips & search
+  // ⬇️ Fallback: if we’re on Morpho and have zero positions, synthesize 3 cards
+  const positionsForProtocol: PositionLike[] = useMemo(() => {
+    if (protocol !== 'Morpho Blue') return positions
+    const morpho = positions.filter((p) => p.protocol === 'Morpho Blue') as PositionLike[]
+    if (morpho.length > 0) return morpho
+    const fallback: PositionLike[] = [
+      { protocol: 'Morpho Blue', chain: 'lisk', token: 'USDCe', amount: 0n },
+    ]
+    console.warn('[PositionsDashboardInner] No Morpho positions → showing fallback cards')
+    return fallback
+  }, [positions, protocol])
+
   const subset = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const filtered = positions.filter(
+
+    const filtered = positionsForProtocol.filter(
       (p) =>
         p.protocol === protocol &&
         chainEnabled[p.chain as EvmChain] &&
-        (q
-          ? `${p.token} ${p.chain} ${p.protocol}`.toLowerCase().includes(q)
-          : true),
+        (q ? `${p.token} ${p.chain} ${p.protocol}`.toLowerCase().includes(q) : true),
     )
 
     const sorted = filtered.slice().sort((a, b) => {
-      if (sort === 'amount_desc') return Number(b.amount - a.amount)
-      return Number(a.amount - b.amount)
+      if (sort === 'amount_desc') return Number((b.amount ?? 0n) - (a.amount ?? 0n))
+      return Number((a.amount ?? 0n) - (b.amount ?? 0n))
+    })
+
+    console.log('[PositionsDashboardInner] subset', {
+      protocol,
+      query: q,
+      chainEnabled,
+      count: sorted.length,
+      sample: sorted.slice(0, 3).map(s => ({ token: String(s.token), chain: s.chain, amt: s.amount?.toString?.() })),
     })
 
     return sorted
-  }, [positions, protocol, chainEnabled, query, sort])
+  }, [positionsForProtocol, protocol, chainEnabled, query, sort])
 
-  // ── Deposit / Withdraw modals
+  // Deposit / Withdraw modals
   const [depositSnap, setDepositSnap] = useState<YieldSnapshot | null>(null)
   const [withdrawSnap, setWithdrawSnap] = useState<YieldSnapshot | null>(null)
 
-  /** Map protocol label → protocolKey used in YieldSnapshot */
   const protoKey: Record<Props['protocol'], YieldSnapshot['protocolKey']> = {
     'Aave v3': 'aave-v3',
     'Compound v3': 'compound-v3',
     'Morpho Blue': 'morpho-blue',
   }
 
-  /** Robust snapshot resolver (tolerant token match + Morpho vault fallback + safe fallback) */
   function findSnapshotForPosition(p: PositionLike): YieldSnapshot {
     const pkey = protoKey[p.protocol as Props['protocol']]
     const normPosToken = normalizeTokenSymbol(String(p.token))
 
-    // 1) direct match (tolerant token compare)
     const direct =
       snapshots?.find(
         (y) =>
@@ -131,10 +147,8 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
           y.protocolKey === pkey &&
           normalizeTokenSymbol(String(y.token)) === normPosToken,
       )
-
     if (direct) return direct
 
-    // 2) Morpho: match by known vault address (poolAddress)
     if (p.protocol === 'Morpho Blue') {
       const vault = MORPHO_VAULT_BY_TOKEN[p.token as MorphoToken]
       if (vault) {
@@ -148,7 +162,6 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
       }
     }
 
-    // 3) Fallback snapshot (prevents UI crash while yields load or labels differ)
     const fallback: YieldSnapshot = {
       id: `fallback-${p.protocol}-${p.chain}-${String(p.token)}`,
       chain: p.chain as any,
@@ -164,23 +177,19 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
       updatedAt: new Date().toISOString(),
       underlying: '' as const,
     }
+    console.warn('[PositionsDashboardInner] snapshot fallback used for', {
+      token: p.token, chain: p.chain, protocol: p.protocol,
+    })
     return fallback
   }
 
-  const yieldsReady = (snapshots?.length ?? 0) > 0
   const { title, hint } = PROTOCOL_TAG[protocol]
   const totalPositions = subset.length
 
   return (
     <>
-      {/* Section header / controls */}
-      <div
-        className="
-          mb-4 flex flex-col gap-3 rounded-2xl border border-border/60
-          bg-gradient-to-r from-white to-white/60 p-4 backdrop-blur
-          dark:from-white/5 dark:to-white/10
-        "
-      >
+      {/* Header */}
+      <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-border/60 bg-gradient-to-r from-white to-white/60 p-4 backdrop-blur dark:from-white/5 dark:to-white/10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <h3 className="text-lg font-semibold">{title}</h3>
@@ -190,12 +199,9 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* chain chips */}
             <div className="flex gap-1 rounded-full bg-muted/60 p-1">
               {(Object.keys(CHAIN_LABEL) as EvmChain[])
-                .filter((c) =>
-                  protocol === 'Morpho Blue' ? c === 'lisk' : c !== 'lisk',
-                )
+                .filter((c) => (protocol === 'Morpho Blue' ? c === 'lisk' : c !== 'lisk'))
                 .map((c) => (
                   <button
                     key={c}
@@ -212,7 +218,6 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
                 ))}
             </div>
 
-            {/* search */}
             <div className="w-40 sm:w-56">
               <Input
                 placeholder="Search token / chain…"
@@ -222,7 +227,6 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
               />
             </div>
 
-            {/* sort */}
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as typeof sort)}
@@ -249,29 +253,25 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {subset.map((p, idx) => (
             <PositionCard
-              key={idx}
+              key={`${String(p.protocol)}-${String(p.chain)}-${String(p.token)}-${idx}`}
               p={p as any}
-              onSupply={
-                yieldsReady
-                  ? (pos) => setDepositSnap(findSnapshotForPosition(pos as PositionLike))
-                  : undefined
-              }
-              onWithdraw={
-                yieldsReady
-                  ? (pos) => setWithdrawSnap(findSnapshotForPosition(pos as PositionLike))
-                  : undefined
-              }
+              onSupply={(pos) => {
+                console.log('[PositionsDashboardInner] Supply clicked on card', pos)
+                setDepositSnap(findSnapshotForPosition(pos as PositionLike))
+              }}
+              onWithdraw={(pos) => {
+                console.log('[PositionsDashboardInner] Withdraw clicked on card', pos)
+                setWithdrawSnap(findSnapshotForPosition(pos as PositionLike))
+              }}
             />
           ))}
         </div>
       )}
 
-      {/* Deposit */}
+      {/* Modals */}
       {depositSnap && (
         <DepositModal open={true} snap={depositSnap} onClose={() => setDepositSnap(null)} />
       )}
-
-      {/* Withdraw */}
       {withdrawSnap && (
         <WithdrawModal open={true} snap={withdrawSnap} onClose={() => setWithdrawSnap(null)} />
       )}

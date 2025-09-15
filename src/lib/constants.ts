@@ -27,12 +27,19 @@ export const ADAPTER_KEYS = {
 
 export type AdapterKeyName = keyof typeof ADAPTER_KEYS
 
+// "DeployLiskNew#LK_Morpho_USDCe": "0x959782A91Ea08514bbA6E474672Ca96A77acF431",
+// "DeployLiskNew#LK_Morpho_USDT0": "0x5A7e36982FE9cD513107Ae9998C91ae13951eA82",
+// "DeployLiskNew#LK_Morpho_WETH": "0x159CF86d6e3F4D29b4e44a2F1891719BC315659C",
+// "DeployLiskNew#LK_Router": "0x07b81262cFBA057950E512B2866b10172630b231"
+
 /** Your deployed routers */
 export const ROUTERS: Record<'optimism' | 'base' | 'lisk', `0x${string}`> = {
   optimism: '0x74298D4c82f06797029b90ca7e50B1AEB9edB501',
   base:     '0x7AE3e0e585b1663Dc876e8b36B47494166d38F2F',
   lisk:     '0xb533CB94DeaBDd37F870E47510a03539C413CEFF',
 } as const
+
+export const SAFEVAULT = '0x2bbcdd9B52906c360c4d0789719982efC681B224'
 
 /** 3-chain token map */
 export const TokenAddresses = {
@@ -55,6 +62,9 @@ export const TokenAddresses = {
   WETH: {
     lisk: '0x4200000000000000000000000000000000000006',
   },
+  sVault: {
+    optimism:'0xD56eE57eD7906b8558db9926578879091391Fbb7'
+  }
 } as const
 
 export const AAVE_POOL: Record<'optimism' | 'base', `0x${string}`> = {
