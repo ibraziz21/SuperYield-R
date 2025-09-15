@@ -14,7 +14,7 @@ import {
   
   const PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY || ''
   console.log('private Key: ', PRIVATE_KEY)
-  const account = privateKeyToAccount(`0x${PRIVATE_KEY}`)
+  const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
   const chain = optimism
   
   const publicClient = createPublicClient({ chain, transport: http() })
