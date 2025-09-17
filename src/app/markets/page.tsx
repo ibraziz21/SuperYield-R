@@ -8,10 +8,6 @@ import { YieldTable } from '@/components/YieldTable'
 export default function PositionsPage() {
   return (
     <div className="space-y-12">
-      {/* 1 ▸ high-level metrics */}
-      <MetricBar />
-
-      {/* 2 ▸ per-protocol positions */}
       <ProtocolTabs />
 
       {/* 3 ▸ full markets table (filters, sorting, etc.) */}
