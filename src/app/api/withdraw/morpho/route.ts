@@ -277,10 +277,11 @@ export async function POST(req: Request) {
     }
 
     /* ── 2) Safe executes withdraw(assets, relayer, safe) ─ */
+    const assetsWithdraw = (assets * 994n)/1000n
     const calldata = encodeFunctionData({
       abi: ERC4626_ABI,
       functionName: 'withdraw',
-      args: [assets, relayerViem.address, liskSafe],
+      args: [assetsWithdraw, relayerViem.address, liskSafe],
     })
 
     const protocolKit = await Safe.init({
@@ -338,7 +339,7 @@ export async function POST(req: Request) {
     console.log('[withdraw/4626] LI.FI quote', {
       fromChain: lisk.id, toChain: optimism.id,
       fromToken: usdceLsk, toToken: usdcOP,
-      fromAmount: assets.toString(),
+      fromAmount: assetsWithdraw.toString(),
       fromAddress: relayerViem.address,
       toAddress: user,
       relayerBalBefore: relayerBalBefore.toString(),
@@ -350,7 +351,7 @@ export async function POST(req: Request) {
         toChain: optimism.id,
         fromToken: usdceLsk,
         toToken:   usdcOP,
-        fromAmount: assets.toString(),
+        fromAmount: assetsWithdraw.toString(),
         fromAddress: relayerViem.address,
         toAddress: user,
       })
