@@ -54,22 +54,6 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
   const { data: positionsRaw } = usePositions()
   const { yields: snapshots, isLoading: yieldsLoading } = useYields()
 
-  // DEBUG: initial mount + upstream data
-  useEffect(() => {
-    console.log('[PositionsDashboardInner] mounted for protocol', protocol)
-  }, [protocol])
-
-  useEffect(() => {
-    console.log('[PositionsDashboardInner] positionsRaw', positionsRaw)
-  }, [positionsRaw])
-
-  useEffect(() => {
-    console.log('[PositionsDashboardInner] snapshots', {
-      count: snapshots?.length ?? 0,
-      ids: snapshots?.map(s => s.id).slice(0, 5),
-      loading: yieldsLoading,
-    })
-  }, [snapshots, yieldsLoading])
 
   const positions = (positionsRaw ?? []) as unknown as PositionLike[]
 
@@ -115,13 +99,6 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
       return Number((a.amount ?? 0n) - (b.amount ?? 0n))
     })
 
-    console.log('[PositionsDashboardInner] subset', {
-      protocol,
-      query: q,
-      chainEnabled,
-      count: sorted.length,
-      sample: sorted.slice(0, 3).map(s => ({ token: String(s.token), chain: s.chain, amt: s.amount?.toString?.() })),
-    })
 
     return sorted
   }, [positionsForProtocol, protocol, chainEnabled, query, sort])

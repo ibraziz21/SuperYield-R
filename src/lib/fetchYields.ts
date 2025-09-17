@@ -37,7 +37,7 @@ async function fetchMerklLiskMorphoRewards(): Promise<Record<string, number>> {
   try {
     // Keep the URL similar to what you had, but add chain & active filters.
     // (If you truly want your original URL, it’ll still work with this parser.)
-    const url = 'https://api.merkl.xyz/v4/campaigns?tokenSymbol=LSK&chainIds=1135&active=true';
+    const url = 'https://api.merkl.xyz/v4/campaigns?tokenSymbol=LSK';
     const res = await fetch(url, { cache: 'no-store' });
     const raw = await res.json();
     if (!Array.isArray(raw)) return {};
