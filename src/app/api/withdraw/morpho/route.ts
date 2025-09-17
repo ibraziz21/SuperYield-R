@@ -278,6 +278,7 @@ export async function POST(req: Request) {
 
     /* ── 2) Safe executes withdraw(assets, relayer, safe) ─ */
     const assetsWithdraw = (assets * 994n)/1000n
+    console.log(assetsWithdraw)
     const calldata = encodeFunctionData({
       abi: ERC4626_ABI,
       functionName: 'withdraw',
