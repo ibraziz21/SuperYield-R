@@ -37,7 +37,7 @@ import type { EvmChain, FlowStep } from '../types'
 import { TokenAddresses, LISK_EXECUTOR_ADDRESS } from '@/lib/constants'
 
 // ── New helpers for vault mint amount scaling ─────────────────────────────────
-const VAULT_TOKEN_DECIMALS = 18
+const VAULT_TOKEN_DECIMALS = 6
 const pow10 = (n: number) => BigInt(10) ** BigInt(n)
 const scaleAmount = (amt: bigint, fromDec: number, toDec: number) => {
   if (toDec === fromDec) return amt
@@ -45,7 +45,7 @@ const scaleAmount = (amt: bigint, fromDec: number, toDec: number) => {
   return amt / pow10(fromDec - toDec)
 }
 
-const applyBuffer998 = (amt: bigint) => (amt * 998n) / 1000n;
+const applyBuffer998 = (amt: bigint) => (amt * 997n) / 1000n;
 
 interface DepositModalProps {
   open: boolean
@@ -405,7 +405,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
         const sharesToMint  = scaleAmount(effectiveBase, tokenDecimals, VAULT_TOKEN_DECIMALS)
       
         console.log('[ui] buffer-mint → input =', inputAmt.toString(),
-                    'buffered(0.995) =', effectiveBase.toString(),
+                    'buffered(0.998) =', effectiveBase.toString(),
                     'shares(18d) =', sharesToMint.toString())
       
         const mintRes = await fetch('/api/mintVault', {

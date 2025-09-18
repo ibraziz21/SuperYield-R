@@ -21,8 +21,8 @@ import {
   const client = createWalletClient({ account, chain, transport: http() })
   
   // ENV these:
-  const VAULT_ADDRESS   = '0xD56eE57eD7906b8558db9926578879091391Fbb7' as `0x${string}`       // SVaultToken
-  const REWARDS_ADDRESS = '0xE31dD2cc22D99285168067b053bB67792e3f9E15' as `0x${string}`     // SVaultRewards
+const RECEIPT_TOKEN   = '0x65a8a2804aEF839605Cbc1a604defF3dcD778df2' as `0x${string}` // if you still need to read decimals
+const REWARDS_VAULT   = '0xBe16ec32b28C8fef884034ed457592206a18d7ea' as `0x${string}`
   
   export async function POST(req: Request) {
     const { userAddress, tokenAmt } = await req.json() as {
@@ -32,27 +32,18 @@ import {
   
     try {
       // 1) notify rewards before changing user balance
-      const { request: hookReq } = await publicClient.simulateContract({
-        address: REWARDS_ADDRESS,
-        abi: rewardsAbi,
-        functionName: 'notifyBalanceChange',
-        args: [userAddress],
-        account,
-      })
-      const hookTx = await client.writeContract(hookReq)
-      await publicClient.waitForTransactionReceipt({ hash: hookTx })
-  
-      // 2) mint SVault shares to the user
       const { request } = await publicClient.simulateContract({
-        address: VAULT_ADDRESS,
-        abi: vaultAbi,
-        functionName: 'mint',
+        address: REWARDS_VAULT,
+        abi: rewardsAbi,
+        functionName: 'recordDeposit',
         args: [userAddress, BigInt(tokenAmt)],
         account,
       })
       const txHash = await client.writeContract(request)
-  
-      return Response.json({ success: true, txHash })
+      await publicClient.waitForTransactionReceipt({ hash: txHash })
+
+
+    return Response.json({ success: true, txHash })
     } catch (err: any) {
       console.error('Minting failed', err)
       return Response.json({ success: false, message: 'Error minting receipt token' }, { status: 500 })

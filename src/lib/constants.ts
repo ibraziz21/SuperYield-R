@@ -63,8 +63,12 @@ export const TokenAddresses = {
     lisk: '0x4200000000000000000000000000000000000006',
   },
   sVault: {
-    optimism:'0xD56eE57eD7906b8558db9926578879091391Fbb7'
+    optimism:'0x65a8a2804aEF839605Cbc1a604defF3dcD778df2'
   }
+} as const
+
+export const REWARDS_VAULT = {
+  optimism: '0xBe16ec32b28C8fef884034ed457592206a18d7ea',
 } as const
 
 export const AAVE_POOL: Record<'optimism' | 'base', `0x${string}`> = {

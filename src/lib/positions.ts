@@ -16,7 +16,7 @@ import type { Address } from 'viem'
 
 // NEW: per-asset Aave balance helper (aToken balance)
 import { getATokenAddress as _unused, getAaveATokenBalance } from './aave'
-import { userAgent } from 'next/server'
+
 
 /* ──────────────────────────────────────────────────────────────── */
 /* Chains & helpers                                                 */
@@ -192,7 +192,7 @@ async function morphoSupplyLisk(
 export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
   const tasks: Promise<Position>[] = []
 
-  /* AAVE v3 – per-token balances via aToken (token units: USDC/USDT → 6) */
+  /* AAVE v3 */
   for (const chain of ['optimism', 'base'] as const) {
     for (const token of ['USDC', 'USDT'] as const) {
       tasks.push(
@@ -200,13 +200,13 @@ export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
           protocol: 'Aave v3' as const,
           chain,
           token,
-          amount: amt, // 1e6; 0 if market not listed (e.g., Base/USDT)
+          amount: amt,
         })),
       )
     }
   }
 
-  /* COMPOUND v3 – per token (USDC/USDT) on optimism|base (1e6) */
+  /* COMPOUND v3 */
   for (const chain of ['optimism', 'base'] as const) {
     for (const token of ['USDC', 'USDT'] as const) {
       tasks.push(
@@ -214,26 +214,37 @@ export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
           protocol: 'Compound v3' as const,
           chain,
           token,
-          amount: amt, // 1e6
+          amount: amt,
         })),
       )
     }
   }
 
-  /* MORPHO BLUE – Lisk vaults (ERC-4626 -> assets) */
-  for (const token of ['USDCe', 'USDT0', 'WETH'] as const) {
+  /* MORPHO BLUE – Lisk vaults
+     - USDCe: use OP receipt (sVault) as source of truth (6d)
+     - USDT0, WETH: read from Lisk as before
+  */
+  tasks.push(
+    morphoUSDCeViaReceiptOrLisk(user).then((amt) => ({
+      protocol: 'Morpho Blue' as const,
+      chain: 'lisk' as const,
+      token: 'USDCe' as const,
+      amount: amt,
+    })),
+  )
+  for (const token of ['USDT0', 'WETH'] as const) {
     tasks.push(
-      morphoSupplyLisk(token, user).then((amt) => ({
+      morphoSupplyLisk(token as 'USDT0' | 'WETH', user).then((amt) => ({
         protocol: 'Morpho Blue' as const,
         chain: 'lisk' as const,
-        token,
-        amount: amt, // WETH: 1e18, stables: 1e6
+        token: token as 'USDT0' | 'WETH',
+        amount: amt,
       })),
     )
   }
 
   const raw = await Promise.all(tasks)
-  return raw.filter((p) => p.amount > BigInt(0))
+  return raw.filter((p) => p.amount > 0n)
 }
 
 // src/lib/positions.ts
@@ -244,7 +255,13 @@ export async function fetchVaultPosition(user: `0x${string}`): Promise<bigint> {
     functionName: 'balanceOf',
     args: [user],
   }) as bigint
-
-  // return the raw on-chain balance (already in token units, e.g. 18d)
   return amount
+}
+
+// NEW: prefer OP receipt balance for USDCe; fallback to Lisk read only if needed
+async function morphoUSDCeViaReceiptOrLisk(user: `0x${string}`): Promise<bigint> {
+  const receipt = await fetchVaultPosition(user) // OP sVault (6 decimals)
+  if (receipt > 0n) return receipt
+  // fallback to Lisk vault assets if no receipt exists
+  return morphoSupplyLisk('USDCe', user)
 }

@@ -60,7 +60,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
 
   // Only Morph(lisk) path is supported now
   const isMorphoLisk = snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk'
-  const shareDecimals = 18 // sAVault assumed 18d
+  const shareDecimals = 6 // sAVault assumed 18d
 
   const title = useMemo(
     () => (isMorphoLisk ? 'Withdraw & Bridge (Morpho Lisk → Optimism)' : 'Withdraw'),

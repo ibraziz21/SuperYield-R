@@ -16,8 +16,8 @@ import type { MetaTransactionData } from '@safe-global/types-kit'
 import { OperationType } from '@safe-global/types-kit'
 
 // Contracts / constants
-import vaultAbi from '@/lib/abi/vaultToken.json' // sVault on OP (mint/burn/decimals)
-import { TokenAddresses, SAFEVAULT, MORPHO_POOLS } from '@/lib/constants'
+import rewardsVaultAbi from '@/lib/abi/rewardsAbi.json' // exposes recordDeposit/recordWithdrawal
+import { TokenAddresses, SAFEVAULT, MORPHO_POOLS, REWARDS_VAULT } from '@/lib/constants'
 
 // LI.FI (server-side)
 import { createConfig, EVM, getQuote, convertQuoteToRoute, executeRoute } from '@lifi/sdk'
@@ -40,17 +40,17 @@ const LIFI_API   = process.env.LIFI_API || ''
 const OP_RPC     = process.env.OP_RPC_URL   || 'https://mainnet.optimism.io'
 const LSK_RPC    = process.env.LISK_RPC_URL || 'https://rpc.api.lisk.com'
 
-// ERC-4626 vault (Morpho) on Lisk
+// ERC-4626 vault (Morpho) on Lisk (default to USDCe supply vault)
 const LISK_ERC4626_VAULT =
   (process.env.LISK_ERC4626_VAULT as `0x${string}` | undefined) ??
   (MORPHO_POOLS['usdce-supply'] as `0x${string}`)
 
 /* ─────────────── Clients ─────────────── */
-const relayerViem = privateKeyToAccount(RELAYER_PK)
+const relayer = privateKeyToAccount(RELAYER_PK)
 const opPublic   = createPublicClient({ chain: optimism, transport: http(OP_RPC) })
-const opWallet   = createWalletClient({ chain: optimism, transport: http(OP_RPC), account: relayerViem })
+const opWallet   = createWalletClient({ chain: optimism, transport: http(OP_RPC), account: relayer })
 const liskPublic = createPublicClient({ chain: lisk,     transport: http(LSK_RPC) })
-const liskWallet = createWalletClient({ chain: lisk,     transport: http(LSK_RPC), account: relayerViem })
+const liskWallet = createWalletClient({ chain: lisk,     transport: http(LSK_RPC), account: relayer })
 
 /* ─────────────── ABIs ─────────────── */
 const ERC4626_ABI = parseAbi([
@@ -58,31 +58,11 @@ const ERC4626_ABI = parseAbi([
   'function deposit(uint256 assets, address receiver) returns (uint256 shares)',
   'function withdraw(uint256 assets, address receiver, address owner) returns (uint256 shares)',
 ])
-const ERC20_META = parseAbi(['function decimals() view returns (uint8)'])
 const ERC20_ABI = parseAbi([
   'function balanceOf(address) view returns (uint256)',
   'function approve(address spender, uint256 value) returns (bool)',
   'function transfer(address to, uint256 value) returns (bool)',
 ])
-
-/* ─────────────── Utils ─────────────── */
-const pow10 = (n: number) => BigInt(10) ** BigInt(n)
-const scaleAmount = (amt: bigint, fromDec: number, toDec: number) =>
-  toDec === fromDec ? amt : (toDec > fromDec ? amt * pow10(toDec - fromDec) : amt / pow10(fromDec - toDec))
-
-/** If caller accidentally sends 18d when asset has 6d, normalize by /1e12 if exactly divisible. */
-function maybeNormalize18to6(assets: bigint, assetDecimals: number) {
-  if (assetDecimals !== 6) return assets
-  const k = pow10(12)
-  if (assets % k === 0n) {
-    const fixed = assets / k
-    if (fixed <= pow10(18)) {
-      console.warn('[withdraw/4626] normalized assets 18d → 6d', { raw: assets.toString(), fixed: fixed.toString() })
-      return fixed
-    }
-  }
-  return assets
-}
 
 /* ─────────────── LI.FI server configuration ─────────────── */
 let LIFI_READY = false
@@ -106,19 +86,18 @@ function ensureLifiServer() {
 }
 
 /* ─────────────── Compensating actions ─────────────── */
-async function mintBackSharesOnOP(params: {
-  sVaultOP: `0x${string}`
+async function recordDepositBackOnOP(params: {
+  rewardsVault: `0x${string}`
   user: `0x${string}`
   amountShares: bigint
 }) {
-  const { sVaultOP, user, amountShares } = params
-  console.warn('[compensate] mintBackSharesOnOP', { user, amountShares: amountShares.toString() })
+  const { rewardsVault, user, amountShares } = params
   const { request } = await opPublic.simulateContract({
-    address: sVaultOP,
-    abi: vaultAbi,
-    functionName: 'mint', // assumes relayer has MINTER role
+    address: rewardsVault,
+    abi: rewardsVaultAbi,
+    functionName: 'recordDeposit', // updates accounting AND mints receipts
     args: [user, amountShares],
-    account: relayerViem,
+    account: relayer,
   })
   const tx = await opWallet.writeContract(request)
   await opPublic.waitForTransactionReceipt({ hash: tx })
@@ -126,7 +105,7 @@ async function mintBackSharesOnOP(params: {
 }
 
 async function depositAssetsBackToVaultOnLisk(params: {
-  token: `0x${string}`        // USDC.e on Lisk
+  token: `0x${string}`        // USDCe on Lisk
   vault: `0x${string}`        // ERC-4626 vault
   safe: `0x${string}`         // Safe to receive shares
   wantAssets: bigint          // target assets to put back
@@ -138,7 +117,7 @@ async function depositAssetsBackToVaultOnLisk(params: {
     address: token,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
-    args: [relayerViem.address],
+    args: [relayer.address],
   }) as bigint
 
   const toDeposit = bal >= wantAssets ? wantAssets : bal
@@ -149,13 +128,13 @@ async function depositAssetsBackToVaultOnLisk(params: {
 
   console.warn('[compensate] depositBack: approving & depositing', { toDeposit: toDeposit.toString() })
 
-  // Approve vault to pull USDC.e
+  // Approve vault to pull USDCe
   const { request: approveReq } = await liskPublic.simulateContract({
     address: token,
     abi: ERC20_ABI,
     functionName: 'approve',
     args: [vault, toDeposit],
-    account: relayerViem,
+    account: relayer,
   })
   const approveTx = await liskWallet.writeContract(approveReq)
   await liskPublic.waitForTransactionReceipt({ hash: approveTx })
@@ -166,7 +145,7 @@ async function depositAssetsBackToVaultOnLisk(params: {
     abi: ERC4626_ABI,
     functionName: 'deposit',
     args: [toDeposit, safe],
-    account: relayerViem, // relayer supplies tokens
+    account: relayer, // relayer supplies tokens
   })
   const depositTx = await liskWallet.writeContract(depositReq)
   await liskPublic.waitForTransactionReceipt({ hash: depositTx })
@@ -183,7 +162,7 @@ async function transferAssetsBackToSafeOnLisk(params: {
     address: token,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
-    args: [relayerViem.address],
+    args: [relayer.address],
   }) as bigint
   if (bal === 0n) {
     console.warn('[compensate] transferBack: nothing to transfer (balance 0)')
@@ -195,7 +174,7 @@ async function transferAssetsBackToSafeOnLisk(params: {
     abi: ERC20_ABI,
     functionName: 'transfer',
     args: [safe, bal],
-    account: relayerViem,
+    account: relayer,
   })
   const tx = await liskWallet.writeContract(request)
   await liskPublic.waitForTransactionReceipt({ hash: tx })
@@ -203,15 +182,16 @@ async function transferAssetsBackToSafeOnLisk(params: {
 }
 
 /* ─────────────── POST ───────────────
+   Decimals are aligned (6d receipts & 6d USDCe), so no scaling.
    Steps with compensations:
-   1) Burn ALL corresponding sVault shares on OP
-   2) Safe executes withdraw(assets, relayer, safe)
-      - If this fails, mint back burned shares on OP and exit
+   1) Burn shares on OP via rewards vault (recordWithdrawal)
+      - If this fails: abort.
+   2) Safe executes withdraw(assets, relayer, safe) on Lisk
+      - If this fails: recordDeposit(user, assets) to re-mint on OP; abort.
    3) Bridge Lisk:USDCe → OP:USDC to user
       - If this fails:
-          a) deposit back USDCe from relayer to vault (receiver = Safe)
-          b) mint back burned shares on OP
-          c) if (a) fails, fallback: transfer remaining USDCe to Safe
+          a) deposit back USDCe from relayer to vault (receiver = Safe) or transfer to Safe
+          b) recordDeposit(user, assets) to re-mint shares on OP
 */
 export async function POST(req: Request) {
   try {
@@ -223,66 +203,54 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Missing user/assets' }, { status: 400 })
     }
 
-    const sVaultOP  = TokenAddresses.sVault.optimism as `0x${string}`
-    const liskSafe  = SAFEVAULT as `0x${string}`
-    const vault4626 = LISK_ERC4626_VAULT
+    // Addresses
+    const rewardsVault = REWARDS_VAULT.optimism as `0x${string}`     // OP rewards mirror vault
+    const liskSafe     = SAFEVAULT as `0x${string}`                  // Lisk Safe owner of shares
+    const vault4626    = LISK_ERC4626_VAULT                          // Lisk ERC4626 vault
 
-    // Vault asset & decimals
+    // Vault asset (USDCe) on Lisk
     const vaultAsset = await liskPublic.readContract({
       address: vault4626,
       abi: ERC4626_ABI,
       functionName: 'asset',
     }) as `0x${string}`
 
-    const assetDecimals = await liskPublic.readContract({
-      address: vaultAsset,
-      abi: ERC20_META,
-      functionName: 'decimals',
-    }) as number
+    // Parse assets (6d expected)
+    const requestedAssets = BigInt(assetsIn)
 
-    // sVault decimals (don’t assume 18)
-    const sVaultDecimals = await opPublic.readContract({
-      address: sVaultOP,
-      abi: ERC20_META,
-      functionName: 'decimals',
-    }) as number
-
-    // Normalize input assets if 18d arrived for a 6d asset
-    const requestedAssetsRaw = BigInt(assetsIn)
-    const assets = maybeNormalize18to6(requestedAssetsRaw, assetDecimals)
+    // Withdraw a touch less than burned shares to avoid rounding/fee edge cases (e.g., 0.6% buffer)
+    const withdrawAssets = (requestedAssets * 995n) / 1000n
+    if (withdrawAssets === 0n) {
+      return NextResponse.json({ ok: false, error: 'Withdraw amount too small' }, { status: 400 })
+    }
 
     console.log('[withdraw/4626][inputs]', {
-      user, vaultAsset, assetDecimals, sVaultDecimals,
-      requestedAssetsRaw: requestedAssetsRaw.toString(),
-      assets: assets.toString(),
+      user, vaultAsset, requestedAssets: requestedAssets.toString(), withdrawAssets: withdrawAssets.toString(),
     })
 
-    /* ── 1) Burn ALL sVault shares (scaled 1:1 to assets) ─ */
-    const sharesToBurn = scaleAmount(assets, assetDecimals, sVaultDecimals)
+    /* ── 1) Burn on OP via rewards vault (keeps token + accounting in sync) ─ */
     let burnTxHash: `0x${string}` | null = null
     try {
       const { request: burnReq } = await opPublic.simulateContract({
-        address: sVaultOP,
-        abi: vaultAbi,
-        functionName: 'burn', // burn(address who, uint256 amount)
-        args: [user, sharesToBurn],
-        account: relayerViem,
+        address: rewardsVault,
+        abi: rewardsVaultAbi,
+        functionName: 'recordWithdrawal', // burns receipt + updates accounting
+        args: [user, withdrawAssets],
+        account: relayer,
       })
       burnTxHash = await opWallet.writeContract(burnReq)
       await opPublic.waitForTransactionReceipt({ hash: burnTxHash })
-      console.log('[withdraw/4626] burn ok', { burnTxHash, sharesToBurn: sharesToBurn.toString() })
+      console.log('[withdraw/4626] recordWithdrawal ok', { burnTxHash })
     } catch (err: any) {
-      console.error('[withdraw/4626] burn failed', err?.message || err)
-      return NextResponse.json({ ok: false, stage: 'burn', error: err?.message ?? 'Burn failed' }, { status: 500 })
+      console.error('[withdraw/4626] recordWithdrawal failed', err?.message || err)
+      return NextResponse.json({ ok: false, stage: 'burn', error: err?.message ?? 'recordWithdrawal failed' }, { status: 500 })
     }
 
-    /* ── 2) Safe executes withdraw(assets, relayer, safe) ─ */
-    const assetsWithdraw = (assets * 994n)/1000n
-    console.log(assetsWithdraw)
+    /* ── 2) Safe executes withdraw(assets, relayer, safe) on Lisk ─ */
     const calldata = encodeFunctionData({
       abi: ERC4626_ABI,
       functionName: 'withdraw',
-      args: [assetsWithdraw, relayerViem.address, liskSafe],
+      args: [withdrawAssets, relayer.address, liskSafe],
     })
 
     const protocolKit = await Safe.init({
@@ -308,12 +276,12 @@ export async function POST(req: Request) {
         null
       console.log('[withdraw/4626] safe exec ok', { safeExecHash })
     } catch (err: any) {
-      console.error('[withdraw/4626] safe exec failed, compensating by minting back shares…', err?.message || err)
+      console.error('[withdraw/4626] safe exec failed, compensating by re-minting…', err?.message || err)
       try {
-        const mintTx = await mintBackSharesOnOP({ sVaultOP, user, amountShares: sharesToBurn })
-        console.warn('[compensate] mint back shares ok', { mintTx })
+        const mintTx = await recordDepositBackOnOP({ rewardsVault, user, amountShares: withdrawAssets })
+        console.warn('[compensate] recordDeposit back ok', { mintTx })
       } catch (cErr: any) {
-        console.error('[compensate] mint back shares FAILED', cErr?.message || cErr)
+        console.error('[compensate] recordDeposit back FAILED', cErr?.message || cErr)
       }
       return NextResponse.json({
         ok: false,
@@ -329,32 +297,32 @@ export async function POST(req: Request) {
     const usdceLsk = vaultAsset
     const usdcOP   = TokenAddresses.USDC.optimism as `0x${string}`
 
-    // snapshot relayer USDC.e before bridge (cap for deposit-back)
+    // Snapshot relayer USDCe before bridge (cap for deposit-back)
     const relayerBalBefore = await liskPublic.readContract({
       address: usdceLsk,
       abi: ERC20_ABI,
       functionName: 'balanceOf',
-      args: [relayerViem.address],
+      args: [relayer.address],
     }) as bigint
 
     console.log('[withdraw/4626] LI.FI quote', {
       fromChain: lisk.id, toChain: optimism.id,
       fromToken: usdceLsk, toToken: usdcOP,
-      fromAmount: assetsWithdraw.toString(),
-      fromAddress: relayerViem.address,
+      fromAmount: withdrawAssets.toString(),
+      fromAddress: relayer.address,
       toAddress: user,
       relayerBalBefore: relayerBalBefore.toString(),
     })
 
     try {
       const quote = await getQuote({
-        fromChain: lisk.id,
-        toChain: optimism.id,
-        fromToken: usdceLsk,
-        toToken:   usdcOP,
-        fromAmount: assetsWithdraw.toString(),
-        fromAddress: relayerViem.address,
-        toAddress: user,
+        fromChain:  lisk.id,
+        toChain:    optimism.id,
+        fromToken:  usdceLsk,
+        toToken:    usdcOP,
+        fromAmount: withdrawAssets.toString(),
+        fromAddress: relayer.address,
+        toAddress:  user,
       })
       const route = convertQuoteToRoute(quote)
 
@@ -378,7 +346,8 @@ export async function POST(req: Request) {
         receiver: user,
       })
     } catch (err: any) {
-      console.error('[withdraw/4626] bridge failed; compensating by depositBack + mintBack…', err?.message || err)
+      console.error('[withdraw/4626] bridge failed; compensating by depositBack + re-mint…', err?.message || err)
+
       // 3a) Try to deposit back into vault (receiver = Safe) up to what we still have
       let depositedAmt = 0n
       try {
@@ -386,7 +355,7 @@ export async function POST(req: Request) {
           token: usdceLsk,
           vault: vault4626,
           safe: liskSafe,
-          wantAssets: relayerBalBefore, // we aim to restore pre-bridge holdings
+          wantAssets: relayerBalBefore, // aim to restore pre-bridge holdings
         })
         depositedAmt = res.depositedAmt
         console.warn('[compensate] depositBack result', res)
@@ -400,12 +369,12 @@ export async function POST(req: Request) {
         }
       }
 
-      // 3b) Always mint back the burned sVault shares
+      // 3b) Always mint back the burned shares (via rewards vault)
       try {
-        const mintTx = await mintBackSharesOnOP({ sVaultOP, user, amountShares: sharesToBurn })
-        console.warn('[compensate] mintBackShares ok', { mintTx, shares: sharesToBurn.toString() })
+        const mintTx = await recordDepositBackOnOP({ rewardsVault, user, amountShares: withdrawAssets })
+        console.warn('[compensate] recordDeposit back ok', { mintTx, shares: withdrawAssets.toString() })
       } catch (mintErr: any) {
-        console.error('[compensate] mintBackShares FAILED', mintErr?.message || mintErr)
+        console.error('[compensate] recordDeposit back FAILED', mintErr?.message || mintErr)
       }
 
       return NextResponse.json({
@@ -422,7 +391,7 @@ export async function POST(req: Request) {
       }, { status: 500 })
     }
   } catch (e: any) {
-    console.error('[api/withdraw/morpho/saga] error:', e)
+    console.error('[api/withdraw/morpho] error:', e)
     return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 })
   }
 }
