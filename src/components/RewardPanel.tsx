@@ -8,7 +8,7 @@ import { createPublicClient, http } from 'viem'
 import { optimism } from 'viem/chains'
 import { useWalletClient } from 'wagmi'
 import { REWARDS_VAULT } from '@/lib/constants'
-import { vaultRewardsAbi } from '@/lib/abi/rewardsAbi.json'
+import  vaultRewardsAbi  from '@/lib/abi/rewardsAbi.json'
 import { Button } from '@/components/ui/button'
 import { Loader2, CheckCircle2, AlertTriangle } from 'lucide-react'
 
