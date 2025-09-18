@@ -250,7 +250,7 @@ export async function POST(req: Request) {
     const calldata = encodeFunctionData({
       abi: ERC4626_ABI,
       functionName: 'withdraw',
-      args: [withdrawAssets, relayer.address, liskSafe],
+      args: [requestedAssets, relayer.address, liskSafe],
     })
 
     const protocolKit = await Safe.init({
