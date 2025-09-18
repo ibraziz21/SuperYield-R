@@ -3,6 +3,7 @@
 
 import { useState, useMemo } from 'react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { RewardsPanel } from './RewardPanel'
 import { PositionsDashboardInner } from './PositionsDashboardInner'
 import { usePositions } from '@/hooks/usePositions'
 import { MerklRewardsPanel } from '@/components/MerklRewardsPanel'
@@ -74,7 +75,7 @@ export function ProtocolTabs() {
           <PositionsDashboardInner protocol="Morpho Blue" />
         </TabsContent>
         <TabsContent value="Rewards" className="mt-6">
-          <MerklRewardsPanel />
+          <RewardsPanel />
         </TabsContent>
       </Tabs>
     </div>
