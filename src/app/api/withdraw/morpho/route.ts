@@ -235,7 +235,7 @@ export async function POST(req: Request) {
         address: rewardsVault,
         abi: rewardsVaultAbi,
         functionName: 'recordWithdrawal', // burns receipt + updates accounting
-        args: [user, withdrawAssets],
+        args: [user, requestedAssets],
         account: relayer,
       })
       burnTxHash = await opWallet.writeContract(burnReq)
