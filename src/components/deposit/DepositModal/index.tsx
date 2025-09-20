@@ -11,7 +11,7 @@ import { lisk as liskChain } from 'viem/chains'
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { ensureLiquidity } from '@/lib/smartbridge'
 import { depositToPool } from '@/lib/depositor'
-import { quoteUsdceOnLisk, smartQuoteUsdt0Lisk, getBridgeQuote } from '@/lib/quotes'
+import { quoteUsdceOnLisk, getBridgeQuote } from '@/lib/quotes'
 
 import { AmountCard } from '../AmountCard'
 import { BalanceStrip } from '../BalanceStrip'
@@ -19,7 +19,7 @@ import { RouteFeesCard } from '../RouteFeesCard'
 import { SuppliedCard } from '../SuppliedCard'
 import { ProgressSteps } from '../Progress'
 import { ActionBar } from '../ActionBar'
-import { bridgeAndDepositViaRouterPush } from '@/lib/bridge'
+import { bridgeAndDepositViaRouterPush, bridgeTokens } from '@/lib/bridge'
 import { adapterKeyForSnapshot } from '@/lib/adapters'
 
 import {
@@ -31,7 +31,6 @@ import {
   mapCrossTokenForDest,
   tokenAddrFor,
   chainIdOf,
-  clientFor,
 } from '../helpers'
 import type { EvmChain, FlowStep } from '../types'
 import { TokenAddresses, LISK_EXECUTOR_ADDRESS } from '@/lib/constants'
@@ -44,8 +43,7 @@ const scaleAmount = (amt: bigint, fromDec: number, toDec: number) => {
   if (toDec > fromDec) return amt * pow10(toDec - fromDec)
   return amt / pow10(fromDec - toDec)
 }
-
-const applyBuffer998 = (amt: bigint) => (amt * 997n) / 1000n;
+const applyBuffer998 = (amt: bigint) => (amt * 997n) / 1000n
 
 interface DepositModalProps {
   open: boolean
@@ -225,14 +223,25 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     }
 
     if (dest === 'lisk' && destOutSymbol === 'USDT0') {
-      smartQuoteUsdt0Lisk({
-        amountIn: amt,
-        opBal, baBal,
+      getBridgeQuote({
+        token: 'USDT0',
+        amount: amt,
+        from: src,
+        to: dest,
         fromAddress: walletClient.account!.address as `0x${string}`,
-        sourceToken: sourceAsset,
       })
-        .then((q) => { setRoute(q.route); setFee(q.bridgeFee); setReceived(q.bridgeOutUSDT0); setQuoteError(null) })
-        .catch(() => { setRoute(null); setFee(0n); setReceived(0n); setQuoteError('Could not fetch bridge quote') })
+        .then((q) => {
+          setRoute(q.route)
+          setFee(q.bridgeFeeTotal)      // total fee from LI.FI
+          setReceived(q.bridgeOutAmount) // amount relayer wallet will actually get
+          setQuoteError(null)
+        })
+        .catch(() => {
+          setRoute(null)
+          setFee(0n)
+          setReceived(0n)
+          setQuoteError('Could not fetch bridge quote')
+        })
       return
     }
 
@@ -353,7 +362,6 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     }
   }
 
-  /* ---------------- Confirm (bridge → deposit → mint via API) ---------------- */
   async function handleConfirm() {
     if (!walletClient) { openConnect(); return }
     setError(null)
@@ -364,31 +372,64 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       const user = walletClient.account!.address as `0x${string}`
 
       // ─────────────────────────────────────────────────────────────
-      // Lisk + Morpho one-click path → use router's ACTUAL received
+      // Special case: USDT0 on Lisk → user bridges to relayer → relayer handles Safe deposit.
+      // We mint the OP receipt in the **USDT** rewards contract.
+      // ─────────────────────────────────────────────────────────────
+      if (dest === 'lisk' && snap.token === 'USDT0') {
+        setStep('bridging')
+
+        const src = (opUsdtBal ?? 0n) >= inputAmt ? 'optimism' : 'base'
+        const result = await bridgeTokens('USDT0', inputAmt, src, 'lisk', walletClient, {
+          sourceToken: sourceAsset,
+        })
+        console.log('[ui] bridged USDT0 to relayer:', result)
+
+        // Mint receipts on OP in USDT vault, 1:1 (6d)
+        const tokenKind: 'USDC' | 'USDT' = 'USDT'
+        const sharesToMint = inputAmt
+
+        console.log('[ui] mintVault payload', { tokenKind, tokenAmt: sharesToMint.toString(), token: snap.token, chain: snap.chain })
+        const mintRes = await fetch('/api/mintVault', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userAddress: user,
+            tokenAmt: sharesToMint.toString(),
+            tokenKind, // ensure backend mints to the right rewards vault
+          }),
+        }).then(r => r.json())
+
+        if (!mintRes?.success) throw new Error(mintRes?.message || 'Minting failed')
+
+        setStep('success')
+        return
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // Lisk + Morpho one-click path (USDCe/WETH) → router push deposit
       // ─────────────────────────────────────────────────────────────
       if (dest === 'lisk' && snap.protocolKey === 'morpho-blue') {
         setStep('bridging')
-      
+
         const destTokenLabel = mapCrossTokenForDest(snap.token, 'lisk') as 'USDT0' | 'USDCe' | 'WETH'
         const adapterKey = adapterKeyForSnapshot(snap)
-      
+
         const pickSrcBy = (op: bigint | null, ba: bigint | null): 'optimism' | 'base' => {
           const _op = op ?? 0n; const _ba = ba ?? 0n
           if (_op >= inputAmt) return 'optimism'
           if (_ba >= inputAmt) return 'base'
           return _op >= _ba ? 'optimism' : 'base'
         }
-      
+
         const srcToken =
-          destTokenLabel === 'USDT0' ? sourceAsset :
-          destTokenLabel === 'USDCe' ? 'USDC' : 'WETH'
-      
+          destTokenLabel === 'USDCe' ? 'USDC' :
+          destTokenLabel === 'USDT0' ? 'USDT' : 'WETH'
+
         let srcChain: 'optimism' | 'base'
         if (srcToken === 'USDC')      srcChain = pickSrcBy(opUsdcBal, baUsdcBal)
         else if (srcToken === 'USDT') srcChain = pickSrcBy(opUsdtBal, baUsdtBal)
-        else                          srcChain = pickSrcBy(opBal,    baBal)
-      
-        // --- EXECUTE + MEASURE ---
+        else                          srcChain = pickSrcBy(opBal, baBal)
+
         const result = await bridgeAndDepositViaRouterPush({
           user,
           destToken: destTokenLabel,
@@ -398,30 +439,36 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
           adapterKey,
           walletClient,
         })
-      
         console.log('[ui] bridge+deposit result:', result)
-      
+
+        // Mint receipts on OP for non-WETH (USDCe → USDC receipts)
         const effectiveBase = applyBuffer998(inputAmt)
         const sharesToMint  = scaleAmount(effectiveBase, tokenDecimals, VAULT_TOKEN_DECIMALS)
-      
-        console.log('[ui] buffer-mint → input =', inputAmt.toString(),
-                    'buffered(0.998) =', effectiveBase.toString(),
-                    'shares(18d) =', sharesToMint.toString())
-      
-        const mintRes = await fetch('/api/mintVault', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userAddress: user, tokenAmt: sharesToMint.toString() }),
-        }).then(r => r.json())
-      
-        if (!mintRes?.success) throw new Error(mintRes?.message || 'Minting the receipt token failed')
-      
+
+        if (destTokenLabel !== 'WETH') {
+          const tokenKind: 'USDC' | 'USDT' =
+            destTokenLabel === 'USDT0' ? 'USDT' : 'USDC'
+
+          console.log('[ui] mintVault payload', { tokenKind, tokenAmt: sharesToMint.toString(), token: snap.token, chain: snap.chain })
+          const mintRes = await fetch('/api/mintVault', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userAddress: user,
+              tokenAmt: sharesToMint.toString(),
+              tokenKind,
+            }),
+          }).then(r => r.json())
+
+          if (!mintRes?.success) throw new Error(mintRes?.message || 'Minting failed')
+        }
+
         setStep('success')
         return
       }
 
       // ─────────────────────────────────────────────────────────────
-      // Generic (Aave/Comet or non-Lisk): on-chain deposit is exact
+      // Generic path (kept as-is): ensure liquidity → depositToPool → mint receipts
       // ─────────────────────────────────────────────────────────────
       const destId = chainIdOf(dest)
       const wantDestToken = mapCrossTokenForDest(snap.token, dest)
@@ -429,7 +476,6 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       const preBal = await readWalletBalance(dest, finalTokenAddr, user)
 
       let bridgedDelta: bigint = 0n
-
       if (!liquidityEnsured && preBal < inputAmt) {
         setStep('bridging')
         const res = await ensureLiquidity(
@@ -466,21 +512,20 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       if (toDeposit === 0n) throw new Error('No funds available to deposit yet')
 
       setStep('depositing')
-      // If you update depositToPool to return the *actually used* amount, use it here.
-      // For Aave/Comet, it's already exact == toDeposit.
       await depositToPool(snap, toDeposit, walletClient)
 
       const sharesToMint = scaleAmount(toDeposit, tokenDecimals, VAULT_TOKEN_DECIMALS)
+      const tokenKind: 'USDC' | 'USDT' =
+        (snap.token === 'USDT' || snap.token === 'USDT0') ? 'USDT' : 'USDC'
 
-      const mintRes = await fetch('/api/mintVault', {            // ← fixed route name
+      console.log('[ui] mintVault payload', { tokenKind, tokenAmt: sharesToMint.toString(), token: snap.token, chain: snap.chain })
+      const mintRes = await fetch('/api/mintVault', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userAddress: user, tokenAmt: sharesToMint.toString() }),
+        body: JSON.stringify({ userAddress: user, tokenAmt: sharesToMint.toString(), tokenKind }),
       }).then(r => r.json())
 
-      if (!mintRes?.success) {
-        throw new Error(mintRes?.message || 'Minting the receipt token failed')
-      }
+      if (!mintRes?.success) throw new Error(mintRes?.message || 'Minting failed')
 
       setStep('success')
     } catch (e: any) {
@@ -488,7 +533,6 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       setStep('error')
     }
   }
-
 
   /* =============================================================================
      Derived UI flags

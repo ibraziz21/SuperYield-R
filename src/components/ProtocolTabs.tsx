@@ -3,7 +3,7 @@
 
 import { useState, useMemo } from 'react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { RewardsPanel } from './RewardPanel'
+import { RewardsPanel } from './RewardPanel' // <-- fixed import
 import { PositionsDashboardInner } from './PositionsDashboardInner'
 import { usePositions } from '@/hooks/usePositions'
 import { MerklRewardsPanel } from '@/components/MerklRewardsPanel'

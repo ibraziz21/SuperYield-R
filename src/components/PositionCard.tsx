@@ -32,9 +32,15 @@ interface Props {
   onWithdraw?: (p: PositionLike) => void
 }
 
+/** Decimals resolver kept super small but correct for our tokens */
 function tokenDecimals(protocol: ProtocolName, token: string): number {
-  if (protocol === 'Morpho Blue') return token === 'WETH' ? 18 : 6
-  if (protocol === 'Aave v3') return 6
+  const t = token as MorphoToken | 'USDC' | 'USDT'
+  if (protocol === 'Morpho Blue') {
+    if (t === 'WETH') return 18
+    if (t === 'USDCe' || t === 'USDT0') return 6
+    return 6
+  }
+  // Aave/Compound cards here are only USDC/USDT in your app
   return 6
 }
 
@@ -55,14 +61,23 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
     console.log('[PositionCard] user address', user)
   }, [user])
 
-  // ----- SVault balance (Morpho Blue only) -----
+  // ─────────────────────────────────────────────────────────────
+  // OP receipt tokens (only for Morpho Blue)
+  // USDCe → read sVault.optimismUSDC
+  // USDT0 → read sVault.optimismUSDT
+  // WETH   has no OP receipt → fall back to p.amount
+  // ─────────────────────────────────────────────────────────────
   const [svtBal, setSvtBal] = useState<bigint | null>(null)
-  const [svtDec, setSvtDec] = useState<number>(18)
+  const [svtDec, setSvtDec] = useState<number>(6)
 
   const VAULT_ADDR: Address | undefined =
-  ((TokenAddresses as any)?.sVault?.optimism as Address | undefined) ??
-  ('0xD56eE57eD7906b8558db9926578879091391Fbb7' as Address)
-  
+    p.protocol === 'Morpho Blue'
+      ? (p.token === 'USDCe'
+          ? (TokenAddresses as any)?.sVault?.optimismUSDC
+          : p.token === 'USDT0'
+          ? (TokenAddresses as any)?.sVault?.optimismUSDT
+          : undefined)
+      : undefined
 
   useEffect(() => {
     if (p.protocol !== 'Morpho Blue') {
@@ -70,19 +85,19 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
       console.debug('[PositionCard] skip SVault read (not Morpho Blue)')
       return
     }
+    if (!VAULT_ADDR) {
+      setSvtBal(null) // no receipt for this token; we'll use p.amount
+      console.debug('[PositionCard] no OP receipt vault for', String(p.token))
+      return
+    }
     if (!user) {
       setSvtBal(null)
       console.debug('[PositionCard] skip SVault read (no user)')
       return
     }
-    if (!VAULT_ADDR) {
-      console.error('[PositionCard] VAULT_ADDR missing (TokenAddresses.sVault.optimism)')
-      setSvtBal(0n)
-      return
-    }
 
     let cancelled = false
-    console.log('[PositionCard] fetching SVault balance', { user, vault: VAULT_ADDR })
+    console.log('[PositionCard] fetching SVault balance', { user, vault: VAULT_ADDR, token: String(p.token) })
 
     ;(async () => {
       try {
@@ -101,9 +116,10 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
         ])
 
         if (!cancelled) {
-          setSvtDec(dec ?? 18)
+          setSvtDec(dec ?? 6)
           setSvtBal(bal ?? 0n)
           console.log('[PositionCard] SVault read ok', {
+            token: String(p.token),
             decimals: dec,
             balance: bal.toString(),
           })
@@ -119,26 +135,31 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
     return () => {
       cancelled = true
     }
-  }, [p.protocol, user, VAULT_ADDR])
+  }, [p.protocol, p.token, user, VAULT_ADDR])
 
   // ----- Amount to display -----
   const decs = tokenDecimals(p.protocol as ProtocolName, p.token as string)
+
+  // For Morpho Blue:
+  // - If we have an OP receipt vault for this token, prefer that live balance
+  // - Otherwise, use p.amount directly (already underlying units from fetchPositions)
   const displayAmt =
     p.protocol === 'Morpho Blue'
-      ? svtBal == null
-        ? '…'
-        : formatUnits(svtBal, svtDec)
+      ? VAULT_ADDR != null && svtBal != null
+        ? formatUnits(svtBal, svtDec)
+        : formatUnits(p.amount, decs)
       : formatUnits(p.amount, decs)
 
   useEffect(() => {
     console.debug('[PositionCard] display amount resolved', {
       protocol: p.protocol,
-      svaultDecimals: svtDec,
-      svaultBalance: svtBal?.toString(),
+      token: String(p.token),
+      svaultDecimals: VAULT_ADDR ? svtDec : '(none)',
+      svaultBalance: VAULT_ADDR ? svtBal?.toString() : '(none)',
       decimalsUsed: decs,
       displayAmt,
     })
-  }, [displayAmt, decs, p.protocol, svtBal, svtDec])
+  }, [displayAmt, decs, p.protocol, p.token, svtBal, svtDec, VAULT_ADDR])
 
   // ----- Aave/Compound address resolution (unchanged) -----
   let assetAddress: `0x${string}` | undefined

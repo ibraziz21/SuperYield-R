@@ -4,12 +4,8 @@
 import { FC, useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Input } from '@/components/ui/input'
-import { useYields } from '@/hooks/useYields'
+import { useYields, type Chain, type ProtocolKey as Proto, type YieldSnapshot } from '@/hooks/useYields'
 import { YieldRow } from './YieldRow'
-
-type Chain = 'optimism' | 'base' | 'lisk'
-type Proto = 'aave-v3' | 'compound-v3' | 'morpho-blue'
-type Token = 'USDC' | 'USDT' | 'WETH' // display tokens in snapshots
 
 const CHAIN_LABEL: Record<Chain, string> = {
   optimism: 'Optimism',
@@ -25,14 +21,25 @@ const PROTO_LABEL: Record<Proto, string> = {
 
 const PROTO_ORDER: Proto[] = ['aave-v3', 'compound-v3', 'morpho-blue']
 
-/** Hard filter: only show Lisk + Morpho Blue + USDCe (displayed as USDC) */
-const HARD_FILTER = (y: { chain: Chain; protocolKey: Proto; token: Token }) =>
-  y.chain === 'lisk' && y.protocolKey === 'morpho-blue' && y.token === 'USDC'
+// Normalize token symbols for display (optional; YieldRow can also do this)
+const DISPLAY_TOKEN: Record<string, string> = {
+  USDCe: 'USDC',
+  USDT0: 'USDT',
+  USDC: 'USDC',
+  USDT: 'USDT',
+  WETH: 'WETH',
+}
+
+/** Hard filter: only show Lisk + Morpho Blue + (USDC/USDCe or USDT/USDT0) */
+const HARD_FILTER = (y: Pick<YieldSnapshot, 'chain' | 'protocolKey' | 'token'>) =>
+  y.chain === 'lisk' &&
+  y.protocolKey === 'morpho-blue' &&
+  (y.token === 'USDC' || y.token === 'USDCe' || y.token === 'USDT' || y.token === 'USDT0')
 
 export const YieldTable: FC = () => {
   const { yields, isLoading, error } = useYields()
 
-  // UI: search / sort (filters are hard-coded to Lisk + Morpho Blue + USDCe)
+  // UI: search / sort (filters are hard-coded to Lisk + Morpho Blue + USDCe/USDT0)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<'apy_desc' | 'apy_asc' | 'tvl_desc' | 'tvl_asc'>('apy_desc')
 
@@ -40,13 +47,13 @@ export const YieldTable: FC = () => {
     if (!yields) return []
     const q = query.trim().toLowerCase()
 
-    // 1) Enforce Lisk + Morpho Blue + USDCe (display token is 'USDC')
-    const onlyLiskMorphoUSDCe = yields.filter((y) => HARD_FILTER(y as any))
+    // 1) Enforce Lisk + Morpho Blue + USDC(e)/USDT(0)
+    const onlyLiskMorpho = yields.filter((y) => HARD_FILTER(y))
 
     // 2) Optional text filter
-    const filtered = onlyLiskMorphoUSDCe.filter((y) => {
+    const filtered = onlyLiskMorpho.filter((y) => {
       if (!q) return true
-      const hay = `${y.token} ${y.protocol} ${y.chain}`.toLowerCase()
+      const hay = `${DISPLAY_TOKEN[y.token] ?? y.token} ${y.protocol} ${y.chain}`.toLowerCase()
       return hay.includes(q)
     })
 
@@ -66,8 +73,8 @@ export const YieldTable: FC = () => {
 
     // 4) Keep protocol grouping stable (harmless here)
     return sortedPrimary.sort((a, b) => {
-      const ia = PROTO_ORDER.indexOf(a.protocolKey as Proto)
-      const ib = PROTO_ORDER.indexOf(b.protocolKey as Proto)
+      const ia = PROTO_ORDER.indexOf(a.protocolKey)
+      const ib = PROTO_ORDER.indexOf(b.protocolKey)
       return ia - ib
     })
   }, [yields, query, sort])
@@ -82,7 +89,7 @@ export const YieldTable: FC = () => {
             {rows.length} {rows.length === 1 ? 'pool' : 'pools'}
           </span>
           <span className="hidden rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700 md:inline-block">
-            Showing {CHAIN_LABEL.lisk} • {PROTO_LABEL['morpho-blue']} • USDCe only
+            Showing {CHAIN_LABEL.lisk} • {PROTO_LABEL['morpho-blue']} • USDCe &amp; USDT0
           </span>
         </div>
 
@@ -115,9 +122,6 @@ export const YieldTable: FC = () => {
       </div>
 
       <CardContent className="p-0">
-        {/* Responsive scrollers:
-            - x-axis for table width on phones
-            - y-axis for rows */}
         <div className="w-full overflow-x-auto">
           <div className="max-h-[70vh] overflow-y-auto">
             <table className="min-w-[720px] text-xs sm:min-w-full sm:text-sm">
@@ -160,7 +164,7 @@ export const YieldTable: FC = () => {
                 {!isLoading && !error && rows.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-3 py-10 text-center text-muted-foreground md:px-4">
-                      No USDCe pool found on Lisk • Morpho Blue.
+                      No USDCe/USDT0 pool found on Lisk • Morpho Blue.
                     </td>
                   </tr>
                 )}
@@ -177,7 +181,7 @@ export const YieldTable: FC = () => {
         {!isLoading && !error && (
           <div className="flex items-center justify-between border-t px-3 py-3 text-[11px] text-muted-foreground md:px-4 md:text-xs">
             <span>Showing <strong>{rows.length}</strong> pool{rows.length === 1 ? '' : 's'}</span>
-            <span className="hidden md:block">Lisk • Morpho Blue • USDCe only.</span>
+            <span className="hidden md:block">Lisk • Morpho Blue • USDCe &amp; USDT0.</span>
           </div>
         )}
       </CardContent>

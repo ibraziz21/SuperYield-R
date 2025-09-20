@@ -9,12 +9,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { formatUnits } from 'viem'
+import { formatUnits, erc20Abi } from 'viem'
 import { useAppKit } from '@reown/appkit/react'
 import { useWalletClient } from 'wagmi'
 import type { YieldSnapshot } from '@/hooks/useYields'
-import { fetchVaultPosition } from '@/lib/positions'
 import { Loader2, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { TokenAddresses } from '@/lib/constants'
+import { publicOptimism } from '@/lib/clients'
 
 /* ──────────────────────────────────────────────────────────────── */
 /* Server call: burn sAVault (OP) → router.withdraw (Lisk) → bridge */
@@ -23,13 +24,15 @@ import { Loader2, CheckCircle2, AlertTriangle } from 'lucide-react'
 async function callServerMorphoWithdrawAndBridge(params: {
   user: `0x${string}`
   sharesToBurn: bigint
+  tokenSymbol: string
 }) {
   const res = await fetch('/api/withdraw/morpho', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       user: params.user,
-      amount: params.sharesToBurn.toString(),   // ✅ send as `amount`
+      amount: params.sharesToBurn.toString(), // backend expects "amount"
+      tokenSymbol: params.tokenSymbol,        // ← pass token explicitly
     }),
   })
   const j = await res.json().catch(() => ({}))
@@ -44,11 +47,7 @@ interface Props {
   snap: YieldSnapshot
 }
 
-type Status =
-  | 'idle'
-  | 'bridging'   // backend is burning shares + withdrawing on Lisk + bridging to OP
-  | 'bridged'    // ✅ done
-  | 'error'
+type Status = 'idle' | 'bridging' | 'bridged' | 'error'
 
 export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
   const { open: openConnect } = useAppKit()
@@ -56,11 +55,12 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
 
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [shares, setShares] = useState<bigint | null>(null) // sAVault balance (18d)
 
-  // Only Morph(lisk) path is supported now
+  // sAVault receipt balance (on Optimism) and its decimals
+  const [shares, setShares] = useState<bigint | null>(null)
+  const [shareDecimals, setShareDecimals] = useState<number>(6)
+
   const isMorphoLisk = snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk'
-  const shareDecimals = 6 // sAVault assumed 18d
 
   const title = useMemo(
     () => (isMorphoLisk ? 'Withdraw & Bridge (Morpho Lisk → Optimism)' : 'Withdraw'),
@@ -75,30 +75,70 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
     setShares(null)
   }, [open, snap.id])
 
-  // Load sAVault balance on OP using the new helper
+  // Map snapshot token → correct OP receipt address
+  function vaultAddrForToken(): `0x${string}` | undefined {
+    if (snap.token === 'USDCe' || snap.token === 'USDC') {
+      return (TokenAddresses as any)?.sVault?.optimismUSDC as `0x${string}` | undefined
+    }
+    if (snap.token === 'USDT0' || snap.token === 'USDT') {
+      return (TokenAddresses as any)?.sVault?.optimismUSDT as `0x${string}` | undefined
+    }
+    return undefined // WETH has no OP receipt in this build
+  }
+
+  // Load receipt balance from OP (per-token)
   useEffect(() => {
     if (!open || !walletClient) return
     const user = walletClient.account?.address as `0x${string}` | undefined
     if (!user) return
 
-    // If this snapshot isn't Morpho Lisk, we just show "unsupported" UI.
     if (!isMorphoLisk) { setShares(0n); return }
 
-    ; (async () => {
+    const vault = vaultAddrForToken()
+    if (!vault) {
+      setShares(0n)
+      setShareDecimals(6)
+      console.debug('[WithdrawModal] No OP receipt vault for', snap.token)
+      return
+    }
+
+    let cancelled = false
+    ;(async () => {
       try {
-        const s = await fetchVaultPosition(user)
-        setShares(s ?? 0n)
+        const [dec, bal] = await Promise.all([
+          publicOptimism.readContract({
+            address: vault,
+            abi: erc20Abi,
+            functionName: 'decimals',
+          }) as Promise<number>,
+          publicOptimism.readContract({
+            address: vault,
+            abi: erc20Abi,
+            functionName: 'balanceOf',
+            args: [user],
+          }) as Promise<bigint>,
+        ])
+        if (!cancelled) {
+          setShareDecimals(dec ?? 6)
+          setShares(bal ?? 0n)
+          console.log('[WithdrawModal] receipt read', { token: snap.token, vault, dec, bal: bal?.toString?.() })
+        }
       } catch (e) {
-        setError('Failed to load vault shares')
-        setShares(0n)
+        if (!cancelled) {
+          console.error('[WithdrawModal] receipt read failed', e)
+          setError('Failed to load vault shares')
+          setShares(0n)
+          setShareDecimals(6)
+        }
       }
     })()
-  }, [open, walletClient, isMorphoLisk])
+
+    return () => { cancelled = true }
+  }, [open, walletClient, isMorphoLisk, snap.token])
 
   /* ────────────────────────────────────────────────────────────────
      ACTION — Withdraw & Bridge (handled by backend relayer)
      ──────────────────────────────────────────────────────────────── */
-
 
   async function handleWithdrawAll() {
     if (!walletClient) { openConnect(); return }
@@ -111,12 +151,10 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
       setError(null)
       setStatus('bridging')
 
-      console.log(shares, "Shares")
-      // Until you compute exact assets, use 1:1 (same assumption as API default)
       await callServerMorphoWithdrawAndBridge({
         user,
         sharesToBurn: shares,
-        // send it so API validation passes
+        tokenSymbol: snap.token, // ← pass token here
       })
 
       setStatus('bridged')
@@ -188,7 +226,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           <div className="text-sm font-medium">Processing on relayer…</div>
         </div>
         <p className="mt-2 text-xs text-gray-500">
-          Burning your sAVault shares on Optimism, withdrawing from the Safe on Lisk, then bridging USDC.e → USDC to your Optimism address.
+          Burning your sAVault shares on Optimism, withdrawing from the Safe on Lisk, then bridging to your Optimism wallet.
         </p>
       </div>
     )
@@ -203,7 +241,7 @@ export const WithdrawModal: FC<Props> = ({ open, onClose, snap }) => {
           <span className="font-semibold">Withdrawal & Bridge complete</span>
         </div>
         <p className="mt-2 text-xs text-emerald-700">
-          Funds should now be in your Optimism wallet as USDC.
+          Funds should now be in your Optimism wallet.
         </p>
       </div>
     )

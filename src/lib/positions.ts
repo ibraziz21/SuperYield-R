@@ -9,14 +9,21 @@ import {
   type TokenSymbol,
 } from './constants'
 
-import aaveAbi   from './abi/aavePool.json'
-import cometAbi  from './abi/comet.json'
-import { erc20Abi, parseUnits } from 'viem'
-import type { Address } from 'viem'
-
-// NEW: per-asset Aave balance helper (aToken balance)
+import aaveAbi from './abi/aavePool.json'
+import cometAbi from './abi/comet.json'
+import { erc20Abi } from 'viem'
 import { getATokenAddress as _unused, getAaveATokenBalance } from './aave'
 
+/* ──────────────────────────────────────────────────────────────── */
+/* Debug helpers                                                    */
+/* ──────────────────────────────────────────────────────────────── */
+
+const DEBUG = process.env.NEXT_PUBLIC_DEBUG_POSITIONS !== 'false'
+const dbg = (...args: any[]) => {
+  if (DEBUG) console.log('[positions]', ...args)
+}
+const warn = (...args: any[]) => console.warn('[positions]', ...args)
+const err = (...args: any[]) => console.error('[positions]', ...args)
 
 /* ──────────────────────────────────────────────────────────────── */
 /* Chains & helpers                                                 */
@@ -56,36 +63,34 @@ export async function aaveSupplyApy(
 ): Promise<number | null> {
   const client = pub(chain)
   const pool   = AAVE_POOL[chain]
+  dbg('aaveSupplyApy()', { chain, asset, pool })
 
-  let reserve: unknown
   try {
-    reserve = await client.readContract({
+    const reserve = await client.readContract({
       address: pool,
       abi:     aaveAbi,
       functionName: 'getReserveData',
       args: [asset],
-    })
-  } catch {
+    }) as any
+
+    const liqRateRay: bigint | undefined =
+      Array.isArray(reserve) ? (typeof reserve[2] === 'bigint' ? reserve[2] : undefined)
+      : (reserve && typeof reserve === 'object' && typeof reserve.currentLiquidityRate === 'bigint'
+          ? reserve.currentLiquidityRate : undefined)
+
+    dbg('aaveSupplyApy.reserve', { liqRateRay: liqRateRay?.toString?.() })
+
+    if (typeof liqRateRay !== 'bigint') return null
+    const bps = (liqRateRay * BPS_MULTIPLIER) / RAY
+    return Number(bps) / 100
+  } catch (e) {
+    err('aaveSupplyApy.error', e)
     return null
   }
-
-  let liqRateRay: bigint | undefined
-  if (Array.isArray(reserve)) {
-    const v = reserve[2] // index where currentLiquidityRate commonly appears
-    liqRateRay = typeof v === 'bigint' ? v : undefined
-  } else if (reserve && typeof reserve === 'object' && 'currentLiquidityRate' in reserve) {
-    const v = (reserve as Record<string, unknown>)['currentLiquidityRate']
-    liqRateRay = typeof v === 'bigint' ? v : undefined
-  }
-
-  if (typeof liqRateRay !== 'bigint') return null
-
-  const bps = (liqRateRay * BPS_MULTIPLIER) / RAY
-  return Number(bps) / 100 // %
 }
 
 /* ──────────────────────────────────────────────────────────────── */
-/* Compound v3 (Comet) APY (utility)                                */
+/* Compound v3 (Comet) utils                                        */
 /* ──────────────────────────────────────────────────────────────── */
 
 export async function compoundSupplyApy(
@@ -93,27 +98,24 @@ export async function compoundSupplyApy(
   chain:  Extract<EvmChain, 'optimism' | 'base'>,
 ): Promise<number> {
   const client = pub(chain)
-  const util   = await client.readContract({
+  dbg('compoundSupplyApy()', { chain, comet })
+
+  const util = await client.readContract({
     address: comet,
     abi: cometAbi,
     functionName: 'getUtilization',
   }) as bigint
 
-  const rate   = await client.readContract({
+  const rate = await client.readContract({
     address: comet,
     abi: cometAbi,
     functionName: 'getSupplyRate',
     args: [util],
   }) as bigint
 
-  // per-second 1e18 → annualized %
+  dbg('compoundSupplyApy.util/rate', { util: util.toString(), rate: rate.toString() })
   return (Number(rate) / 1e18) * 31_536_000 * 100
 }
-
-/* ──────────────────────────────────────────────────────────────── */
-/* Compound v3 supplied balance (Comet)                             */
-/* balanceOf(user) in base token units (USDC/USDT -> 1e6)           */
-/* ──────────────────────────────────────────────────────────────── */
 
 async function cometSupply(
   chain: Extract<EvmChain, 'optimism' | 'base'>,
@@ -121,22 +123,26 @@ async function cometSupply(
   user:  `0x${string}`,
 ): Promise<bigint> {
   const pool = COMET_POOLS[chain][token]
-  if (pool === '0x0000000000000000000000000000000000000000') return BigInt(0)
+  dbg('cometSupply()', { chain, token, user, pool })
+  if (pool === '0x0000000000000000000000000000000000000000') return 0n
 
-  const bal = await pub(chain).readContract({
-    address: pool,
-    abi:     cometAbi,
-    functionName: 'balanceOf',
-    args: [user],
-  }) as bigint
-
-  return bal // 1e6
+  try {
+    const bal = await pub(chain).readContract({
+      address: pool,
+      abi:     cometAbi,
+      functionName: 'balanceOf',
+      args: [user],
+    }) as bigint
+    dbg('cometSupply.balance', { bal: bal.toString() })
+    return bal
+  } catch (e) {
+    err('cometSupply.error', e)
+    return 0n
+  }
 }
 
 /* ──────────────────────────────────────────────────────────────── */
-/* Morpho Blue (Lisk) – MetaMorpho vaults are ERC-4626              */
-/* We read share balance, convert to assets via convertToAssets.    */
-/* Returns amount in underlying units (USDCe/USDT0: 1e6, WETH: 1e18)*/
+/* Morpho Blue (Lisk) – ERC-4626 vaults                             */
 /* ──────────────────────────────────────────────────────────────── */
 
 const erc4626Abi = [
@@ -163,26 +169,103 @@ async function morphoSupplyLisk(
   user:  `0x${string}`,
 ): Promise<bigint> {
   const vault = MORPHO_VAULT_BY_TOKEN[token]
+  dbg('morphoSupplyLisk()', { token, user, vault })
 
-  // shares = balanceOf(user) on the ERC-4626 share token (vault)
-  const shares = await publicLisk.readContract({
-    address: vault,
-    abi: erc20Abi,
-    functionName: 'balanceOf',
-    args: [user],
-  }) as bigint
+  try {
+    const [shares, shareDec] = await Promise.all([
+      publicLisk.readContract({
+        address: vault,
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [user],
+      }) as Promise<bigint>,
+      publicLisk.readContract({
+        address: vault,
+        abi: erc20Abi,
+        functionName: 'decimals',
+      }) as Promise<number>,
+    ])
+    dbg('morphoSupplyLisk.shares', { shares: shares.toString(), shareDec })
 
-  if (shares === BigInt(0)) return BigInt(0)
+    if (shares === 0n) return 0n
 
-  // convert shares -> underlying assets
-  const assets = await publicLisk.readContract({
-    address: vault,
-    abi: erc4626Abi,
-    functionName: 'convertToAssets',
-    args: [shares],
-  }) as bigint
+    const assets = await publicLisk.readContract({
+      address: vault,
+      abi: erc4626Abi,
+      functionName: 'convertToAssets',
+      args: [shares],
+    }) as bigint
+    dbg('morphoSupplyLisk.assets', { assets: assets.toString() })
 
-  return assets // underlying units
+    return assets
+  } catch (e) {
+    err('morphoSupplyLisk.error', e)
+    return 0n
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────── */
+/* Optimism receipt tokens (sVault)                                 */
+/* ──────────────────────────────────────────────────────────────── */
+
+const maxBigint = (a: bigint, b: bigint) => (a > b ? a : b)
+
+async function fetchReceiptBalance(
+  user: `0x${string}`,
+  which: 'USDC' | 'USDT',
+): Promise<bigint> {
+  const addr =
+    which === 'USDC'
+      ? (TokenAddresses.sVault.optimismUSDC as `0x${string}`)
+      : (TokenAddresses.sVault.optimismUSDT as `0x${string}`)
+
+  dbg('fetchReceiptBalance()', { which, addr, user })
+
+  if (!addr || addr === '0x0000000000000000000000000000000000000000') {
+    warn('fetchReceiptBalance.missingAddr', { which, addr })
+    return 0n
+  }
+
+  try {
+    const [dec, bal] = await Promise.all([
+      publicOptimism.readContract({
+        address: addr,
+        abi: erc20Abi,
+        functionName: 'decimals',
+      }) as Promise<number>,
+      publicOptimism.readContract({
+        address: addr,
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [user],
+      }) as Promise<bigint>,
+    ])
+    dbg('fetchReceiptBalance.dec/bal', { which, dec, bal: bal.toString() })
+    return bal ?? 0n
+  } catch (e) {
+    err('fetchReceiptBalance.error', { which, e })
+    return 0n
+  }
+}
+
+async function morphoUSDCeViaReceiptOrLisk(user: `0x${string}`): Promise<bigint> {
+  dbg('morphoUSDCeViaReceiptOrLisk()', { user })
+  const [receipt, liskAssets] = await Promise.all([
+    fetchReceiptBalance(user, 'USDC'),
+    morphoSupplyLisk('USDCe', user),
+  ])
+  dbg('morphoUSDCeViaReceiptOrLisk.result', { receipt: receipt.toString(), liskAssets: liskAssets.toString() })
+  return maxBigint(receipt, liskAssets)
+}
+
+async function morphoUSDT0ViaReceiptOrLisk(user: `0x${string}`): Promise<bigint> {
+  dbg('morphoUSDT0ViaReceiptOrLisk()', { user })
+  const [receipt, liskAssets] = await Promise.all([
+    fetchReceiptBalance(user, 'USDT'),
+    morphoSupplyLisk('USDT0', user),
+  ])
+  dbg('morphoUSDT0ViaReceiptOrLisk.result', { receipt: receipt.toString(), liskAssets: liskAssets.toString() })
+  return maxBigint(receipt, liskAssets)
 }
 
 /* ──────────────────────────────────────────────────────────────── */
@@ -190,78 +273,70 @@ async function morphoSupplyLisk(
 /* ──────────────────────────────────────────────────────────────── */
 
 export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
+  dbg('fetchPositions.start', { user })
+
   const tasks: Promise<Position>[] = []
 
-  /* AAVE v3 */
+  // AAVE v3
   for (const chain of ['optimism', 'base'] as const) {
     for (const token of ['USDC', 'USDT'] as const) {
       tasks.push(
-        getAaveATokenBalance(chain, token, user).then((amt) => ({
-          protocol: 'Aave v3' as const,
-          chain,
-          token,
-          amount: amt,
-        })),
+        getAaveATokenBalance(chain, token, user)
+          .then((amt) => {
+            dbg('AAVE.balance', { chain, token, amt: amt.toString() })
+            return { protocol: 'Aave v3' as const, chain, token, amount: amt }
+          })
+          .catch((e) => {
+            err('AAVE.read.error', { chain, token, e })
+            return { protocol: 'Aave v3' as const, chain, token, amount: 0n }
+          }),
       )
     }
   }
 
-  /* COMPOUND v3 */
+  // COMPOUND v3
   for (const chain of ['optimism', 'base'] as const) {
     for (const token of ['USDC', 'USDT'] as const) {
       tasks.push(
-        cometSupply(chain, token, user).then((amt) => ({
-          protocol: 'Compound v3' as const,
-          chain,
-          token,
-          amount: amt,
-        })),
+        cometSupply(chain, token, user)
+          .then((amt) => {
+            dbg('COMET.balance', { chain, token, amt: amt.toString() })
+            return { protocol: 'Compound v3' as const, chain, token, amount: amt }
+          })
+          .catch((e) => {
+            err('COMET.read.error', { chain, token, e })
+            return { protocol: 'Compound v3' as const, chain, token, amount: 0n }
+          }),
       )
     }
   }
 
-  /* MORPHO BLUE – Lisk vaults
-     - USDCe: use OP receipt (sVault) as source of truth (6d)
-     - USDT0, WETH: read from Lisk as before
-  */
+  // MORPHO BLUE – Lisk
   tasks.push(
-    morphoUSDCeViaReceiptOrLisk(user).then((amt) => ({
-      protocol: 'Morpho Blue' as const,
-      chain: 'lisk' as const,
-      token: 'USDCe' as const,
-      amount: amt,
-    })),
+    morphoUSDCeViaReceiptOrLisk(user)
+      .then((amt) => ({ protocol: 'Morpho Blue' as const, chain: 'lisk' as const, token: 'USDCe' as const, amount: amt })),
   )
-  for (const token of ['USDT0', 'WETH'] as const) {
-    tasks.push(
-      morphoSupplyLisk(token as 'USDT0' | 'WETH', user).then((amt) => ({
-        protocol: 'Morpho Blue' as const,
-        chain: 'lisk' as const,
-        token: token as 'USDT0' | 'WETH',
-        amount: amt,
-      })),
-    )
-  }
+  tasks.push(
+    morphoUSDT0ViaReceiptOrLisk(user)
+      .then((amt) => ({ protocol: 'Morpho Blue' as const, chain: 'lisk' as const, token: 'USDT0' as const, amount: amt })),
+  )
+  tasks.push(
+    morphoSupplyLisk('WETH', user)
+      .then((amt) => {
+        dbg('MORPHO.WETH.assets', { amt: amt.toString() })
+        return { protocol: 'Morpho Blue' as const, chain: 'lisk' as const, token: 'WETH' as const, amount: amt }
+      })
+      .catch((e) => {
+        err('MORPHO.WETH.error', e)
+        return { protocol: 'Morpho Blue' as const, chain: 'lisk' as const, token: 'WETH' as const, amount: 0n }
+      }),
+  )
 
   const raw = await Promise.all(tasks)
-  return raw.filter((p) => p.amount > 0n)
-}
+  dbg('fetchPositions.raw', raw.map((p) => ({ ...p, amount: p.amount.toString() })))
 
-// src/lib/positions.ts
-export async function fetchVaultPosition(user: `0x${string}`): Promise<bigint> {
-  const amount = await publicOptimism.readContract({
-    address: TokenAddresses.sVault.optimism,
-    abi: erc20Abi,
-    functionName: 'balanceOf',
-    args: [user],
-  }) as bigint
-  return amount
-}
+  const nonZero = raw.filter((p) => p.amount > 0n)
+  dbg('fetchPositions.nonZero', nonZero.map((p) => ({ ...p, amount: p.amount.toString() })))
 
-// NEW: prefer OP receipt balance for USDCe; fallback to Lisk read only if needed
-async function morphoUSDCeViaReceiptOrLisk(user: `0x${string}`): Promise<bigint> {
-  const receipt = await fetchVaultPosition(user) // OP sVault (6 decimals)
-  if (receipt > 0n) return receipt
-  // fallback to Lisk vault assets if no receipt exists
-  return morphoSupplyLisk('USDCe', user)
+  return nonZero
 }
