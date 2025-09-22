@@ -14,9 +14,6 @@ import { MORPHO_POOLS, TokenAddresses } from '@/lib/constants'
 type EvmChain = 'lisk'
 type MorphoToken = 'USDCe' | 'USDT0' | 'WETH'
 
-const DEBUG = process.env.NEXT_PUBLIC_DEBUG_POSITIONS !== 'false'
-const dbg = (...a: any[]) => { if (DEBUG) console.log('[PositionsDashboardInner]', ...a) }
-
 type PositionLike =
   | BasePosition
   | {
@@ -40,8 +37,6 @@ export const PositionsDashboardInner: FC = () => {
   const { data: positionsRaw } = usePositions()
   const { yields: snapshots, isLoading: yieldsLoading } = useYields()
 
-  dbg('hook.positionsRaw', positionsRaw)
-
   const positions = (positionsRaw ?? []) as unknown as PositionLike[]
 
   const [query, setQuery] = useState('')
@@ -50,17 +45,12 @@ export const PositionsDashboardInner: FC = () => {
   // Only Morpho positions (Lisk). If none, show fallback zeroed rows.
   const positionsForMorpho: PositionLike[] = useMemo(() => {
     const morpho = positions.filter((p) => p.protocol === 'Morpho Blue') as PositionLike[]
-    if (morpho.length > 0) {
-      dbg('morphoPositions', morpho.map(p => ({ ...p, amount: p.amount.toString() })))
-      return morpho
-    }
-    const fallback: PositionLike[] = [
+    if (morpho.length > 0) return morpho
+    return [
       { protocol: 'Morpho Blue', chain: 'lisk', token: 'USDCe', amount: 0n },
       { protocol: 'Morpho Blue', chain: 'lisk', token: 'USDT0', amount: 0n },
       // { protocol: 'Morpho Blue', chain: 'lisk', token: 'WETH',  amount: 0n },
     ]
-    dbg('fallback.morphoPositions', fallback)
-    return fallback
   }, [positions])
 
   const subset = useMemo(() => {
@@ -77,8 +67,6 @@ export const PositionsDashboardInner: FC = () => {
       return Number((a.amount ?? 0n) - (b.amount ?? 0n))
     })
 
-    dbg('subset.filtered', filtered.map(p => ({ ...p, amount: p.amount.toString() })))
-    dbg('subset.sorted',   sorted.map(p => ({ ...p, amount: p.amount.toString() })))
     return sorted
   }, [positionsForMorpho, query, sort])
 
@@ -97,10 +85,7 @@ export const PositionsDashboardInner: FC = () => {
           String(y.token).toLowerCase() ===
             (normToken === 'usdce' ? 'usdc' : normToken === 'usdt0' ? 'usdt' : normToken),
       )
-    if (direct) {
-      dbg('snapshot.direct', { token: p.token, chain: p.chain, addr: direct.poolAddress })
-      return direct
-    }
+    if (direct) return direct
 
     const vault = MORPHO_VAULT_BY_TOKEN[p.token as MorphoToken]
     if (vault) {
@@ -110,10 +95,7 @@ export const PositionsDashboardInner: FC = () => {
           y.chain === 'lisk' &&
           y.poolAddress?.toLowerCase() === vault.toLowerCase(),
       )
-      if (byVault) {
-        dbg('snapshot.byVault', { token: p.token, chain: p.chain, addr: byVault.poolAddress })
-        return byVault
-      }
+      if (byVault) return byVault
     }
 
     // Fallback snapshot with correct Lisk underlying address
@@ -136,7 +118,6 @@ export const PositionsDashboardInner: FC = () => {
       updatedAt: new Date().toISOString(),
       underlying: underlyingAddr,
     }
-    dbg('snapshot.fallback', { token: p.token, chain: p.chain, addr: fallback.poolAddress })
     return fallback
   }
 
@@ -164,14 +145,14 @@ export const PositionsDashboardInner: FC = () => {
               <Input
                 placeholder="Search token…"
                 value={query}
-                onChange={(e) => { dbg('query', e.target.value); setQuery(e.target.value) }}
+                onChange={(e) => setQuery(e.target.value)}
                 className="h-8"
               />
             </div>
 
             <select
               value={sort}
-              onChange={(e) => { dbg('sort', e.target.value); setSort(e.target.value as typeof sort) }}
+              onChange={(e) => setSort(e.target.value as typeof sort)}
               className="h-8 rounded-md border bg-background px-2 text-xs"
               title="Sort"
             >
@@ -193,46 +174,23 @@ export const PositionsDashboardInner: FC = () => {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {subset.map((p, idx) => {
-              dbg('render.card', {
-                idx,
-                protocol: String(p.protocol),
-                chain: String(p.chain),
-                token: String(p.token),
-                amount: (p as any).amount?.toString?.() ?? String((p as any).amount),
-              })
-              return (
-                <PositionCard
-                  key={`${String(p.protocol)}-${String(p.chain)}-${String(p.token)}-${idx}`}
-                  p={p as any}
-                  onSupply={(pos) => {
-                    dbg('onSupply', {
-                      token: String((pos as any).token),
-                      chain: String((pos as any).chain),
-                      amount: (pos as any).amount?.toString?.(),
-                    })
-                    setDepositSnap(findSnapshotForPosition(pos as any))
-                  }}
-                  onWithdraw={(pos) => {
-                    dbg('onWithdraw', {
-                      token: String((pos as any).token),
-                      chain: String((pos as any).chain),
-                      amount: (pos as any).amount?.toString?.(),
-                    })
-                    setWithdrawSnap(findSnapshotForPosition(pos as any))
-                  }}
-                />
-              )
-            })}
+            {subset.map((p, idx) => (
+              <PositionCard
+                key={`${String(p.protocol)}-${String(p.chain)}-${String(p.token)}-${idx}`}
+                p={p as any}
+                onSupply={(pos) => setDepositSnap(findSnapshotForPosition(pos as any))}
+                onWithdraw={(pos) => setWithdrawSnap(findSnapshotForPosition(pos as any))}
+              />
+            ))}
           </div>
         </>
       )}
 
       {depositSnap && (
-        <DepositModal open={true} snap={depositSnap} onClose={() => { dbg('close.deposit'); setDepositSnap(null) }} />
+        <DepositModal open={true} snap={depositSnap} onClose={() => setDepositSnap(null)} />
       )}
       {withdrawSnap && (
-        <WithdrawModal open={true} snap={withdrawSnap} onClose={() => { dbg('close.withdraw'); setWithdrawSnap(null) }} />
+        <WithdrawModal open={true} snap={withdrawSnap} onClose={() => setWithdrawSnap(null)} />
       )}
     </>
   )
