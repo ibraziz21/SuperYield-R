@@ -3,10 +3,9 @@
 
 import { useState, useMemo } from 'react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { RewardsPanel } from './RewardPanel' // <-- fixed import
+import { RewardsPanel } from './RewardPanel'
 import { PositionsDashboardInner } from './PositionsDashboardInner'
 import { usePositions } from '@/hooks/usePositions'
-import { MerklRewardsPanel } from '@/components/MerklRewardsPanel'
 import { useMerklRewards } from '@/hooks/useMerklRewards'
 
 const PROTOCOLS = [
@@ -21,7 +20,7 @@ export function ProtocolTabs() {
   const { data: positions } = usePositions()
   const { totalCount: rewardsCount } = useMerklRewards()
 
-  // counts per tab (only Morpho + Rewards)
+  // counts per tab (Morpho + Rewards only)
   const counts = useMemo(() => {
     const morphoCount =
       positions?.filter((p) => p.protocol === 'Morpho Blue').length ?? 0
@@ -72,7 +71,7 @@ export function ProtocolTabs() {
 
         {/* Panels */}
         <TabsContent value="Morpho Blue" className="mt-6">
-          <PositionsDashboardInner protocol="Morpho Blue" />
+          <PositionsDashboardInner />
         </TabsContent>
         <TabsContent value="Rewards" className="mt-6">
           <RewardsPanel />

@@ -1,10 +1,12 @@
 // src/components/DepositModal.tsx
 'use client'
 
-import { quoteUsdceOnLisk, smartQuoteUsdt0Lisk } from '@/lib/quotes'
-// imports (add)
-import { getSugarPlanUsdtToUsdt0, executeSugarPlan, ensureAllowanceTo } from '@/lib/sugar'
-import type { Address } from 'viem'
+/**
+ * Morpho-only Deposit Modal (Lisk)
+ * - Removes all Aave/Compound logic
+ * - Bridges + deposits to Morpho Blue vaults on Lisk
+ * - Shows simple route/fee info for USDCe via quoteUsdceOnLisk()
+ */
 
 import { FC, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -16,20 +18,26 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
-import { ensureLiquidity } from '@/lib/smartbridge'
-import { depositToPool } from '@/lib/depositor'
-import { TokenAddresses, COMET_POOLS, AAVE_POOL } from '@/lib/constants'
 import type { YieldSnapshot } from '@/hooks/useYields'
+import { quoteUsdceOnLisk } from '@/lib/quotes'
+import { ensureLiquidity } from '@/lib/smartbridge'
+import { bridgeAndDepositViaRouterPush } from '@/lib/bridge'
+import { adapterKeyForSnapshot } from '@/lib/adapters'
+import { TokenAddresses } from '@/lib/constants'
+import { publicOptimism, publicBase, publicLisk } from '@/lib/clients'
 
 import { useAppKit } from '@reown/appkit/react'
-import { useWalletClient, useChainId, useSwitchChain } from 'wagmi'
+import { useWalletClient } from 'wagmi'
 import { formatUnits, parseUnits } from 'viem'
-import { base, optimism, lisk as liskChain } from 'viem/chains'
-import { client as acrossClient } from '@/lib/across'
-import aaveAbi from '@/lib/abi/aavePool.json'
-import { publicOptimism, publicBase, publicLisk } from '@/lib/clients'
-import { CheckCircle2, Loader2, ArrowRight, ShieldCheck, AlertTriangle, RefreshCw, Network } from 'lucide-react'
 import { erc20Abi } from 'viem'
+import {
+  CheckCircle2,
+  Loader2,
+  ArrowRight,
+  ShieldCheck,
+  AlertTriangle,
+  Network,
+} from 'lucide-react'
 
 /* =============================================================================
    Types / Helpers
@@ -37,49 +45,13 @@ import { erc20Abi } from 'viem'
 
 type EvmChain = 'optimism' | 'base' | 'lisk'
 
-const isCometToken = (t: YieldSnapshot['token']): t is 'USDC' | 'USDT' =>
-  t === 'USDC' || t === 'USDT'
-
 function clientFor(chain: EvmChain) {
   if (chain === 'optimism') return publicOptimism
   if (chain === 'base') return publicBase
   return publicLisk
 }
 
-/** Aave: totalCollateralBase (1e8) – for supplied display */
-async function getAaveSuppliedBalance(params: {
-  chain: Extract<EvmChain, 'optimism' | 'base'>
-  user: `0x${string}`
-}): Promise<bigint> {
-  const { chain, user } = params
-  const data = await clientFor(chain).readContract({
-    address: AAVE_POOL[chain],
-    abi: aaveAbi,
-    functionName: 'getUserAccountData',
-    args: [user],
-  }) as readonly [bigint, bigint, bigint, bigint, bigint, bigint]
-  return data[0] // 1e8
-}
-
-/** Comet: balanceOf (1e6) */
-async function getCometSuppliedBalance(params: {
-  chain: Extract<EvmChain, 'optimism' | 'base'>
-  token: 'USDC' | 'USDT'
-  user: `0x${string}`
-}): Promise<bigint> {
-  const { chain, token, user } = params
-  const comet = COMET_POOLS[chain][token]
-  if (comet === '0x0000000000000000000000000000000000000000') return BigInt(0)
-  const bal = await clientFor(chain).readContract({
-    address: comet,
-    abi: [{ type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }] }] as const,
-    functionName: 'balanceOf',
-    args: [user],
-  }) as bigint
-  return bal
-}
-
-/** Lisk mapping for bridge preview */
+/** Lisk mapping for bridge preview / resolution */
 function mapCrossTokenForDest(
   symbol: YieldSnapshot['token'],
   dest: EvmChain,
@@ -87,7 +59,7 @@ function mapCrossTokenForDest(
   if (dest !== 'lisk') return symbol
   if (symbol === 'USDC') return 'USDCe'
   if (symbol === 'USDT') return 'USDT0'
-  return symbol
+  return symbol // already USDCe/USDT0/WETH
 }
 
 /** Resolve token address for a chain */
@@ -99,12 +71,6 @@ function tokenAddrFor(
   const addr = m?.[chain]
   if (!addr) throw new Error(`Token ${symbol} not supported on ${chain}`)
   return addr
-}
-
-function chainIdOf(chain: EvmChain) {
-  if (chain === 'optimism') return optimism.id
-  if (chain === 'base') return base.id
-  return liskChain.id
 }
 
 /** Read wallet balance for a token on a chain */
@@ -161,7 +127,7 @@ const StatRow: FC<{ label: string; value: string; emphasize?: boolean }> = ({ la
 )
 
 /* =============================================================================
-   Main Modal
+   Main Modal (Morpho-only)
    ============================================================================= */
 
 interface DepositModalProps {
@@ -170,43 +136,33 @@ interface DepositModalProps {
   snap: YieldSnapshot
 }
 
-type FlowStep = 'idle' | 'bridging' | 'waitingFunds' | 'switching' | 'depositing' | 'success' | 'error' 
+type FlowStep = 'idle' | 'bridging' | 'waitingFunds' | 'depositing' | 'success' | 'error'
 
 export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => {
   const { open: openConnect } = useAppKit()
   const { data: walletClient } = useWalletClient()
-  const chainId = useChainId()
-  const { switchChainAsync, error: switchError } = useSwitchChain()
 
   const [amount, setAmount] = useState('')
 
   // Wallet balances
-
-const [sugarAmountOut, setSugarAmountOut] = useState<bigint | null>(null)
-const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${string}`; inputs: `0x${string}`[]; value: string }>(null)
-
   const [opBal, setOpBal] = useState<bigint | null>(null)
   const [baBal, setBaBal] = useState<bigint | null>(null)
   const [liBal, setLiBal] = useState<bigint | null>(null)
   const [liBalUSDT, setLiBalUSDT] = useState<bigint | null>(null)
   const [liBalUSDT0, setLiBalUSDT0] = useState<bigint | null>(null)
 
-  // Supplied balances (Aave/Comet display only)
-  const [poolOp, setPoolOp] = useState<bigint | null>(null)
-  const [poolBa, setPoolBa] = useState<bigint | null>(null)
-
   // Routing / fees / flow
   const [route, setRoute] = useState<string | null>(null)
-  const [fee, setFee] = useState<bigint>(BigInt(0))
-  const [received, setReceived] = useState<bigint>(BigInt(0))
+  const [fee, setFee] = useState<bigint>(0n)
+  const [received, setReceived] = useState<bigint>(0n)
   const [quoteError, setQuoteError] = useState<string | null>(null)
   const [step, setStep] = useState<FlowStep>('idle')
   const [error, setError] = useState<string | null>(null)
   const [liquidityEnsured, setLiquidityEnsured] = useState(false)
 
   // bridge tracking (baseline and latest dest balance)
-  const destStartBal = useRef<bigint>(BigInt(0))
-  const destCurrBal  = useRef<bigint>(BigInt(0))
+  const destStartBal = useRef<bigint>(0n)
+  const destCurrBal  = useRef<bigint>(0n)
 
   // Reset when inputs change
   useEffect(() => {
@@ -216,11 +172,6 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
   }, [open, amount, snap.chain, snap.token, snap.protocolKey])
 
   const tokenDecimals = useMemo(() => (snap.token === 'WETH' ? 18 : 6), [snap.token])
-  const poolDecimals = useMemo(() => {
-    if (snap.protocolKey === 'aave-v3') return 8
-    if (snap.protocolKey === 'compound-v3') return 6
-    return tokenDecimals
-  }, [snap.protocolKey, tokenDecimals])
 
   /* ---------------- Wallet balances (OP/Base/Lisk) ---------------- */
   useEffect(() => {
@@ -257,7 +208,7 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
     }
 
     Promise.allSettled(reads).then((vals) => {
-      const [op, ba, li, liU, liU0] = vals.map((r) => (r.status === 'fulfilled' ? r.value as bigint | null : null))
+      const [op, ba, li, liU, liU0] = vals.map((r) => (r.status === 'fulfilled' ? (r as any).value as bigint | null : null))
       setOpBal(op ?? null)
       setBaBal(ba ?? null)
       setLiBal(li ?? null)
@@ -266,240 +217,97 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
     })
   }, [open, walletClient, snap.token])
 
-  /* ---------------- Supplied balances (display only) ---------------- */
-  useEffect(() => {
-    if (!open || !walletClient) return
-    const user = walletClient.account.address as `0x${string}`
-
-    if (snap.protocolKey === 'aave-v3') {
-      Promise.allSettled([
-        getAaveSuppliedBalance({ chain: 'optimism', user }),
-        getAaveSuppliedBalance({ chain: 'base', user }),
-      ]).then((rs) => {
-        const [op, ba] = rs.map((r) => (r.status === 'fulfilled' ? r.value : BigInt(0)))
-        setPoolOp(op)
-        setPoolBa(ba)
-      })
-    } else if (snap.protocolKey === 'compound-v3') {
-      if (isCometToken(snap.token)) {
-        Promise.allSettled([
-          getCometSuppliedBalance({ chain: 'optimism', token: snap.token, user }),
-          getCometSuppliedBalance({ chain: 'base',     token: snap.token, user }),
-        ]).then((rs) => {
-          const [op, ba] = rs.map((r) => (r.status === 'fulfilled' ? r.value : BigInt(0)))
-          setPoolOp(op)
-          setPoolBa(ba)
-        })
-      } else {
-        setPoolOp(BigInt(0)); setPoolBa(BigInt(0))
-      }
-    } else {
-      setPoolOp(null); setPoolBa(null)
-    }
-  }, [open, walletClient, snap.protocolKey, snap.token])
-
+  /* ---------------- Quote (Morpho-only) ---------------- */
   useEffect(() => {
     if (!walletClient || !amount) {
-      setRoute(null); setFee(BigInt(0)); setReceived(BigInt(0)); setQuoteError(null)
+      setRoute(null); setFee(0n); setReceived(0n); setQuoteError(null)
       return
     }
-  
+
     const dest = snap.chain as EvmChain
     const amt  = parseUnits(amount, tokenDecimals)
-  
-    // what the token becomes on the destination chain (crucial for Lisk)
+
     const destOutSymbol = mapCrossTokenForDest(snap.token, dest)
-  
-    // choose source (OP/Base) exactly as you had
+
+    // Source heuristic: pick OP/Base where you have more of the **display token**
     const src: Extract<EvmChain, 'optimism' | 'base'> =
-      (opBal ?? BigInt(0)) >= amt ? 'optimism'
-      : (baBal ?? BigInt(0)) >= amt ? 'base'
-      : ((opBal ?? BigInt(0)) >= (baBal ?? BigInt(0)) ? 'optimism' : 'base')
-  
-    // if user is already on the destination chain, it's purely on-chain
+      (opBal ?? 0n) >= amt ? 'optimism'
+      : (baBal ?? 0n) >= amt ? 'base'
+      : ((opBal ?? 0n) >= (baBal ?? 0n) ? 'optimism' : 'base')
+
+    // If already on destination (rare in this UI), it's on-chain
     if (src === dest) {
-      setRoute('On-chain')
-      setFee(BigInt(0))
-      setReceived(amt)
-      setQuoteError(null)
+      setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null)
       return
     }
-  
-    // ── LISK: USDT0 path (USDT bridge + Velodrome USDT->USDT0) ───────────────
-    if (dest === 'lisk' && destOutSymbol === 'USDT0') {
-      const need = amt
-      const have0 = liBalUSDT0 ?? BigInt(0)
-      const toSwap = need > have0 ? (need - have0) : BigInt(0)
-    
-      if (toSwap === BigInt(0)) {
-        setRoute('On-chain')
-        setFee(BigInt(0))
-        setReceived(need)
-        setSugarAmountOut(null)
-        setSugarPlan(null)
-        setQuoteError(null)
-        return
-      }
-    
-      const acct = walletClient.account!.address as Address
-      getSugarPlanUsdtToUsdt0(toSwap, acct, { slippage: 0.003 })
-        .then(({ amountOut, plan }) => {
-          setRoute('On-chain') // swap is local on Lisk
-          setFee(BigInt(0))
-          setSugarAmountOut(amountOut)
-          setSugarPlan(plan)
-          setReceived(have0 + amountOut) // show final expected USDT0
-          setQuoteError(null)
-        })
-        .catch(() => {
-          setRoute(null)
-          setFee(BigInt(0))
-          setReceived(BigInt(0))
-          setSugarAmountOut(null)
-          setSugarPlan(null)
-          setQuoteError('Could not fetch swap plan')
-        })
-      return
-    }
-  
-    // ── LISK: USDCe path (Across USDC → USDCe) ───────────────────────────────
+
+    // USDCe on Lisk → show LI.FI / Across-style quote helper
     if (dest === 'lisk' && destOutSymbol === 'USDCe') {
-      // if you already have enough USDCe on Lisk, no bridge
-      if ((liBal ?? BigInt(0)) >= amt) {
-        setRoute('On-chain')
-        setFee(BigInt(0))
-        setReceived(amt)
-        setQuoteError(null)
+      if ((liBal ?? 0n) >= amt) {
+        setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null)
         return
       }
       quoteUsdceOnLisk({ amountIn: amt, opBal, baBal })
-        .then(q => {
-          setRoute(q.route)
-          setFee(q.bridgeFee)
-          setReceived(q.bridgeOutUSDCe)
-          setQuoteError(null)
-        })
-        .catch(() => {
-          setRoute(null); setFee(BigInt(0)); setReceived(BigInt(0))
-          setQuoteError('Could not fetch bridge quote')
-        })
+        .then(q => { setRoute(q.route); setFee(q.bridgeFee); setReceived(q.bridgeOutUSDCe); setQuoteError(null) })
+        .catch(() => { setRoute(null); setFee(0n); setReceived(0n); setQuoteError('Could not fetch bridge quote') })
       return
     }
-  
-    // ── Generic fallback (unchanged) ─────────────────────────────────────────
-    const inputToken  = tokenAddrFor(snap.token, src)
-    const outputToken = tokenAddrFor(destOutSymbol, dest)
-    const srcId  = src === 'optimism' ? optimism.id : base.id
-    const destId = chainIdOf(dest)
-  
-    acrossClient.getQuote({
-      route: { originChainId: srcId, destinationChainId: destId, inputToken, outputToken },
-      inputAmount: amt,
-    })
-    .then((q) => {
-      setRoute(`${src.toUpperCase()} → ${dest.toUpperCase()}`)
-      const feeTotal =
-        typeof q.fees?.totalRelayFee?.total === 'string'
-          ? BigInt(q.fees.totalRelayFee.total)
-          : BigInt(q.fees.totalRelayFee.total ?? 0)
-      setFee(feeTotal)
-      setReceived(BigInt(q.deposit.outputAmount))
-      setQuoteError(null)
-    })
-    .catch(() => {
-      setRoute(null); setFee(BigInt(0)); setReceived(BigInt(0))
-      setQuoteError('Could not fetch bridge quote')
-    })
-  
-  // include Lisk balances so we re-evaluate once they load
+
+    // USDT0 on Lisk → bridge USDT then local swap; we skip fee calc and show on-chain
+    if (dest === 'lisk' && destOutSymbol === 'USDT0') {
+      setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null)
+      return
+    }
+
+    // WETH on Lisk or anything else → treat as on-chain
+    setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null)
   }, [amount, walletClient, opBal, baBal, liBal, liBalUSDT, liBalUSDT0, snap.chain, snap.token, tokenDecimals])
-  
 
-
+  /* ---------------- Confirm (Morpho-only) ---------------- */
   async function handleConfirm() {
-    if (!walletClient) {
-      openConnect()
-      return
-    }
-  
+    if (!walletClient) { openConnect(); return }
     setError(null)
-  
+
     try {
-      const inputAmt = parseUnits(amount || '0', tokenDecimals)
-      const dest = snap.chain as EvmChain
-      const destId = chainIdOf(dest)
-      const user = walletClient.account!.address as `0x${string}`
-  
-         // 1) Single call: bridge (if needed) AND wait for funds to land
-      if (!liquidityEnsured && route && route !== 'On-chain') {
-          setStep('bridging')
-          const wantDestToken = mapCrossTokenForDest(snap.token, dest) // e.g., 'USDT0' on Lisk
-          await ensureLiquidity(wantDestToken, inputAmt, dest, walletClient, {
-            onStatus: (s) => {
-              if (s === 'waiting') setStep('waitingFunds')
-              else if (s === 'bridging') setStep('bridging')
-            },
-          })
-          setLiquidityEnsured(true)
-        } else {
-          setLiquidityEnsured(true)
-        }
-      // 2) If target is USDT0 on Lisk and we don't have enough yet → swap USDT→USDT0 using Sugar (user signs)
-      // const destTokenLabel = mapCrossTokenForDest(snap.token, dest)
-      // if (dest === 'lisk' && mapCrossTokenForDest(snap.token, dest) === 'USDT0') {
-      //   const usdt0Addr = tokenAddrFor('USDT0', 'lisk')
-      //   const have0Now = await readWalletBalance('lisk', usdt0Addr, user)
-      //   if (have0Now < inputAmt) {
-      //     const toSwap = inputAmt - have0Now
-      //     // ensure we have a fresh plan for exactly toSwap
-      //     let plan = sugarPlan
-      //     if (!plan || (sugarAmountOut == null)) {
-      //       const acct = walletClient.account!.address as Address
-      //       const { amountOut, plan: freshPlan } = await getSugarPlanUsdtToUsdt0(toSwap, acct, { slippage: 0.003 })
-      //       setSugarAmountOut(amountOut); setSugarPlan(freshPlan)
-      //       plan = freshPlan
-      //     }
-  
-      //     // Approve swapper if needed (planner uses router that pulls tokens from msg.sender)
-      //     const usdtAddr = tokenAddrFor('USDT', 'lisk')
-      //     await ensureAllowanceTo(walletClient, usdtAddr as Address, user, plan!.to, toSwap)
-  
-      //     setStep('swapping')
-      //     await executeSugarPlan(walletClient, plan!)
-  
-      //     // wait until USDT0 increases
-      //     destStartBal.current = have0Now
-      //     setStep('waitingFunds')
-      //     await waitForFunds('lisk', usdt0Addr, user, destStartBal, destCurrBal)
-      //   }
-      // }
-
-
-  
-      // 3) Switch to destination chain (if needed)
-      if (chainId !== destId && switchChainAsync) {
-        setStep('switching')
-        await switchChainAsync({ chainId: destId })
+      if (snap.protocolKey !== 'morpho-blue' || snap.chain !== 'lisk') {
+        throw new Error('This build only supports Morpho Blue deposits on Lisk.')
       }
-  
-   // 3) Deposit: read fresh balance of the destination token and deposit up to the intended amount
-      const finalTokenAddr = tokenAddrFor(mapCrossTokenForDest(snap.token, dest), dest)
-      const finalBal = await readWalletBalance(dest, finalTokenAddr, user)
-      const cap = inputAmt
-      const toDeposit = finalBal >= cap ? cap : finalBal
-  
-      setStep('depositing')
-      await depositToPool(snap, toDeposit, walletClient)
-  
+
+      const inputAmt = parseUnits(amount || '0', tokenDecimals)
+      const dest = 'lisk' as const
+      const user = walletClient.account!.address as `0x${string}`
+      const destTokenLabel = mapCrossTokenForDest(snap.token, dest) as 'USDCe'|'USDT0'|'WETH'
+      const adapterKey = adapterKeyForSnapshot(snap)
+
+      // Choose src chain by higher balance of display token
+      const pickSrc = (a: bigint | null, b: bigint | null): 'optimism' | 'base' =>
+        (a ?? 0n) >= (b ?? 0n) ? 'optimism' : 'base'
+      const srcChain = pickSrc(opBal, baBal)
+
+      // Map to source token symbol expected by the router
+      const srcToken =
+        destTokenLabel === 'USDCe' ? 'USDC' :
+        destTokenLabel === 'USDT0' ? 'USDT' : 'WETH'
+
+      // Bridge (if needed) + Deposit via router push (relayer path)
+      setStep('bridging')
+      await bridgeAndDepositViaRouterPush({
+        user,
+        destToken: destTokenLabel,
+        srcChain,
+        srcToken: srcToken as 'USDC' | 'USDT' | 'WETH',
+        amount: inputAmt,
+        adapterKey,
+        walletClient,
+      })
+
+      // Success
       setStep('success')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setStep('error')
     }
   }
-  
-
-
 
   /* =============================================================================
      Derived UI values
@@ -523,9 +331,7 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
      ============================================================================= */
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent
-        className="p-0 overflow-hidden shadow-xl w-[min(100vw-1rem,44rem)] sm:max-w-2xl rounded-xl"
-      >
+      <DialogContent className="p-0 overflow-hidden shadow-xl w-[min(100vw-1rem,44rem)] sm:max-w-2xl rounded-xl">
         {/* Header */}
         <div className="bg-gradient-to-r from-teal-600 to-cyan-500 px-5 py-4">
           <DialogHeader>
@@ -567,30 +373,31 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
                       <span className="text-gray-600 font-semibold">{snap.token}</span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => setAmount('')} title={'Clear'}>Clear</Button>
+                      <Button variant="secondary" size="sm" onClick={() => setAmount('')} title="Clear">Clear</Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          // set MAX based on best available source (OP/Base) or Lisk if same-chain
+                          const dec = tokenDecimals
                           const amt = (() => {
-                            const dec = tokenDecimals
-                            if (isLiskTarget && destTokenLabel === 'USDT0' && isUsdtFamily) {
+                            if (isLiskTarget && isUsdtFamily) {
                               // choose larger of Lisk USDT or USDT0 for convenience
-                              const a = liBalUSDT ?? BigInt(0)
-                              const b = liBalUSDT0 ?? BigInt(0)
+                              const a = liBalUSDT ?? 0n
+                              const b = liBalUSDT0 ?? 0n
                               return formatUnits(a > b ? a : b, dec)
                             }
-                            if (isLiskTarget && destTokenLabel !== 'USDT0') {
-                              return formatUnits(liBal ?? BigInt(0), dec)
+                            if (isLiskTarget) {
+                              return formatUnits(liBal ?? 0n, dec)
                             }
                             // choose larger of OP/Base for cross-chain sourcing
-                            const a = opBal ?? BigInt(0)
-                            const b = baBal ?? BigInt(0)
+                            const a = opBal ?? 0n
+                            const b = baBal ?? 0n
                             return formatUnits(a > b ? a : b, dec)
                           })()
                           setAmount(amt === '0' ? '' : amt)
-                        } } title={'Max'}                      >
+                        }}
+                        title="Max"
+                      >
                         MAX
                       </Button>
                     </div>
@@ -652,14 +459,14 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
 
                   {/* Pretty route line */}
                   <div className="mt-3 flex items-center gap-2 text-sm">
-                    <ChainPill label={(route?.split(' ')[0] ?? 'OP').replace('→','').trim()} subtle />
+                    <ChainPill label="SRC" subtle />
                     <ArrowRight className="h-4 w-4 text-gray-400" />
                     <ChainPill label={(snap.chain as string).toUpperCase()} subtle />
                     <span className="ml-auto text-xs text-gray-500">{snap.token} → {destTokenLabel}</span>
                   </div>
 
                   <div className="mt-3 space-y-1.5">
-                    {fee > BigInt(0) && (
+                    {fee > 0n && (
                       <StatRow label="Bridge fee" value={`${formatUnits(fee, tokenDecimals)} ${snap.token}`} />
                     )}
                     <StatRow label="Will deposit" value={`${formatUnits(received, tokenDecimals)} ${snap.token}`} emphasize />
@@ -673,36 +480,6 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
                   )}
                 </div>
 
-                {/* Supplied (protocol) balances */}
-                {(poolOp != null || poolBa != null) && (
-                  <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <RefreshCw className="h-4 w-4" /> Current supplied
-                    </div>
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="rounded-lg border bg-gray-50 p-3">
-                        <div className="text-xs text-gray-500">Optimism</div>
-                        <div className="text-base font-semibold">{poolOp != null ? formatUnits(poolOp, poolDecimals) : '…'} {snap.token}</div>
-                      </div>
-                      <div className="rounded-lg border bg-gray-50 p-3">
-                        <div className="text-xs text-gray-500">Base</div>
-                        <div className="text-base font-semibold">{poolBa != null ? formatUnits(poolBa, poolDecimals) : '…'} {snap.token}</div>
-                      </div>
-                      <div className="rounded-lg border bg-gray-50 p-3">
-                        <div className="text-xs text-gray-500">Total</div>
-                        <div className="text-base font-semibold">
-                          {(() => {
-                            if (poolOp == null && poolBa == null) return '…'
-                            const sum = (poolOp ?? BigInt(0)) + (poolBa ?? BigInt(0))
-                            return `${formatUnits(sum, poolDecimals)} ${snap.token}`
-                          })()}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {switchError && <p className="text-xs text-red-600">Network switch failed: {switchError.message}</p>}
                 {error && <p className="text-xs text-red-600">{error}</p>}
               </>
             )}
@@ -710,10 +487,9 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
             {/* Progress */}
             {showProgress && (
               <div className="space-y-3">
-                <StepCard current={step} label="Bridging liquidity"   k="bridging"     visible={(route !== 'On-chain')} />
-                <StepCard current={step} label="Waiting for funds"    k="waitingFunds" visible={ route !== 'On-chain'} />
-                <StepCard current={step} label="Switching network"    k="switching"    visible />
-                <StepCard current={step} label="Depositing to protocol" k="depositing"   visible />
+                <StepCard current={step} label="Bridging liquidity"   k="bridging" />
+                <StepCard current={step} label="Waiting for funds"    k="waitingFunds" />
+                <StepCard current={step} label="Depositing to Morpho" k="depositing" />
               </div>
             )}
 
@@ -724,7 +500,7 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
                 <div className="text-center">
                   <div className="text-lg font-semibold">Deposit successful</div>
                   <div className="mt-1 text-sm text-muted-foreground">
-                    Your {snap.token} has been supplied to {snap.protocol}.
+                    Your {snap.token} was bridged to Lisk and deposited into Morpho.
                   </div>
                 </div>
               </div>
@@ -775,11 +551,7 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
               )}
 
               {showSuccess && (
-                <Button
-                  onClick={onClose}
-                  title="Done"
-                  className="h-12 w-full sm:h-9 sm:w-auto"
-                >
+                <Button onClick={onClose} title="Done" className="h-12 w-full sm:h-9 sm:w-auto">
                   Done
                 </Button>
               )}
@@ -794,11 +566,7 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
                   >
                     Try again
                   </Button>
-                  <Button
-                    onClick={onClose}
-                    title="Close"
-                    className="h-12 w-full sm:h-9 sm:w-auto"
-                  >
+                  <Button onClick={onClose} title="Close" className="h-12 w-full sm:h-9 sm:w-auto">
                     Close
                   </Button>
                 </div>
@@ -815,9 +583,8 @@ const [sugarPlan, setSugarPlan] = useState<null | { to: Address; commands: `0x${
    Tiny Step Card
    ============================================================================= */
 
-function StepCard(props: { current: FlowStep, k: Exclude<FlowStep, 'idle'|'success'|'error'>, label: string, visible?: boolean }) {
-  if (!props.visible) return null
-  const order: FlowStep[] = ['bridging', 'waitingFunds', 'switching', 'depositing']
+function StepCard(props: { current: FlowStep, k: Exclude<FlowStep, 'idle'|'success'|'error'>, label: string }) {
+  const order: FlowStep[] = ['bridging', 'waitingFunds', 'depositing']
   const idx = order.indexOf(props.current)
   const my  = order.indexOf(props.k)
   const done = idx > my

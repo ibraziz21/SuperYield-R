@@ -9,9 +9,9 @@ import { PositionCard } from './PositionCard'
 import { DepositModal } from '@/components/DepositModal'
 import { WithdrawModal } from '@/components/WithdrawModal'
 import { Input } from '@/components/ui/input'
-import { MORPHO_POOLS } from '@/lib/constants'
+import { MORPHO_POOLS, TokenAddresses } from '@/lib/constants'
 
-type EvmChain = 'optimism' | 'base' | 'lisk'
+type EvmChain = 'lisk'
 type MorphoToken = 'USDCe' | 'USDT0' | 'WETH'
 
 const DEBUG = process.env.NEXT_PUBLIC_DEBUG_POSITIONS !== 'false'
@@ -26,24 +26,8 @@ type PositionLike =
       amount: bigint
     }
 
-interface Props {
-  protocol: 'Aave v3' | 'Compound v3' | 'Morpho Blue'
-}
-
-const PROTOCOL_TAG: Record<Props['protocol'], { title: string; hint: string }> = {
-  'Aave v3': { title: 'Aave v3', hint: 'Supply & borrow across Optimism and Base.' },
-  'Compound v3': { title: 'Compound v3', hint: 'Isolated markets on Optimism and Base.' },
-  'Morpho Blue': { title: 'Morpho Blue (Lisk)', hint: 'MetaMorpho vaults live on Lisk.' },
-}
-
 const CHAIN_LABEL: Record<EvmChain, string> = {
-  optimism: 'Optimism',
-  base: 'Base',
   lisk: 'Lisk',
-}
-
-function normalizeTokenSymbol(t: string) {
-  return t.replace(/\./g, '').replace(/\s+/g, '').toLowerCase()
 }
 
 const MORPHO_VAULT_BY_TOKEN: Record<MorphoToken, `0x${string}`> = {
@@ -52,7 +36,7 @@ const MORPHO_VAULT_BY_TOKEN: Record<MorphoToken, `0x${string}`> = {
   WETH:  MORPHO_POOLS['weth-supply']  as `0x${string}`,
 }
 
-export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
+export const PositionsDashboardInner: FC = () => {
   const { data: positionsRaw } = usePositions()
   const { yields: snapshots, isLoading: yieldsLoading } = useYields()
 
@@ -60,23 +44,11 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
 
   const positions = (positionsRaw ?? []) as unknown as PositionLike[]
 
-  const defaultChains: Record<EvmChain, boolean> = {
-    optimism: protocol !== 'Morpho Blue',
-    base: protocol !== 'Morpho Blue',
-    lisk: protocol === 'Morpho Blue',
-  }
-
   const [query, setQuery] = useState('')
-  const [chainEnabled, setChainEnabled] = useState<Record<EvmChain, boolean>>(
-    () => ({ ...defaultChains }),
-  )
   const [sort, setSort] = useState<'amount_desc' | 'amount_asc'>('amount_desc')
 
-  const toggleChain = (c: EvmChain) =>
-    setChainEnabled((prev) => ({ ...prev, [c]: !prev[c] }))
-
-  const positionsForProtocol: PositionLike[] = useMemo(() => {
-    if (protocol !== 'Morpho Blue') return positions
+  // Only Morpho positions (Lisk). If none, show fallback zeroed rows.
+  const positionsForMorpho: PositionLike[] = useMemo(() => {
     const morpho = positions.filter((p) => p.protocol === 'Morpho Blue') as PositionLike[]
     if (morpho.length > 0) {
       dbg('morphoPositions', morpho.map(p => ({ ...p, amount: p.amount.toString() })))
@@ -89,15 +61,14 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
     ]
     dbg('fallback.morphoPositions', fallback)
     return fallback
-  }, [positions, protocol])
+  }, [positions])
 
   const subset = useMemo(() => {
     const q = query.trim().toLowerCase()
 
-    const filtered = positionsForProtocol.filter(
+    const filtered = positionsForMorpho.filter(
       (p) =>
-        p.protocol === protocol &&
-        chainEnabled[p.chain as EvmChain] &&
+        p.protocol === 'Morpho Blue' &&
         (q ? `${p.token} ${p.chain} ${p.protocol}`.toLowerCase().includes(q) : true),
     )
 
@@ -109,70 +80,68 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
     dbg('subset.filtered', filtered.map(p => ({ ...p, amount: p.amount.toString() })))
     dbg('subset.sorted',   sorted.map(p => ({ ...p, amount: p.amount.toString() })))
     return sorted
-  }, [positionsForProtocol, protocol, chainEnabled, query, sort])
+  }, [positionsForMorpho, query, sort])
 
   // Deposit / Withdraw modals
   const [depositSnap, setDepositSnap] = useState<YieldSnapshot | null>(null)
   const [withdrawSnap, setWithdrawSnap] = useState<YieldSnapshot | null>(null)
 
-  const protoKey: Record<Props['protocol'], YieldSnapshot['protocolKey']> = {
-    'Aave v3': 'aave-v3',
-    'Compound v3': 'compound-v3',
-    'Morpho Blue': 'morpho-blue',
-  }
-
   function findSnapshotForPosition(p: PositionLike): YieldSnapshot {
-    const pkey = protoKey[p.protocol as Props['protocol']]
-    const normPosToken = normalizeTokenSymbol(String(p.token))
+    const normToken = String(p.token).toLowerCase()
 
     const direct =
       snapshots?.find(
         (y) =>
           y.chain === p.chain &&
-          y.protocolKey === pkey &&
-          normalizeTokenSymbol(String(y.token)) === normPosToken,
+          y.protocolKey === 'morpho-blue' &&
+          String(y.token).toLowerCase() ===
+            (normToken === 'usdce' ? 'usdc' : normToken === 'usdt0' ? 'usdt' : normToken),
       )
     if (direct) {
       dbg('snapshot.direct', { token: p.token, chain: p.chain, addr: direct.poolAddress })
       return direct
     }
 
-    if (p.protocol === 'Morpho Blue') {
-      const vault = MORPHO_VAULT_BY_TOKEN[p.token as MorphoToken]
-      if (vault) {
-        const byVault = snapshots?.find(
-          (y) =>
-            y.protocolKey === 'morpho-blue' &&
-            y.chain === 'lisk' &&
-            y.poolAddress?.toLowerCase() === vault.toLowerCase(),
-        )
-        if (byVault) {
-          dbg('snapshot.byVault', { token: p.token, chain: p.chain, addr: byVault.poolAddress })
-          return byVault
-        }
+    const vault = MORPHO_VAULT_BY_TOKEN[p.token as MorphoToken]
+    if (vault) {
+      const byVault = snapshots?.find(
+        (y) =>
+          y.protocolKey === 'morpho-blue' &&
+          y.chain === 'lisk' &&
+          y.poolAddress?.toLowerCase() === vault.toLowerCase(),
+      )
+      if (byVault) {
+        dbg('snapshot.byVault', { token: p.token, chain: p.chain, addr: byVault.poolAddress })
+        return byVault
       }
     }
 
+    // Fallback snapshot with correct Lisk underlying address
+    const underlyingAddr: `0x${string}` =
+      p.token === 'USDCe'
+        ? (TokenAddresses.USDCe as any).lisk
+        : p.token === 'USDT0'
+        ? (TokenAddresses.USDT0 as any).lisk
+        : (TokenAddresses.WETH as any).lisk
+
     const fallback: YieldSnapshot = {
-      id: `fallback-${p.protocol}-${p.chain}-${String(p.token)}`,
+      id: `fallback-Morpho-${p.chain}-${String(p.token)}`,
       chain: p.chain as any,
-      protocol: p.protocol as any,
-      protocolKey: pkey,
-      poolAddress:
-        p.protocol === 'Morpho Blue'
-          ? (MORPHO_VAULT_BY_TOKEN[p.token as MorphoToken] ?? '0x0000000000000000000000000000000000000000')
-          : '0x0000000000000000000000000000000000000000',
+      protocol: 'Morpho Blue',
+      protocolKey: 'morpho-blue',
+      poolAddress: vault ?? '0x0000000000000000000000000000000000000000',
       token: p.token as any,
       apy: 0,
       tvlUSD: 0,
       updatedAt: new Date().toISOString(),
-      underlying: '' as const,
+      underlying: underlyingAddr,
     }
     dbg('snapshot.fallback', { token: p.token, chain: p.chain, addr: fallback.poolAddress })
     return fallback
   }
 
-  const { title, hint } = PROTOCOL_TAG[protocol]
+  const title = 'Morpho Blue (Lisk)'
+  const hint  = 'MetaMorpho vaults live on Lisk.'
   const totalPositions = subset.length
 
   return (
@@ -187,31 +156,13 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex gap-1 rounded-full bg-muted/60 p-1">
-              {(Object.keys(CHAIN_LABEL) as EvmChain[])
-                .filter((c) => (protocol === 'Morpho Blue' ? c === 'lisk' : c !== 'lisk'))
-                .map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => {
-                      dbg('toggleChain', { c, next: !chainEnabled[c] })
-                      return setChainEnabled((prev) => ({ ...prev, [c]: !prev[c] }))
-                    }}
-                    className={`rounded-full px-3 py-1 text-xs transition ${
-                      chainEnabled[c]
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted'
-                    }`}
-                    title={CHAIN_LABEL[c]}
-                  >
-                    {CHAIN_LABEL[c]}
-                  </button>
-                ))}
+            <div className="rounded-full bg-muted/60 px-3 py-1 text-xs">
+              {CHAIN_LABEL.lisk}
             </div>
 
             <div className="w-40 sm:w-56">
               <Input
-                placeholder="Search token / chain…"
+                placeholder="Search token…"
                 value={query}
                 onChange={(e) => { dbg('query', e.target.value); setQuery(e.target.value) }}
                 className="h-8"
@@ -274,7 +225,6 @@ export const PositionsDashboardInner: FC<Props> = ({ protocol }) => {
               )
             })}
           </div>
-
         </>
       )}
 

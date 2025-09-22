@@ -1,5 +1,10 @@
 // src/lib/constants.ts
+// Morpho-only constants + shared token maps (OP/Base tokens kept for bridging/UX utilities)
+
 import { keccak256, toBytes } from 'viem'
+import { publicOptimism, publicBase } from './clients'
+import { Abi } from 'viem'
+import { erc20Abi } from 'viem' // ['function balanceOf(address) view returns (uint256)']
 
 export type AdapterKey = `0x${string}`
 
@@ -9,16 +14,6 @@ function makeKey(s: string): AdapterKey {
 
 /** Must match the keys hardcoded/derived in your contracts */
 export const ADAPTER_KEYS = {
-  // AAVE
-  aaveOptimism:  makeKey('aave-v3:optimism'),
-  aaveBase:      makeKey('aave-v3:base'),
-
-  // COMPOUND V3 (Comet)
-  cometOpUSDC:   makeKey('compound-v3:optimism:USDC'),
-  cometOpUSDT:   makeKey('compound-v3:optimism:USDT'),
-  cometBaseUSDC: makeKey('compound-v3:base:USDC'),
-  // NOTE: base:USDT not supported (pool = 0x0)
-
   // MORPHO BLUE (Lisk)
   morphoLiskUSDCe: makeKey('morpho-blue:lisk:USDCe'),
   morphoLiskUSDT0: makeKey('morpho-blue:lisk:USDT0'),
@@ -26,11 +21,6 @@ export const ADAPTER_KEYS = {
 } as const
 
 export type AdapterKeyName = keyof typeof ADAPTER_KEYS
-
-// "DeployLiskNew#LK_Morpho_USDCe": "0x959782A91Ea08514bbA6E474672Ca96A77acF431",
-// "DeployLiskNew#LK_Morpho_USDT0": "0x5A7e36982FE9cD513107Ae9998C91ae13951eA82",
-// "DeployLiskNew#LK_Morpho_WETH": "0x159CF86d6e3F4D29b4e44a2F1891719BC315659C",
-// "DeployLiskNew#LK_Router": "0x07b81262cFBA057950E512B2866b10172630b231"
 
 /** Your deployed routers */
 export const ROUTERS: Record<'optimism' | 'base' | 'lisk', `0x${string}`> = {
@@ -73,22 +63,6 @@ export const REWARDS_VAULT = {
   optimismUSDT: '0x1aDBe89F2887a79C64725128fd1D53b10FD6b441' 
 } as const
 
-export const AAVE_POOL: Record<'optimism' | 'base', `0x${string}`> = {
-  optimism: '0x794a61358d6845594f94dc1db02a252b5b4814ad',
-  base:     '0xa238dd80c259a72e81d7e4664a9801593f98d1c5',
-}
-
-export const COMET_POOLS = {
-  optimism: {
-    USDC: '0x2e44e174f7d53f0212823acc11c01a11d58c5bcb',
-    USDT: '0x995e394b8b2437ac8ce61ee0bc610d617962b214',
-  },
-  base: {
-    USDC: '0xb125e6687d4313864e53df431d5425969c15eb2f',
-    USDT: '0x0000000000000000000000000000000000000000', // not yet
-  },
-} as const satisfies Record<'optimism' | 'base', Record<'USDC' | 'USDT', `0x${string}`>>
-
 export const MORPHO_POOLS = {
   'usdce-supply': '0xd92f564a29992251297980187a6b74faa3d50699',
   'usdt0-supply': '0x50cb55be8cf05480a844642cb979820c847782ae',
@@ -114,3 +88,34 @@ export type TokenSymbol = 'USDC' | 'USDT' | 'USDCe' | 'USDT0' | 'WETH'
 
 /** NEW: Lisk Executor (funds land here; relayer settles & deposits) */
 export const LISK_EXECUTOR_ADDRESS = '0x8F60907f41593d4B41f5e0cEa48415cd61854a79' as const
+
+/* ─────────────────────────────────────────────────────────────── */
+/* Lightweight balance helpers (kept for bridging UI)              */
+/* ─────────────────────────────────────────────────────────────── */
+
+export async function getBalance(
+  token: `0x${string}`,
+  user: `0x${string}`,
+  chain: 'optimism' | 'base',
+) {
+  const client = chain === 'optimism' ? publicOptimism : publicBase
+  const bal = await client.readContract({
+    address: token,
+    abi: erc20Abi as Abi,
+    functionName: 'balanceOf',
+    args: [user],
+  }) as bigint
+
+  return bal
+}
+
+export async function getDualBalances(
+  tokenAddr: { optimism: `0x${string}`; base: `0x${string}` },
+  user: `0x${string}`,
+) {
+  const [opBal, baBal] = await Promise.all([
+    getBalance(tokenAddr.optimism, user, 'optimism'),
+    getBalance(tokenAddr.base, user, 'base'),
+  ])
+  return { opBal, baBal }
+}

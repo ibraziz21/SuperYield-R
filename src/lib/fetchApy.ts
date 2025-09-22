@@ -1,34 +1,51 @@
 // src/lib/fetchApy.ts
-import { aaveSupplyApy, compoundSupplyApy } from '@/lib/positions'
-import { COMET_POOLS, TokenAddresses } from '@/lib/constants'
+// Morpho-only APY helper (APR from Merkl, summed per vault)
 
-type Chain = 'optimism' | 'base'
-type Protocol = 'Aave v3' | 'Compound v3'
-type TokenSymbol = keyof typeof TokenAddresses // 'USDC' | 'USDT' | 'USDCe' | 'USDT0' | 'WETH'
+import { MORPHO_VAULTS } from '@/lib/tvl'
 
-type CometToken = 'USDC' | 'USDT'
-const isCometToken = (t: TokenSymbol): t is CometToken => t === 'USDC' || t === 'USDT'
+export type LiskMorphoToken = 'USDCe' | 'USDT0' | 'WETH'
 
-/**
- * Fetches APY for a position spec. Safely narrows token types so we never
- * index COMET_POOLS with a non-existent key (USDCe, USDT0, WETH).
- */
+/** Fetch Merkl APR (as % APY approximation) for a given Morpho Lisk vault token. */
 export async function fetchApy(p: {
-  protocol: Protocol
-  chain: Chain
-  token: TokenSymbol
+  protocol: 'Morpho Blue'
+  chain: 'lisk'
+  token: LiskMorphoToken
 }): Promise<number> {
-  if (p.protocol === 'Aave v3') {
-    // TokenAddresses has per-chain maps only for tokens that exist on that chain.
-    const tokenMap = TokenAddresses[p.token] as Partial<Record<Chain, `0x${string}`>>
-    const asset = tokenMap[p.chain]
-    if (!asset) return 0
-    return (await aaveSupplyApy(asset, p.chain)) ?? 0
-  }
+  const vaultAddr = MORPHO_VAULTS[p.token]?.toLowerCase()
+  if (!vaultAddr) return 0
 
-  // Compound v3 pools exist only for USDC/USDT
-  if (!isCometToken(p.token)) return 0
-  const comet = COMET_POOLS[p.chain][p.token]
-  if (!comet || comet === '0x0000000000000000000000000000000000000000') return 0
-  return await compoundSupplyApy(comet, p.chain)
+  try {
+    const res = await fetch('https://api.merkl.xyz/v4/campaigns?tokenSymbol=LSK', { cache: 'no-store' })
+    const raw = await res.json()
+    if (!Array.isArray(raw)) return 0
+
+    let apr = 0
+    for (const c of raw) {
+      const sym = String(c?.rewardToken?.symbol ?? c?.rewardTokens?.[0]?.symbol ?? '').toUpperCase()
+      if (sym !== 'LSK') continue
+
+      const aprCandidates = [
+        c?.apr,
+        c?.globalApr,
+        c?.estimatedApr,
+        c?.rewardTokens?.[0]?.apr,
+        c?.rewards?.[0]?.apr,
+      ]
+        .map((x) => Number(x))
+        .filter((n) => Number.isFinite(n) && n > 0)
+
+      const thisApr = aprCandidates[0] ?? 0
+      if (thisApr <= 0) continue
+
+      // collect any addresses present on the campaign and check if our vault is among them
+      const blob = JSON.stringify(c)
+      const matches = blob.match(/0x[0-9a-fA-F]{40}/g) ?? []
+      const hasVault = matches.some((m) => m.toLowerCase() === vaultAddr)
+      if (hasVault) apr += thisApr
+    }
+
+    return apr
+  } catch {
+    return 0
+  }
 }

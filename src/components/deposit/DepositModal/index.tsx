@@ -4,38 +4,29 @@
 import { FC, useEffect, useMemo, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAppKit } from '@reown/appkit/react'
-import { useWalletClient, useChainId, useSwitchChain } from 'wagmi'
-import { formatUnits, parseUnits, keccak256, toBytes, toHex } from 'viem'
-import { lisk as liskChain } from 'viem/chains'
+import { useWalletClient } from 'wagmi'
+import { parseUnits } from 'viem'
 
 import type { YieldSnapshot } from '@/hooks/useYields'
-import { ensureLiquidity } from '@/lib/smartbridge'
-import { depositToPool } from '@/lib/depositor'
 import { quoteUsdceOnLisk, getBridgeQuote } from '@/lib/quotes'
 
 import { AmountCard } from '../AmountCard'
 import { BalanceStrip } from '../BalanceStrip'
 import { RouteFeesCard } from '../RouteFeesCard'
-import { SuppliedCard } from '../SuppliedCard'
 import { ProgressSteps } from '../Progress'
 import { ActionBar } from '../ActionBar'
 import { bridgeAndDepositViaRouterPush, bridgeTokens } from '@/lib/bridge'
 import { adapterKeyForSnapshot } from '@/lib/adapters'
 
 import {
-  getAaveSuppliedBalance,
-  getCometSuppliedBalance,
-  isCometToken,
   readWalletBalance,
   symbolForWalletDisplay,
-  mapCrossTokenForDest,
   tokenAddrFor,
-  chainIdOf,
 } from '../helpers'
 import type { EvmChain, FlowStep } from '../types'
-import { TokenAddresses, LISK_EXECUTOR_ADDRESS } from '@/lib/constants'
+import { TokenAddresses } from '@/lib/constants'
 
-// ── New helpers for vault mint amount scaling ─────────────────────────────────
+/* ── helpers ───────────────────────────────────────────────────── */
 const VAULT_TOKEN_DECIMALS = 6
 const pow10 = (n: number) => BigInt(10) ** BigInt(n)
 const scaleAmount = (amt: bigint, fromDec: number, toDec: number) => {
@@ -44,6 +35,26 @@ const scaleAmount = (amt: bigint, fromDec: number, toDec: number) => {
   return amt / pow10(fromDec - toDec)
 }
 const applyBuffer998 = (amt: bigint) => (amt * 997n) / 1000n
+
+// Since this modal is Lisk-only now, force the Lisk representation explicitly.
+function toLiskDestLabel(src: YieldSnapshot['token']): 'USDCe' | 'USDT0' | 'WETH' {
+  if (src === 'USDC') return 'USDCe'
+  if (src === 'USDT') return 'USDT0'
+  return 'WETH'
+}
+
+async function postJSON<T>(url: string, body: any): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '')
+    throw new Error(`POST ${url} failed: ${res.status} ${res.statusText} ${txt}`)
+  }
+  return res.json() as Promise<T>
+}
 
 interface DepositModalProps {
   open: boolean
@@ -54,55 +65,48 @@ interface DepositModalProps {
 export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => {
   const { open: openConnect } = useAppKit()
   const { data: walletClient } = useWalletClient()
-  const chainId = useChainId()
-  const { switchChainAsync, error: switchError } = useSwitchChain()
 
-  // ── local state ─────────────────────────────────────────────────
+  // local state
   const [amount, setAmount] = useState('')
-
-  // Let user choose USDC or USDT as the *source asset* on OP/Base when target is Lisk:USDT0
   const [sourceAsset, setSourceAsset] = useState<'USDC' | 'USDT'>('USDT')
 
-  // Wallet balances (generic per displayed token)
+  // balances
   const [opBal, setOpBal] = useState<bigint | null>(null)
   const [baBal, setBaBal] = useState<bigint | null>(null)
   const [liBal, setLiBal] = useState<bigint | null>(null)
   const [liBalUSDT, setLiBalUSDT] = useState<bigint | null>(null)
   const [liBalUSDT0, setLiBalUSDT0] = useState<bigint | null>(null)
 
-  // EXTRA balances for USDC/USDT on OP/Base (for correct MAX + display)
+  // extra source balances for quoting/MAX
   const [opUsdcBal, setOpUsdcBal] = useState<bigint | null>(null)
   const [baUsdcBal, setBaUsdcBal] = useState<bigint | null>(null)
   const [opUsdtBal, setOpUsdtBal] = useState<bigint | null>(null)
   const [baUsdtBal, setBaUsdtBal] = useState<bigint | null>(null)
 
-  // Supplied balances (Aave/Comet display only)
-  const [poolOp, setPoolOp] = useState<bigint | null>(null)
-  const [poolBa, setPoolBa] = useState<bigint | null>(null)
-
-  // Routing / fees / flow
+  // routing/fee
   const [route, setRoute] = useState<string | null>(null)
   const [fee, setFee] = useState<bigint>(0n)
   const [received, setReceived] = useState<bigint>(0n)
   const [quoteError, setQuoteError] = useState<string | null>(null)
+
+  // flow state
   const [step, setStep] = useState<FlowStep>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [liquidityEnsured, setLiquidityEnsured] = useState(false)
 
-  // Reset when inputs change
   useEffect(() => {
-    setLiquidityEnsured(false)
     setStep('idle')
     setError(null)
   }, [open, amount, snap.chain, snap.token, snap.protocolKey])
 
   const tokenDecimals = useMemo(() => (snap.token === 'WETH' ? 18 : 6), [snap.token])
-  const poolDecimals = useMemo(
-    () => (snap.protocolKey === 'aave-v3' ? 8 : snap.protocolKey === 'compound-v3' ? 6 : tokenDecimals),
-    [snap.protocolKey, tokenDecimals],
-  )
 
-  /* ---------------- Wallet balances (OP/Base/Lisk) ---------------- */
+  // Lisk dest label (authoritative)
+  const destTokenLabel = useMemo(() => toLiskDestLabel(snap.token), [snap.token])
+
+  // treat as USDT-family if src is USDT or dest is USDT0
+  const isUsdtFamily = useMemo(() => snap.token === 'USDT' || destTokenLabel === 'USDT0', [snap.token, destTokenLabel])
+
+  /* -------- Wallet balances (OP/Base/Lisk) -------- */
   useEffect(() => {
     if (!open || !walletClient) return
     const user = walletClient.account.address as `0x${string}`
@@ -125,10 +129,9 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       liAddr ? readWalletBalance('lisk',     liAddr, user) : Promise.resolve(null),
     ]
 
-    // Lisk USDT & USDT0 extra (display convenience)
+    // Lisk USDT & USDT0 extra
     const liskUSDTAddr  = (TokenAddresses.USDT  as any)?.lisk as `0x${string}` | undefined
     const liskUSDT0Addr = (TokenAddresses.USDT0 as any)?.lisk as `0x${string}` | undefined
-    const isUsdtFamily = snap.token === 'USDT' || snap.token === 'USDT0'
     if (isUsdtFamily) {
       reads.push(liskUSDTAddr  ? readWalletBalance('lisk', liskUSDTAddr,  user) : Promise.resolve(null))
       reads.push(liskUSDT0Addr ? readWalletBalance('lisk', liskUSDT0Addr, user) : Promise.resolve(null))
@@ -136,7 +139,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       reads.push(Promise.resolve(null), Promise.resolve(null))
     }
 
-    // Extra OP/Base USDC+USDT balances (for MAX + UX when targeting Lisk:USDT0)
+    // extra OP/Base USDC+USDT
     const opUsdc = addrOrNull('USDC', 'optimism')
     const baUsdc = addrOrNull('USDC', 'base')
     const opUsdt = addrOrNull('USDT', 'optimism')
@@ -148,7 +151,6 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     if (baUsdt) reads.push(readWalletBalance('base',     baUsdt, user)); else reads.push(Promise.resolve(null))
 
     Promise.allSettled(reads).then((vals) => {
-      // base three + (liU, liU0) + (opUSDC, baUSDC, opUSDT, baUSDT)
       const v = vals.map((r) => (r.status === 'fulfilled' ? (r as any).value as bigint | null : null))
       const [op, ba, li, liU, liU0, _opUsdc, _baUsdc, _opUsdt, _baUsdt] = v
       setOpBal(op ?? null)
@@ -161,46 +163,16 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       setOpUsdtBal(_opUsdt ?? null)
       setBaUsdtBal(_baUsdt ?? null)
     })
-  }, [open, walletClient, snap.token])
+  }, [open, walletClient, snap.token, isUsdtFamily])
 
-  /* ---------------- Supplied balances (display only) ---------------- */
-  useEffect(() => {
-    if (!open || !walletClient) return
-    const user = walletClient.account.address as `0x${string}`
-
-    if (snap.protocolKey === 'aave-v3') {
-      Promise.allSettled([
-        getAaveSuppliedBalance({ chain: 'optimism', user }),
-        getAaveSuppliedBalance({ chain: 'base', user }),
-      ]).then((rs) => {
-        const [op, ba] = rs.map((r) => (r.status === 'fulfilled' ? (r as any).value : 0n))
-        setPoolOp(op)
-        setPoolBa(ba)
-      })
-    } else if (snap.protocolKey === 'compound-v3') {
-      if (isCometToken(snap.token)) {
-        Promise.allSettled([
-          getCometSuppliedBalance({ chain: 'optimism', token: snap.token as any, user }),
-          getCometSuppliedBalance({ chain: 'base',     token: snap.token as any, user }),
-        ]).then((rs) => {
-          const [op, ba] = rs.map((r) => (r.status === 'fulfilled' ? (r as any).value : 0n))
-          setPoolOp(op); setPoolBa(ba)
-        })
-      } else { setPoolOp(0n); setPoolBa(0n) }
-    } else { setPoolOp(null); setPoolBa(null) }
-  }, [open, walletClient, snap.protocolKey, snap.token])
-
-  /* ---------------- Source-asset defaulting heuristic ---------------- */
+  /* -------- Source-asset defaulting heuristic -------- */
   useEffect(() => {
     if (!amount) return
-    if (snap.chain === 'lisk' && (snap.token === 'USDT' || snap.token === 'USDT0')) {
-      setSourceAsset('USDT')
-    } else {
-      setSourceAsset('USDC')
-    }
-  }, [amount, snap.chain, snap.token])
+    if (snap.chain === 'lisk' && isUsdtFamily) setSourceAsset('USDT')
+    else setSourceAsset('USDC')
+  }, [amount, snap.chain, isUsdtFamily])
 
-  /* ---------------- Quote (LI.FI) ---------------- */
+  /* -------- Quote (Lisk-only) -------- */
   useEffect(() => {
     if (!walletClient || !amount) {
       setRoute(null); setFee(0n); setReceived(0n); setQuoteError(null)
@@ -208,44 +180,37 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     }
 
     const dest = snap.chain as EvmChain
-    const amt  = parseUnits(amount, tokenDecimals)
-
-    const destOutSymbol = mapCrossTokenForDest(snap.token, dest)
-
-    const op = opBal ?? 0n
-    const ba = baBal ?? 0n
-    const src: Extract<EvmChain, 'optimism' | 'base'> =
-      op >= amt ? 'optimism' : ba >= amt ? 'base' : (op >= ba ? 'optimism' : 'base')
-
-    if (src === dest) {
-      setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null)
+    if (dest !== 'lisk') {
+      setRoute(null); setFee(0n); setReceived(0n); setQuoteError('Only Lisk deposits are supported')
       return
     }
 
-    if (dest === 'lisk' && destOutSymbol === 'USDT0') {
+    const amt = parseUnits(amount, tokenDecimals)
+
+    const pickSrcBy = (o?: bigint | null, b?: bigint | null): 'optimism' | 'base' => {
+      const op = o ?? 0n
+      const ba = b ?? 0n
+      if (op >= amt) return 'optimism'
+      if (ba >= amt) return 'base'
+      return op >= ba ? 'optimism' : 'base'
+    }
+
+    if (destTokenLabel === 'USDT0') {
+      const src = sourceAsset === 'USDC' ? pickSrcBy(opUsdcBal, baUsdcBal) : pickSrcBy(opUsdtBal, baUsdtBal)
       getBridgeQuote({
         token: 'USDT0',
         amount: amt,
         from: src,
         to: dest,
         fromAddress: walletClient.account!.address as `0x${string}`,
+        fromTokenSym: sourceAsset, // << important
       })
-        .then((q) => {
-          setRoute(q.route)
-          setFee(q.bridgeFeeTotal)      // total fee from LI.FI
-          setReceived(q.bridgeOutAmount) // amount relayer wallet will actually get
-          setQuoteError(null)
-        })
-        .catch(() => {
-          setRoute(null)
-          setFee(0n)
-          setReceived(0n)
-          setQuoteError('Could not fetch bridge quote')
-        })
+        .then((q) => { setRoute(q.route); setFee(q.bridgeFeeTotal); setReceived(q.bridgeOutAmount); setQuoteError(null) })
+        .catch(() => { setRoute(null); setFee(0n); setReceived(0n); setQuoteError('Could not fetch bridge quote') })
       return
     }
 
-    if (dest === 'lisk' && destOutSymbol === 'USDCe') {
+    if (destTokenLabel === 'USDCe') {
       if ((liBal ?? 0n) >= amt) { setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null); return }
       quoteUsdceOnLisk({
         amountIn: amt,
@@ -257,312 +222,140 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       return
     }
 
-    getBridgeQuote({
-      token: destOutSymbol as any,
-      amount: amt,
-      from: src,
-      to: dest,
-      fromAddress: walletClient.account!.address as `0x${string}`,
-    })
-      .then((q) => { setRoute(q.route); setFee(q.bridgeFeeTotal); setReceived(q.bridgeOutAmount); setQuoteError(null) })
-      .catch(() => { setRoute(null); setFee(0n); setReceived(0n); setQuoteError('Could not fetch bridge quote') })
-  }, [amount, walletClient, opBal, baBal, liBal, liBalUSDT, liBalUSDT0, snap.chain, snap.token, tokenDecimals, sourceAsset])
-
-  // helper to build & sign the EIP-712 intent (kept for future use if needed)
-  async function signDepositIntent(params: {
-    user: `0x${string}`
-    key:  `0x${string}`
-    asset:`0x${string}`
-    amount: bigint
-    minAmount?: bigint
-  }) {
-    if (!walletClient) throw new Error('No wallet')
-
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 30 * 60)
-    const nonce    = BigInt(Date.now())
-    const refId    = keccak256(toBytes(`${params.user}-${Date.now()}-${params.asset}-${params.amount.toString()}`))
-
-    const domain = {
-      name: 'SuperYLDR-LiskExecutor',
-      version: '1',
-      chainId: BigInt(liskChain.id),
-      verifyingContract: LISK_EXECUTOR_ADDRESS as `0x${string}`,
-    } as const
-
-    const types = {
-      DepositIntent: [
-        { name: 'user',      type: 'address' },
-        { name: 'key',       type: 'bytes32' },
-        { name: 'asset',     type: 'address' },
-        { name: 'amount',    type: 'uint256' },
-        { name: 'minAmount', type: 'uint256' },
-        { name: 'deadline',  type: 'uint256' },
-        { name: 'nonce',     type: 'uint256' },
-        { name: 'refId',     type: 'bytes32' },
-      ],
-    } as const
-
-    const message = {
-      user: params.user,
-      key: params.key,
-      asset: params.asset,
-      amount: params.amount,
-      minAmount: params.minAmount ?? 0n,
-      deadline,
-      nonce,
-      refId,
-    }
-
-    const want = toHex(liskChain.id) as `0x${string}`
-    const current = (await walletClient.request({ method: 'eth_chainId' })) as `0x${string}`
-    const mustSwitch = current.toLowerCase() !== want.toLowerCase()
-
-    async function ensureLisk() {
-      try {
-        await walletClient!.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: want }],
-        })
-      } catch (e: any) {
-        if (e?.code === 4902) {
-          await walletClient!.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: want,
-              chainName: 'Lisk',
-              nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-              rpcUrls: [process.env.NEXT_PUBLIC_LISK_RPC_URL ?? 'https://rpc.api.lisk.com'],
-              blockExplorerUrls: ['https://blockscout.lisk.com'],
-            }],
-          })
-          await walletClient!.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: want }],
-          })
-        } else {
-          throw e
-        }
-      }
-    }
-
-    if (mustSwitch) await ensureLisk()
-    try {
-      const signature = await walletClient.signTypedData({
-        account: params.user,
-        domain, types, primaryType: 'DepositIntent', message,
-      })
-      return { message, signature }
-    } finally {
-      if (mustSwitch) {
-        await walletClient.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: current }],
-        })
-      }
-    }
-  }
+    // WETH to Lisk (no receipts)
+    setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null)
+  }, [
+    amount, walletClient, tokenDecimals, snap.chain, snap.token, destTokenLabel,
+    opBal, baBal, liBal, liBalUSDT, liBalUSDT0,
+    sourceAsset, opUsdcBal, baUsdcBal, opUsdtBal, baUsdtBal,
+  ])
 
   async function handleConfirm() {
     if (!walletClient) { openConnect(); return }
     setError(null)
-
+  
     try {
       const inputAmt = parseUnits(amount || '0', tokenDecimals)
-      const dest = snap.chain as EvmChain
+      const amtToMint = applyBuffer998(inputAmt)
       const user = walletClient.account!.address as `0x${string}`
-
-      // ─────────────────────────────────────────────────────────────
-      // Special case: USDT0 on Lisk → user bridges to relayer → relayer handles Safe deposit.
-      // We mint the OP receipt in the **USDT** rewards contract.
-      // ─────────────────────────────────────────────────────────────
-      if (dest === 'lisk' && snap.token === 'USDT0') {
-        setStep('bridging')
-
-        const src = (opUsdtBal ?? 0n) >= inputAmt ? 'optimism' : 'base'
-        const result = await bridgeTokens('USDT0', inputAmt, src, 'lisk', walletClient, {
-          sourceToken: sourceAsset,
-        })
-        console.log('[ui] bridged USDT0 to relayer:', result)
-
-        // Mint receipts on OP in USDT vault, 1:1 (6d)
-        const tokenKind: 'USDC' | 'USDT' = 'USDT'
-        const sharesToMint = inputAmt
-
-        console.log('[ui] mintVault payload', { tokenKind, tokenAmt: sharesToMint.toString(), token: snap.token, chain: snap.chain })
-        const mintRes = await fetch('/api/mintVault', {
+  
+      if (snap.chain !== 'lisk') throw new Error('Only Lisk deposits are supported in this build')
+  
+      // Decide once, then use everywhere
+      const dest = 'lisk' as const
+      const destLabelForBridge = (snap.token === 'USDC' ? 'USDCe' : snap.token === 'USDT' ? 'USDT0' : 'WETH') as
+        | 'USDCe' | 'USDT0' | 'WETH'
+      const mustMint = destLabelForBridge !== 'WETH'
+  
+      // Helper for OP/Base source selection
+      const pickSrcBy = (o?: bigint | null, b?: bigint | null): 'optimism' | 'base' => {
+        const op = o ?? 0n, ba = b ?? 0n
+        if (op >= inputAmt) return 'optimism'
+        if (ba >= inputAmt) return 'base'
+        return op >= ba ? 'optimism' : 'base'
+      }
+  
+      setStep('bridging')
+  
+      if (destLabelForBridge === 'USDT0') {
+        // USDT0 path: bridge to relayer (respect the selected source asset), then mint 1:1 USDT receipts
+        const src = sourceAsset === 'USDC'
+          ? pickSrcBy(opUsdcBal, baUsdcBal)
+          : pickSrcBy(opUsdtBal, baUsdtBal)
+  
+          const adapterKey = adapterKeyForSnapshot(snap)
+          await bridgeAndDepositViaRouterPush({
+            user,
+            destToken: 'USDT0',
+            srcChain: src,
+            srcToken: sourceAsset,       // 'USDC' or 'USDT' as selected
+            amount: inputAmt,
+            adapterKey,
+            walletClient,
+          })
+  
+        // MUST mint (USDT vault), no success until this resolves
+        const mintBody = { userAddress: user, tokenAmt: amtToMint.toString(), tokenKind: 'USDT' as const }
+        console.info('[mint] POST /api/mintVault (USDT0→USDT)', mintBody)
+        const res = await fetch('/api/mintVault', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userAddress: user,
-            tokenAmt: sharesToMint.toString(),
-            tokenKind, // ensure backend mints to the right rewards vault
-          }),
-        }).then(r => r.json())
-
-        if (!mintRes?.success) throw new Error(mintRes?.message || 'Minting failed')
-
-        setStep('success')
-        return
-      }
-
-      // ─────────────────────────────────────────────────────────────
-      // Lisk + Morpho one-click path (USDCe/WETH) → router push deposit
-      // ─────────────────────────────────────────────────────────────
-      if (dest === 'lisk' && snap.protocolKey === 'morpho-blue') {
-        setStep('bridging')
-
-        const destTokenLabel = mapCrossTokenForDest(snap.token, 'lisk') as 'USDT0' | 'USDCe' | 'WETH'
-        const adapterKey = adapterKeyForSnapshot(snap)
-
-        const pickSrcBy = (op: bigint | null, ba: bigint | null): 'optimism' | 'base' => {
-          const _op = op ?? 0n; const _ba = ba ?? 0n
-          if (_op >= inputAmt) return 'optimism'
-          if (_ba >= inputAmt) return 'base'
-          return _op >= _ba ? 'optimism' : 'base'
-        }
-
-        const srcToken =
-          destTokenLabel === 'USDCe' ? 'USDC' :
-          destTokenLabel === 'USDT0' ? 'USDT' : 'WETH'
-
-        let srcChain: 'optimism' | 'base'
-        if (srcToken === 'USDC')      srcChain = pickSrcBy(opUsdcBal, baUsdcBal)
-        else if (srcToken === 'USDT') srcChain = pickSrcBy(opUsdtBal, baUsdtBal)
-        else                          srcChain = pickSrcBy(opBal, baBal)
-
-        const result = await bridgeAndDepositViaRouterPush({
-          user,
-          destToken: destTokenLabel,
-          srcChain,
-          srcToken: srcToken as 'USDC' | 'USDT' | 'WETH',
-          amount: inputAmt,
-          adapterKey,
-          walletClient,
+          body: JSON.stringify(mintBody),
         })
-        console.log('[ui] bridge+deposit result:', result)
-
-        // Mint receipts on OP for non-WETH (USDCe → USDC receipts)
-        const effectiveBase = applyBuffer998(inputAmt)
-        const sharesToMint  = scaleAmount(effectiveBase, tokenDecimals, VAULT_TOKEN_DECIMALS)
-
-        if (destTokenLabel !== 'WETH') {
-          const tokenKind: 'USDC' | 'USDT' =
-            destTokenLabel === 'USDT0' ? 'USDT' : 'USDC'
-
-          console.log('[ui] mintVault payload', { tokenKind, tokenAmt: sharesToMint.toString(), token: snap.token, chain: snap.chain })
-          const mintRes = await fetch('/api/mintVault', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userAddress: user,
-              tokenAmt: sharesToMint.toString(),
-              tokenKind,
-            }),
-          }).then(r => r.json())
-
-          if (!mintRes?.success) throw new Error(mintRes?.message || 'Minting failed')
-        }
-
+        if (!res.ok) throw new Error(`/api/mintVault failed: ${res.status} ${await res.text().catch(()=>'')}`)
+        const json = await res.json()
+        if (!json?.success) throw new Error(json?.message || 'Minting failed')
+  
         setStep('success')
         return
       }
-
-      // ─────────────────────────────────────────────────────────────
-      // Generic path (kept as-is): ensure liquidity → depositToPool → mint receipts
-      // ─────────────────────────────────────────────────────────────
-      const destId = chainIdOf(dest)
-      const wantDestToken = mapCrossTokenForDest(snap.token, dest)
-      const finalTokenAddr = tokenAddrFor(wantDestToken, dest)
-      const preBal = await readWalletBalance(dest, finalTokenAddr, user)
-
-      let bridgedDelta: bigint = 0n
-      if (!liquidityEnsured && preBal < inputAmt) {
-        setStep('bridging')
-        const res = await ensureLiquidity(
-          wantDestToken,
-          inputAmt,
-          dest,
-          walletClient,
-          {
-            onStatus: (s) => {
-              if (s === 'waiting') setStep('waitingFunds')
-              else if (s === 'bridging') setStep('bridging')
-            },
-            preferredSourceToken: (dest === 'lisk' && wantDestToken === 'USDT0') ? sourceAsset : undefined,
-          }
-        )
-        bridgedDelta = res.delta
-        setLiquidityEnsured(true)
-      } else {
-        setLiquidityEnsured(true)
+  
+      // Router-push deposit for USDCe/WETH
+      const adapterKey = adapterKeyForSnapshot(snap)
+      const srcToken = destLabelForBridge === 'USDCe' ? 'USDC' : 'WETH'
+      const srcChain: 'optimism' | 'base' =
+        srcToken === 'USDC' ? pickSrcBy(opUsdcBal, baUsdcBal) : pickSrcBy(opBal, baBal)
+  
+      await bridgeAndDepositViaRouterPush({
+        user,
+        destToken: destLabelForBridge,
+        srcChain,
+        srcToken: srcToken as 'USDC' | 'WETH',
+        amount: inputAmt,
+        adapterKey,
+        walletClient,
+      })
+  
+      // Mint receipts for USDCe only (WETH skips mint)
+      if (mustMint && destLabelForBridge === 'USDCe') {
+        const effectiveBase = applyBuffer998(inputAmt)
+        const sharesToMint = scaleAmount(effectiveBase, tokenDecimals, VAULT_TOKEN_DECIMALS)
+        const mintBody = { userAddress: user, tokenAmt: sharesToMint.toString(), tokenKind: 'USDC' as const }
+        console.info('[mint] POST /api/mintVault (USDCe→USDC)', mintBody)
+        const res = await fetch('/api/mintVault', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(mintBody),
+        })
+        if (!res.ok) throw new Error(`/api/mintVault failed: ${res.status} ${await res.text().catch(()=>'')}`)
+        const json = await res.json()
+        if (!json?.success) throw new Error(json?.message || 'Minting failed')
       }
-
-      if (chainId !== destId && switchChainAsync) {
-        setStep('switching')
-        await switchChainAsync({ chainId: destId })
-      }
-
-      const postBal = await readWalletBalance(dest, finalTokenAddr, user)
-      const cap = inputAmt
-      const toDeposit =
-        bridgedDelta > 0n
-          ? (bridgedDelta > cap ? cap : bridgedDelta)
-          : (postBal >= cap ? cap : postBal)
-
-      if (toDeposit === 0n) throw new Error('No funds available to deposit yet')
-
-      setStep('depositing')
-      await depositToPool(snap, toDeposit, walletClient)
-
-      const sharesToMint = scaleAmount(toDeposit, tokenDecimals, VAULT_TOKEN_DECIMALS)
-      const tokenKind: 'USDC' | 'USDT' =
-        (snap.token === 'USDT' || snap.token === 'USDT0') ? 'USDT' : 'USDC'
-
-      console.log('[ui] mintVault payload', { tokenKind, tokenAmt: sharesToMint.toString(), token: snap.token, chain: snap.chain })
-      const mintRes = await fetch('/api/mintVault', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userAddress: user, tokenAmt: sharesToMint.toString(), tokenKind }),
-      }).then(r => r.json())
-
-      if (!mintRes?.success) throw new Error(mintRes?.message || 'Minting failed')
-
+  
       setStep('success')
     } catch (e: any) {
+      console.error('[ui] deposit error', e)
       setError(e instanceof Error ? e.message : String(e))
       setStep('error')
     }
   }
+  
 
-  /* =============================================================================
-     Derived UI flags
-     ============================================================================= */
+  /* -------- UI flags -------- */
   const hasAmount = amount.trim().length > 0 && Number(amount) > 0
   const confirmDisabled = step !== 'idle' ? true : !hasAmount || Boolean(quoteError)
-
   const showForm = step === 'idle'
   const showProgress = step !== 'idle' && step !== 'success' && step !== 'error'
   const showSuccess = step === 'success'
   const showError = step === 'error'
-
   const isLiskTarget = snap.chain === 'lisk'
-  const isUsdtFamily = snap.token === 'USDT' || snap.token === 'USDT0'
-  const destTokenLabel = mapCrossTokenForDest(snap.token, snap.chain as EvmChain)
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="p-0 overflow-hidden shadow-xl w-[min(100vw-1rem,44rem)] sm:max-w-2xl rounded-xl">
-        {/* Header */}
         <div className="bg-gradient-to-r from-teal-600 to-cyan-500 px-5 py-4">
           <DialogHeader>
             <DialogTitle className="text-white text-base font-semibold sm:text-lg flex items-center gap-2">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-white text-xs font-bold">{destTokenLabel}</span>
-              Deposit to {snap.protocol} on <span className="underline decoration-white/40 underline-offset-4">{(snap.chain as string).toUpperCase()}</span>
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-white text-xs font-bold">
+                {destTokenLabel}
+              </span>
+              Deposit to {snap.protocol} on <span className="underline decoration-white/40 underline-offset-4">
+                {(snap.chain as string).toUpperCase()}
+              </span>
             </DialogTitle>
           </DialogHeader>
         </div>
 
-        {/* Body */}
         <div className="flex max-h-[85dvh] flex-col">
           <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-6 bg-white">
             {showForm && (
@@ -587,7 +380,6 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                   baUsdtBal={baUsdtBal}
                 />
 
-                {/* Source-asset selector (only for Lisk:USDT0 bridging) */}
                 {isLiskTarget && destTokenLabel === 'USDT0' && (
                   <div className="flex items-center justify-between rounded-lg border p-3">
                     <div className="text-xs text-muted-foreground">Source asset on OP/Base</div>
@@ -635,16 +427,6 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                   sourceAsset={isLiskTarget && destTokenLabel === 'USDT0' ? sourceAsset : undefined}
                 />
 
-                {(poolOp != null || poolBa != null) && (
-                  <SuppliedCard
-                    poolOp={poolOp}
-                    poolBa={poolBa}
-                    poolDecimals={poolDecimals}
-                    tokenSymbol={snap.token}
-                  />
-                )}
-
-                {switchError && <p className="text-xs text-red-600">Network switch failed: {switchError.message}</p>}
                 {error && <p className="text-xs text-red-600">{error}</p>}
               </>
             )}
@@ -660,9 +442,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                 <div className="text-center">
                   <div className="text-lg font-semibold">Deposit successful</div>
                   <div className="mt-1 text-sm text-muted-foreground">
-                    {snap.protocolKey === 'morpho-blue' && snap.chain === 'lisk'
-                      ? `Your ${snap.token} was bridged to Lisk and deposited via our relayer.`
-                      : `Your ${snap.token} has been supplied to ${snap.protocol}.`}
+                    Your {snap.token} was bridged to Lisk and deposited via our relayer.
                   </div>
                 </div>
               </div>

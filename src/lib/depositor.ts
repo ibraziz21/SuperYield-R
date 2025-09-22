@@ -1,12 +1,15 @@
 // src/lib/depositor.ts
+// Morpho-only app: user-initiated Lisk deposits are executed by the relayer.
+// We keep allowance helpers (useful for OP/Base funding flows), but block direct Lisk deposits.
+
 import type { WalletClient } from 'viem'
 import { erc20Abi, maxUint256 } from 'viem'
 import { optimism, base, lisk } from 'viem/chains'
-import { ROUTERS, TokenAddresses, type TokenSymbol } from './constants'
+import { ROUTERS, TokenAddresses } from './constants'
 import aggregatorRouterAbi from './abi/AggregatorRouter.json'
 import { publicOptimism, publicBase, publicLisk } from './clients'
 import type { YieldSnapshot } from '@/hooks/useYields'
-import { adapterKeyForSnapshot } from './adapters' // ✅ correct import
+import { adapterKeyForSnapshot } from './adapters'
 
 type ChainId = 'optimism' | 'base' | 'lisk'
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
@@ -56,7 +59,7 @@ async function readAllowance(
   })) as bigint
 }
 
-async function ensureAllowanceForRouter(
+export async function ensureAllowanceForRouter(
   token: `0x${string}`,
   router: `0x${string}`,
   amount: bigint,
@@ -93,26 +96,30 @@ async function ensureAllowanceForRouter(
   await waitReceipt(chain, approveHash)
 }
 
+/**
+ * Resolve the on-chain asset given a Morpho snapshot.
+ * For Morpho (Lisk): map display tokens to the actual Lisk asset addresses.
+ */
 export function resolveAssetForSnapshot(
   snap: YieldSnapshot,
   chain: ChainId,
 ): `0x${string}` {
   if (snap.protocolKey === 'morpho-blue') {
-    // Lisk: USDC -> USDCe, USDT -> USDT0
+    // Lisk: USDC -> USDCe, USDT -> USDT0 (WETH is the same)
     const morphoToken =
       snap.token === 'USDC' ? 'USDCe' :
       snap.token === 'USDT' ? 'USDT0' :
       snap.token
     return (TokenAddresses as any)[morphoToken].lisk as `0x${string}`
   }
-  // Aave/Comet on OP/Base
-  const tokenMap = TokenAddresses[
-    snap.token as Extract<TokenSymbol, 'USDC' | 'USDT'>
-  ] as Record<'optimism' | 'base', `0x${string}`>
-  return tokenMap[chain as 'optimism' | 'base']
+
+  // No other protocols supported in morpho-only build.
+  throw new Error('Unsupported protocol in resolveAssetForSnapshot')
 }
 
-/** Router.deposit(adapterKey, asset, amount, onBehalfOf, data) */
+/** Router.deposit(adapterKey, asset, amount, onBehalfOf, data)
+ *  NOTE: Morpho (Lisk) deposits are executed server-side by the relayer.
+ */
 export async function depositToPool(
   snap: YieldSnapshot,
   amount: bigint,
@@ -121,12 +128,12 @@ export async function depositToPool(
   const owner = wallet.account?.address as `0x${string}` | undefined
   if (!owner) throw new Error('Wallet not connected')
 
-  // NEW: prevent user-side Lisk deposit; executor/relayer handles Morpho on Lisk
   if (snap.protocolKey === 'morpho-blue') {
     throw new Error('Lisk deposits are executed by the relayer; no user action on Lisk required.')
   }
 
-  const chain: ChainId = (snap.chain as ChainId)
+  // If you ever re-enable non-Lisk user deposits, the code below remains a reference.
+  const chain: ChainId = snap.chain as ChainId
   const router = ROUTERS[chain]
   if (!router || router.toLowerCase() === ZERO_ADDR) throw new Error(`Router missing for ${chain}`)
 
@@ -137,20 +144,10 @@ export async function depositToPool(
 
   const asset = resolveAssetForSnapshot(snap, chain)
 
-  // helpful preflight logs
-  const [allowToRouter, allowToAdapter] = await Promise.all([
-    readAllowance(asset, owner, router, chain),
-    readAllowance(asset, owner, adapter, chain),
-  ])
-  console.log(`[deposit] chain=${chain} asset=${asset}
-  key=${key}
-  allowance → router:  ${allowToRouter}
-  allowance → adapter: ${allowToAdapter}`)
-
-  // ✅ approve router (router does transferFrom)
+  // approve router (router does transferFrom)
   await ensureAllowanceForRouter(asset, router, amount, wallet, chain)
 
-  // 🔍 (optional) simulate to catch exact revert reasons
+  // simulate then write (kept for completeness)
   const { request } = await pub(chain).simulateContract({
     address: router,
     abi: aggregatorRouterAbi as any,
@@ -159,7 +156,6 @@ export async function depositToPool(
     account: owner,
   })
 
-  // ▶️ write
   const tx = await wallet.writeContract(request)
   await waitReceipt(chain, tx)
 }

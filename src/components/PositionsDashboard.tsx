@@ -3,9 +3,7 @@
 
 import { FC, useMemo } from 'react'
 import { usePositions } from '@/hooks/usePositions'
-import { usePortfolioApy } from '@/hooks/usePortfolioApy'
 import { rewardForecast } from '@/lib/rewardForecast'
-import { formatUnits } from 'viem'
 
 import { Card, CardContent } from '@/components/ui/Card'
 import { Loader2 } from 'lucide-react'
@@ -19,54 +17,43 @@ import {
 } from 'recharts'
 
 import type { Position } from '@/lib/positions'
-import { TokenAddresses, COMET_POOLS } from '@/lib/constants'
-import { useApy } from '@/hooks/useAPY'
 import { Button } from '@/components/ui/button'
+import { formatUnits } from 'viem'
+import { useYields } from '@/hooks/useYields'
 
 /* ──────────────────────────────────────────────────────────────── */
-/* Helpers                                                          */
+/* Helpers (Morpho Lisk only)                                       */
 /* ──────────────────────────────────────────────────────────────── */
 
 const PIE_COLORS = ['#16a34a', '#7c3aed', '#f97316', '#38bdf8', '#ef4444']
 
-/** Per-position decimals:
- *  - Aave v3: 8 (Aave base units)
- *  - Compound v3: 6 (USDC/USDT)
- *  - Morpho Blue (Lisk): token-based (WETH=18, USDCe/USDT0=6)
+/** Morpho Blue on Lisk:
+ *  - WETH: 18 decimals
+ *  - USDCe / USDT0: 6 decimals
  */
 function decimalsFor(p: Position): number {
-  if (p.protocol === 'Aave v3') return 8
-  if (p.protocol === 'Compound v3') return 6
-  // Morpho Blue
-  if (p.token === 'WETH') return 18
-  return 6
+  return p.token === 'WETH' ? 18 : 6
 }
-
-const isOpBase = (c: Position['chain']): c is 'optimism' | 'base' =>
-  c === 'optimism' || c === 'base'
-
-const isCometToken = (t: Position['token']): t is 'USDC' | 'USDT' =>
-  t === 'USDC' || t === 'USDT'
 
 /** bigint -> number using decimals */
 const bnToNum = (bn: bigint, decimals: number) => Number(bn) / 10 ** decimals
 
 /* ──────────────────────────────────────────────────────────────── */
-/* Main Dashboard                                                   */
+/* Main Dashboard (Morpho Lisk only)                                */
 /* ──────────────────────────────────────────────────────────────── */
 
 export const PositionsDashboard: FC = () => {
   const { data, isLoading } = usePositions()
-  const { apy: portfolioApy, loading: apyLoading, totalUsd } = usePortfolioApy()
 
-  const forecast =
-    !apyLoading && totalUsd != null
-      ? rewardForecast(totalUsd, portfolioApy)
-      : null
+  // Filter to Morpho Blue on Lisk only
+  const morphoLisk = useMemo(
+    () => (data ?? []).filter((p) => p.protocol === 'Morpho Blue' && p.chain === 'lisk'),
+    [data],
+  )
 
-  // Aggregate totals & pie data
+  // Aggregate totals & pie data (Morpho only)
   const { totalSupplied, protocolTotals, pieData } = useMemo(() => {
-    if (!data) {
+    if (!morphoLisk.length) {
       return {
         totalSupplied: 0,
         protocolTotals: {} as Record<string, number>,
@@ -75,7 +62,7 @@ export const PositionsDashboard: FC = () => {
     }
     const totals: Record<string, number> = {}
     let sum = 0
-    for (const p of data) {
+    for (const p of morphoLisk) {
       const dec = decimalsFor(p)
       const num = bnToNum(p.amount, dec)
       totals[p.protocol] = (totals[p.protocol] ?? 0) + num
@@ -86,7 +73,7 @@ export const PositionsDashboard: FC = () => {
       protocolTotals: totals,
       pieData: Object.entries(totals).map(([name, value]) => ({ name, value })),
     }
-  }, [data])
+  }, [morphoLisk])
 
   /* Loading / empty */
   if (isLoading) {
@@ -98,44 +85,39 @@ export const PositionsDashboard: FC = () => {
     )
   }
 
-  if (!data || data.length === 0) {
-    return <p className="text-center text-sm opacity-60">No active positions.</p>
+  if (morphoLisk.length === 0) {
+    return <p className="text-center text-sm opacity-60">No Morpho positions on Lisk.</p>
   }
 
   /* UI */
   return (
     <div className="space-y-12">
-      {/* headline stats */}
+      {/* headline stats (Morpho Lisk only) */}
       <div className="grid gap-6 sm:grid-cols-3">
         <StatCard
           title="Total Supplied"
           value={`$${totalSupplied.toLocaleString(undefined, {
             maximumFractionDigits: 2,
           })}`}
+          sub="Morpho Blue · Lisk"
         />
         <StatCard
           title="Total APY"
-          value={apyLoading ? '—' : `${portfolioApy.toFixed(2)}%`}
-          sub={apyLoading ? 'fetching…' : undefined}
+          value="—"
+          sub="Shown per asset"
         />
         <StatCard
           title="Forecast (yr)"
-          value={
-            apyLoading || !forecast
-              ? '—'
-              : `≈ $${forecast.yearly.toLocaleString(undefined, {
-                  maximumFractionDigits: 2,
-                })}`
-          }
+          value="—"
           sub="at current APY"
         />
       </div>
 
-      {/* protocol allocation pie */}
+      {/* protocol allocation pie (will be one slice for Morpho Blue) */}
       <Card className="p-6">
         <CardContent className="flex flex-col items-center">
           <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-            Protocol allocation
+            Protocol allocation (Morpho · Lisk)
           </h3>
           <div className="h-64 w-full max-w-md">
             <ResponsiveContainer>
@@ -166,7 +148,7 @@ export const PositionsDashboard: FC = () => {
         </CardContent>
       </Card>
 
-      {/* per-protocol breakdown (includes Morpho Blue / Lisk) */}
+      {/* per-protocol breakdown (Morpho Blue / Lisk) */}
       <div className="space-y-8">
         {Object.entries(protocolTotals).map(([protocol]) => (
           <div key={protocol} className="space-y-4">
@@ -179,7 +161,7 @@ export const PositionsDashboard: FC = () => {
               supplied
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {data
+              {morphoLisk
                 .filter((p) => p.protocol === protocol)
                 .map((p, idx) => (
                   <AssetCard key={idx} p={p} onSupply={() => {}} onWithdraw={() => {}} />
@@ -218,41 +200,18 @@ interface AssetCardProps {
 }
 
 const AssetCard: FC<AssetCardProps> = ({ p, onSupply, onWithdraw }) => {
+  const { yields } = useYields()
   const decimals = decimalsFor(p)
   const amt = formatUnits(p.amount, decimals)
 
-  // Resolve Aave asset (op/base only)
-  let assetAddress: `0x${string}` | undefined
-  if (p.protocol === 'Aave v3' && isOpBase(p.chain)) {
-    const map = TokenAddresses[p.token] as {
-      optimism: `0x${string}`
-      base: `0x${string}`
-    }
-    assetAddress = map[p.chain]
-  }
-
-  // Resolve Comet pool (op/base + USDC|USDT only)
-  let cometAddress: `0x${string}` | undefined
-  if (p.protocol === 'Compound v3' && isOpBase(p.chain) && isCometToken(p.token)) {
-    cometAddress = COMET_POOLS[p.chain][p.token]
-  }
-
-  /** 
-   * Always call the hook in the same order.
-   * For Morpho Blue (or unsupported combos), we pass a dummy protocol/chain and keep `enabled` false internally
-   * because `assetAddress`/`cometAddress` will be `undefined`.
-   */
-  const normalizedProtocolForHook: 'Aave v3' | 'Compound v3' =
-    p.protocol === 'Compound v3' ? 'Compound v3' : 'Aave v3'
-  const chainForHook: 'optimism' | 'base' = isOpBase(p.chain) ? p.chain : 'optimism'
-
-  const { data: apyMaybe } = useApy(normalizedProtocolForHook, {
-    chain: chainForHook,
-    asset: assetAddress,
-    comet: cometAddress,
-  })
-
-  const apy = typeof apyMaybe === 'number' ? apyMaybe : null
+  // Morpho–Lisk APY from yields (token must match: USDCe | USDT0 | WETH)
+  const apy =
+    yields?.find(
+      (y) =>
+        y.protocolKey === 'morpho-blue' &&
+        y.chain === 'lisk' &&
+        y.token === p.token
+    )?.apy ?? null
 
   return (
     <Card className="relative overflow-hidden rounded-2xl bg-secondary/10 p-5 backdrop-blur-sm">

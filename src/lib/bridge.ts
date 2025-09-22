@@ -15,7 +15,7 @@ import { parseAbi, encodeFunctionData } from 'viem'
 import { optimism, base, lisk } from 'viem/chains'
 import { ADAPTER_KEYS, ROUTERS, TokenAddresses, SAFEVAULT } from './constants'
 import type { ChainId, TokenSymbol } from './constants'
-import { BigNumber, BigNumberish } from 'ethers'
+import {  BigNumberish } from 'ethers'
 import 'dotenv/config'
 
 
@@ -217,9 +217,9 @@ export async function bridgeAndDepositViaRouter(params: {
   const toToken     = tokenAddress(destToken, 'lisk')
   const routerAddr  = ROUTERS.lisk
 
-  // BigNumberish as HEX (removes any ambiguity)
-  const amountHex = `0x${amount.toString(16)}`
-  const zeroHex   = '0x0'
+  // // BigNumberish as HEX (removes any ambiguity)
+  // const amountHex = `0x${amount.toString(16)}`
+  // const zeroHex   = '0x0'
 
   // router.deposit(...)
   const depositCalldata = encodeFunctionData({

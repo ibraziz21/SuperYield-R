@@ -8,38 +8,32 @@ import { useYields, type Chain, type ProtocolKey as Proto, type YieldSnapshot } 
 import { YieldRow } from './YieldRow'
 
 const CHAIN_LABEL: Record<Chain, string> = {
-  optimism: 'Optimism',
-  base: 'Base',
   lisk: 'Lisk',
 }
 
 const PROTO_LABEL: Record<Proto, string> = {
-  'aave-v3': 'Aave v3',
-  'compound-v3': 'Compound v3',
   'morpho-blue': 'Morpho Blue',
 }
 
-const PROTO_ORDER: Proto[] = ['aave-v3', 'compound-v3', 'morpho-blue']
+const PROTO_ORDER: Proto[] = ['morpho-blue']
 
 // Normalize token symbols for display (optional; YieldRow can also do this)
 const DISPLAY_TOKEN: Record<string, string> = {
-  USDCe: 'USDC',
-  USDT0: 'USDT',
   USDC: 'USDC',
   USDT: 'USDT',
   WETH: 'WETH',
 }
 
-/** Hard filter: only show Lisk + Morpho Blue + (USDC/USDCe or USDT/USDT0) */
+/** Hard filter: only show Lisk + Morpho Blue + (USDC/USDT) */
 const HARD_FILTER = (y: Pick<YieldSnapshot, 'chain' | 'protocolKey' | 'token'>) =>
   y.chain === 'lisk' &&
   y.protocolKey === 'morpho-blue' &&
-  (y.token === 'USDC' || y.token === 'USDCe' || y.token === 'USDT' || y.token === 'USDT0')
+  (y.token === 'USDC' || y.token === 'USDT')
 
 export const YieldTable: FC = () => {
   const { yields, isLoading, error } = useYields()
 
-  // UI: search / sort (filters are hard-coded to Lisk + Morpho Blue + USDCe/USDT0)
+  // UI: search / sort (filters are hard-coded to Lisk + Morpho Blue + USDC/USDT)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<'apy_desc' | 'apy_asc' | 'tvl_desc' | 'tvl_asc'>('apy_desc')
 
@@ -47,7 +41,7 @@ export const YieldTable: FC = () => {
     if (!yields) return []
     const q = query.trim().toLowerCase()
 
-    // 1) Enforce Lisk + Morpho Blue + USDC(e)/USDT(0)
+    // 1) Enforce Lisk + Morpho Blue + USDC/USDT
     const onlyLiskMorpho = yields.filter((y) => HARD_FILTER(y))
 
     // 2) Optional text filter
@@ -71,7 +65,7 @@ export const YieldTable: FC = () => {
       }
     })
 
-    // 4) Keep protocol grouping stable (harmless here)
+    // 4) Keep protocol grouping stable (single protocol here but harmless)
     return sortedPrimary.sort((a, b) => {
       const ia = PROTO_ORDER.indexOf(a.protocolKey)
       const ib = PROTO_ORDER.indexOf(b.protocolKey)

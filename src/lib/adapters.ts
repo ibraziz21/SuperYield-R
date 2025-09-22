@@ -2,35 +2,27 @@
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { ADAPTER_KEYS, type AdapterKey } from './constants'
 
-/** Map YieldSnapshot to the adapter key your router expects. */
+/** Map YieldSnapshot → router adapter key (Morpho/Lisk only). */
 export function adapterKeyForSnapshot(s: YieldSnapshot): AdapterKey {
-  if (s.protocolKey === 'aave-v3') {
-    if (s.chain === 'optimism') return ADAPTER_KEYS.aaveOptimism
-    if (s.chain === 'base')     return ADAPTER_KEYS.aaveBase
-    throw new Error(`Aave not supported on chain ${s.chain}`)
+  if (s.protocolKey !== 'morpho-blue') {
+    throw new Error('Only Morpho Blue is supported in this build')
+  }
+  if (s.chain !== 'lisk') {
+    throw new Error(`Morpho Blue is only available on Lisk (got: ${s.chain})`)
   }
 
-  if (s.protocolKey === 'compound-v3') {
-    if (s.chain === 'optimism') {
-      if (s.token === 'USDC') return ADAPTER_KEYS.cometOpUSDC
-      if (s.token === 'USDT') return ADAPTER_KEYS.cometOpUSDT
-      throw new Error(`Compound(optimism) token not supported: ${s.token}`)
-    }
-    if (s.chain === 'base') {
-      if (s.token === 'USDC') return ADAPTER_KEYS.cometBaseUSDC
-      throw new Error(`Compound(base) token not supported: ${s.token}`)
-    }
-    throw new Error(`Compound not supported on chain ${s.chain}`)
+  // Snapshots usually carry base labels (USDC/USDT/WETH). If they already
+  // come in as USDCe/USDT0, handle that too.
+  switch (s.token) {
+    case 'USDC':
+    case 'USDCe':
+      return ADAPTER_KEYS.morphoLiskUSDCe
+    case 'USDT':
+    case 'USDT0':
+      return ADAPTER_KEYS.morphoLiskUSDT0
+    case 'WETH':
+      return ADAPTER_KEYS.morphoLiskWETH
+    default:
+      throw new Error(`Unsupported Morpho(Lisk) token: ${String(s.token)}`)
   }
-
-  if (s.protocolKey === 'morpho-blue') {
-    if (s.chain !== 'lisk') throw new Error('Morpho Blue is only on Lisk')
-    // Snapshots use base labels (USDC/USDT/WETH), but Lisk adapters want USDCe/USDT0/WETH.
-    if (s.token === 'USDC') return ADAPTER_KEYS.morphoLiskUSDCe
-    if (s.token === 'USDT') return ADAPTER_KEYS.morphoLiskUSDT0
-    if (s.token === 'WETH') return ADAPTER_KEYS.morphoLiskWETH
-    throw new Error(`Morpho(Lisk) token not supported: ${s.token}`)
-  }
-
-  throw new Error(`Unsupported protocolKey ${s.protocolKey}`)
 }

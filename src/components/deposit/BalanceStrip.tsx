@@ -1,7 +1,7 @@
 // src/components/BalanceStrip.tsx
 'use client'
 
-import { FC, useMemo } from 'react'
+import { FC } from 'react'
 import { formatUnits } from 'viem'
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { ChainPill } from './ui'

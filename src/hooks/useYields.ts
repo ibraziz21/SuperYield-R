@@ -1,16 +1,14 @@
 // src/hooks/useYields.ts
 //
-// React Query hook that returns a list of YieldSnapshot objects built
-// on-chain (see src/lib/fetchYields). Exporting the YieldSnapshot type
-// here keeps your app’s imports consistent.
+// Morpho Blue (Lisk) only. Export YieldSnapshot for consistency across the app.
 
 import { useQuery } from '@tanstack/react-query'
 import { fetchYields } from '@/lib/fetchYields'
 
-export type Chain = 'optimism' | 'base' | 'lisk'
-export type Protocol = 'Aave v3' | 'Compound v3' | 'Morpho Blue'
-export type ProtocolKey = 'aave-v3' | 'compound-v3' | 'morpho-blue'
-export type TokenSym = 'USDC' | 'USDT' | 'USDCe' | 'USDT0' | 'WETH'
+export type Chain = 'lisk'
+export type Protocol = 'Morpho Blue'
+export type ProtocolKey = 'morpho-blue'
+export type TokenSym = 'USDC' | 'USDT' | 'WETH' | 'USDCe' | 'USDT0'
 
 export interface YieldSnapshot {
   id: string
@@ -18,17 +16,17 @@ export interface YieldSnapshot {
   protocol: Protocol
   protocolKey: ProtocolKey
   poolAddress: `0x${string}`
-  token: TokenSym
-  apy: number
+  token: TokenSym            // display token (USDC/USDT/WETH)
+  apy: number               // Merkl APR (%)
   tvlUSD: number
   updatedAt: string
-  /** Underlying ERC-20 for Aave/Comet or vault asset on Lisk (or '' if n/a) */
-  underlying: `0x${string}` | ''
+  /** Vault asset on Lisk (USDCe/USDT0/WETH) */
+  underlying: `0x${string}`
 }
 
 export function useYields() {
   const query = useQuery<YieldSnapshot[], Error>({
-    queryKey: ['yields'],
+    queryKey: ['yields', 'morpho-lisk'],
     queryFn: fetchYields,
     staleTime: 60_000, // 1 min
     refetchOnWindowFocus: false,

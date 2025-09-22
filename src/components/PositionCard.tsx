@@ -8,14 +8,12 @@ import { erc20Abi } from 'viem'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/button'
 import { type Position as BasePosition } from '@/lib/positions'
-import { useApy } from '@/hooks/useAPY'
 import { useYields } from '@/hooks/useYields'
-import { TokenAddresses, COMET_POOLS } from '@/lib/constants'
+import { TokenAddresses, MORPHO_POOLS } from '@/lib/constants'
 import { publicOptimism } from '@/lib/clients'
 
 type EvmChain = 'optimism' | 'base' | 'lisk'
 type MorphoToken = 'USDCe' | 'USDT0' | 'WETH'
-type ProtocolName = 'Aave v3' | 'Compound v3' | 'Morpho Blue'
 
 type PositionLike =
   | BasePosition
@@ -32,16 +30,14 @@ interface Props {
   onWithdraw?: (p: PositionLike) => void
 }
 
-/** Decimals resolver kept super small but correct for our tokens */
-function tokenDecimals(protocol: ProtocolName, token: string): number {
-  const t = token as MorphoToken | 'USDC' | 'USDT'
-  if (protocol === 'Morpho Blue') {
-    if (t === 'WETH') return 18
-    if (t === 'USDCe' || t === 'USDT0') return 6
-    return 6
-  }
-  // Aave/Compound cards here are only USDC/USDT in your app
-  return 6
+/** Decimals resolver for Morpho tokens */
+function tokenDecimals(token: MorphoToken): number {
+  if (token === 'WETH') return 18
+  return 6 // USDCe & USDT0
+}
+
+function morphoDisplayToken(t: MorphoToken): 'USDC' | 'USDT' | 'WETH' {
+  return t === 'USDCe' ? 'USDC' : t === 'USDT0' ? 'USDT' : 'WETH'
 }
 
 export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
@@ -62,7 +58,7 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
   }, [user])
 
   // ─────────────────────────────────────────────────────────────
-  // OP receipt tokens (only for Morpho Blue)
+  // OP receipt tokens (for Morpho Blue)
   // USDCe → read sVault.optimismUSDC
   // USDT0 → read sVault.optimismUSDT
   // WETH   has no OP receipt → fall back to p.amount
@@ -82,23 +78,18 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
   useEffect(() => {
     if (p.protocol !== 'Morpho Blue') {
       setSvtBal(null)
-      console.debug('[PositionCard] skip SVault read (not Morpho Blue)')
       return
     }
     if (!VAULT_ADDR) {
       setSvtBal(null) // no receipt for this token; we'll use p.amount
-      console.debug('[PositionCard] no OP receipt vault for', String(p.token))
       return
     }
     if (!user) {
       setSvtBal(null)
-      console.debug('[PositionCard] skip SVault read (no user)')
       return
     }
 
     let cancelled = false
-    console.log('[PositionCard] fetching SVault balance', { user, vault: VAULT_ADDR, token: String(p.token) })
-
     ;(async () => {
       try {
         const [dec, bal] = await Promise.all([
@@ -118,16 +109,10 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
         if (!cancelled) {
           setSvtDec(dec ?? 6)
           setSvtBal(bal ?? 0n)
-          console.log('[PositionCard] SVault read ok', {
-            token: String(p.token),
-            decimals: dec,
-            balance: bal.toString(),
-          })
         }
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           setSvtBal(0n)
-          console.error('[PositionCard] SVault read failed', err)
         }
       }
     })()
@@ -138,11 +123,11 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
   }, [p.protocol, p.token, user, VAULT_ADDR])
 
   // ----- Amount to display -----
-  const decs = tokenDecimals(p.protocol as ProtocolName, p.token as string)
+  const decs = p.protocol === 'Morpho Blue'
+    ? tokenDecimals(p.token as MorphoToken)
+    : 6
 
-  // For Morpho Blue:
-  // - If we have an OP receipt vault for this token, prefer that live balance
-  // - Otherwise, use p.amount directly (already underlying units from fetchPositions)
+  // Prefer OP receipt balance when available
   const displayAmt =
     p.protocol === 'Morpho Blue'
       ? VAULT_ADDR != null && svtBal != null
@@ -161,59 +146,32 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
     })
   }, [displayAmt, decs, p.protocol, p.token, svtBal, svtDec, VAULT_ADDR])
 
-  // ----- Aave/Compound address resolution (unchanged) -----
-  let assetAddress: `0x${string}` | undefined
-  let cometAddress: `0x${string}` | undefined
-
-  if (p.protocol === 'Aave v3' && (p.chain === 'optimism' || p.chain === 'base')) {
-    if (p.token === 'USDC' || p.token === 'USDT') {
-      const tokenMap = TokenAddresses[p.token] as {
-        optimism: `0x${string}`
-        base: `0x${string}`
-      }
-      assetAddress = tokenMap[p.chain]
-    }
-  }
-
-  if (
-    p.protocol === 'Compound v3' &&
-    (p.chain === 'optimism' || p.chain === 'base') &&
-    (p.token === 'USDC' || p.token === 'USDT')
-  ) {
-    cometAddress = COMET_POOLS[p.chain][p.token]
-  }
-
-  // ----- APY (keep existing behavior) -----
-  const { data: apyHook } = useApy(
-    p.protocol === 'Morpho Blue' ? 'Aave v3' : (p.protocol as 'Aave v3' | 'Compound v3'),
-    { chain: (p.chain === 'lisk' ? 'base' : p.chain) as 'optimism' | 'base', asset: assetAddress, comet: cometAddress },
-  )
+  // ----- APY from Morpho yields -----
   const { yields } = useYields()
-  const morphoApy =
-    p.protocol === 'Morpho Blue'
-      ? yields?.find(y => y.protocolKey === 'morpho-blue' && y.chain === 'lisk' && y.token === p.token)?.apy
-      : undefined
-  const apy =
-    p.protocol === 'Morpho Blue'
-      ? typeof morphoApy === 'number' ? morphoApy : undefined
-      : typeof apyHook === 'number' ? apyHook : undefined
+  const displayToken = morphoDisplayToken(p.token as MorphoToken)
+  const vaultAddr =
+    p.token === 'USDCe'
+      ? MORPHO_POOLS['usdce-supply']
+      : p.token === 'USDT0'
+      ? MORPHO_POOLS['usdt0-supply']
+      : MORPHO_POOLS['weth-supply']
 
-  useEffect(() => {
-    console.debug('[PositionCard] APY resolved', {
-      protocol: p.protocol,
-      apyHook,
-      morphoApy,
-      finalApy: apy,
-    })
-  }, [apy, apyHook, morphoApy, p.protocol])
+  const morphoApy =
+    yields?.find(
+      (y) =>
+        y.protocolKey === 'morpho-blue' &&
+        y.chain === 'lisk' &&
+        (y.token === displayToken ||
+         y.poolAddress.toLowerCase() === vaultAddr.toLowerCase()),
+    )?.apy
 
   return (
     <Card className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-50 via-white to-gray-50 p-5 shadow transition hover:-translate-y-1 hover:shadow-lg dark:from-white/5 dark:via-gray-900 dark:to-gray-800">
       <CardContent>
         <div className="flex items-center justify-between text-xs uppercase text-gray-500 dark:text-gray-400">
           <span>{p.chain}</span>
-          {typeof apy === 'number' && (
-            <span className="text-teal-600 dark:text-teal-400">{apy.toFixed(2)}%</span>
+          {typeof morphoApy === 'number' && (
+            <span className="text-teal-600 dark:text-teal-400">{morphoApy.toFixed(2)}%</span>
           )}
         </div>
 
@@ -228,14 +186,7 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
           <Button
             size="sm"
             className="bg-teal-600 hover:bg-teal-500"
-            onClick={() => {
-              console.log('[PositionCard] Supply clicked', {
-                protocol: p.protocol,
-                chain: p.chain,
-                token: String(p.token),
-              })
-              onSupply?.(p)
-            }}
+            onClick={() => onSupply?.(p)}
             disabled={!onSupply}
             title={onSupply ? 'Supply' : 'Supply (unavailable)'}
           >
@@ -244,14 +195,7 @@ export const PositionCard: FC<Props> = ({ p, onSupply, onWithdraw }) => {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => {
-              console.log('[PositionCard] Withdraw clicked', {
-                protocol: p.protocol,
-                chain: p.chain,
-                token: String(p.token),
-              })
-              onWithdraw?.(p)
-            }}
+            onClick={() => onWithdraw?.(p)}
             disabled={!onWithdraw}
             title={onWithdraw ? 'Withdraw' : 'Withdraw (unavailable)'}
           >

@@ -8,22 +8,30 @@ import type { YieldSnapshot } from '@/hooks/useYields'
 import { ChainPill } from './ui'
 import type { EvmChain } from './types'
 
+
+type DestToken =
+  | 'USDC'
+  | 'USDT'
+  | 'USDCe'
+  | 'USDT0'
+  | 'WETH'
+
+
+
 interface Props {
   amount: string
   setAmount: (v: string) => void
   tokenDecimals: number
   snap: YieldSnapshot
   isLiskTarget: boolean
-  destTokenLabel: YieldSnapshot['token']
+  destTokenLabel: DestToken // <- widen type to include USDCe/USDT0
   isUsdtFamily: boolean
   opBal: bigint | null
   baBal: bigint | null
   liBal: bigint | null
   liBalUSDT: bigint | null
   liBalUSDT0: bigint | null
-  /** NEW: user-chosen source asset when bridging to Lisk:USDT0 */
   sourceAsset?: 'USDC' | 'USDT'
-  /** NEW: extra OP/Base balances for USDC and USDT (optional) */
   opUsdcBal?: bigint | null
   baUsdcBal?: bigint | null
   opUsdtBal?: bigint | null

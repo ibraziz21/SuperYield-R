@@ -1,4 +1,6 @@
 // src/hooks/useUsdPrices.ts
+// (Unchanged in spirit; generic helper that also covers LSK/ETH for reward math.)
+
 import { useQuery } from '@tanstack/react-query'
 
 /** Very small price map focused on what you’ll actually see in Merkl rewards. */
@@ -22,7 +24,7 @@ export function useUsdPrices() {
       const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`
       const res = await fetch(url, { cache: 'no-store' })
       if (!res.ok) throw new Error('Price fetch failed')
-      const data = await res.json() as Record<string, { usd: number }>
+      const data = (await res.json()) as Record<string, { usd: number }>
 
       const map: Record<Sym, number> = {
         ETH: data[COINGECKO_IDS.ETH]?.usd ?? 0,
