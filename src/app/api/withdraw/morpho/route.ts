@@ -62,7 +62,7 @@ const liskWallet = createWalletClient({ chain: lisk,     transport: http(LSK_RPC
 /* ─────────────── ABIs ─────────────── */
 const ERC4626_ABI = parseAbi([
   'function asset() view returns (address)',
-  'function deposit(uint256 assets, address receiver) returns (uint256 shares)',
+  'function supply(address asset, address onBehalf, uint256 amount, bytes data) external',
   'function withdraw(uint256 assets, address receiver, address owner) returns (uint256 shares)',
 ])
 
@@ -115,14 +115,14 @@ async function recordDepositBackOnOP(params: {
 }
 
 async function depositAssetsBackToVaultOnLisk(params: {
-  token: `0x${string}`      // vault asset on Lisk (USDCe/USDT0)
-  vault: `0x${string}`      // Morpho ERC4626 supply vault on Lisk
-  safe:  `0x${string}`      // Lisk Safe (owner of the vault shares)
-  wantAssets: bigint        // target "put-back" amount (usually pre-bridge relayer bal or requestedAssets)
+  token: `0x${string}`   // underlying on Lisk (USDT0/USDCe)
+  vault: `0x${string}`   // ✨ Morpho Blue POOL address (spender + callee)
+  safe:  `0x${string}`   // Safe that should receive the position
+  wantAssets: bigint
 }) {
   const { token, vault, safe, wantAssets } = params
 
-  // 1) How much do we currently hold on the relayer?
+  // 1) relayer balance of underlying
   const bal = (await liskPublic.readContract({
     address: token,
     abi: ERC20_ABI,
@@ -135,7 +135,7 @@ async function depositAssetsBackToVaultOnLisk(params: {
     return { resetTx: null, approveTx: null, deposited: null, depositedAmt: 0n as bigint }
   }
 
-  // 2) USDT-safe allowance flow (many tokens disallow non-zero→non-zero approve)
+  // 2) USDT-safe approvals to the POOL (spender = pool)
   let resetTx: `0x${string}` | null = null
   let approveTx: `0x${string}` | null = null
 
@@ -149,7 +149,6 @@ async function depositAssetsBackToVaultOnLisk(params: {
   try {
     if (currAllowance < toDeposit) {
       if (currAllowance !== 0n) {
-        // reset to 0 first for USDT-style compliance
         const { request: resetReq } = await liskPublic.simulateContract({
           address: token,
           abi: ERC20_ABI,
@@ -160,7 +159,6 @@ async function depositAssetsBackToVaultOnLisk(params: {
         resetTx = await liskWallet.writeContract(resetReq)
         await liskPublic.waitForTransactionReceipt({ hash: resetTx })
       }
-
       const { request: approveReq } = await liskPublic.simulateContract({
         address: token,
         abi: ERC20_ABI,
@@ -172,28 +170,26 @@ async function depositAssetsBackToVaultOnLisk(params: {
       await liskPublic.waitForTransactionReceipt({ hash: approveTx })
     }
   } catch (e) {
-    // If approvals fail for any reason, fall back to transferring assets back to the Safe.
-    console.error('[compensate] approve failed, falling back to transfer', e)
+    console.error('[compensate] approve failed → transfer back', e)
     const xfer = await transferAssetsBackToSafeOnLisk({ token, safe })
     return { resetTx, approveTx, deposited: xfer.tx, depositedAmt: 0n }
   }
 
-  // 3) Deposit to vault, minting shares directly to the SAFE
+  // 3) Morpho resupply to SAFE (onBehalf = Safe)
   try {
-    const { request: depositReq } = await liskPublic.simulateContract({
-      address: vault,
+    const { request: supplyReq } = await liskPublic.simulateContract({
+      address: vault,                 // pool
       abi: ERC4626_ABI,
-      functionName: 'deposit',
-      args: [toDeposit, safe],
+      functionName: 'supply',
+      args: [token, safe, toDeposit, '0x'],
       account: relayer,
     })
-    const depositTx = await liskWallet.writeContract(depositReq)
+    const depositTx = await liskWallet.writeContract(supplyReq)
     await liskPublic.waitForTransactionReceipt({ hash: depositTx })
 
     return { resetTx, approveTx, deposited: depositTx, depositedAmt: toDeposit }
   } catch (e) {
-    console.error('[compensate] deposit failed, falling back to transfer', e)
-    // Worst case: can’t deposit — just transfer the assets back to the SAFE as raw tokens.
+    console.error('[compensate] supply failed → transfer back', e)
     const xfer = await transferAssetsBackToSafeOnLisk({ token, safe })
     return { resetTx, approveTx, deposited: xfer.tx, depositedAmt: 0n }
   }
@@ -265,7 +261,7 @@ export async function POST(req: Request) {
     })) as `0x${string}`
 
     const requestedAssets = BigInt(assetsIn)
-    const withdrawAssets  = (requestedAssets * 995n) / 1000n // 0.5% buffer
+    const withdrawAssets  = (requestedAssets * 994n) / 1000n // 0.5% buffer
 
     if (withdrawAssets === 0n) {
       return NextResponse.json({ ok: false, error: 'Withdraw amount too small' }, { status: 400 })
