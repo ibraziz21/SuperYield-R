@@ -18,17 +18,17 @@ const PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY || ''
 if (!PRIVATE_KEY) throw new Error('RELAYER_PRIVATE_KEY missing')
 const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
 
-// Lisk clients (USDT0 lives on Lisk)
+// Lisk clients (bridged USDT0 sits in relayer EOA here)
 const liskClient = createWalletClient({ account, chain: lisk, transport: http() })
 const liskPublic = createPublicClient({ chain: lisk, transport: http() })
 
-// Optimism clients (receipt token bookkeeping lives on OP)
+// Optimism clients (receipt bookkeeping lives on OP)
 const opPublic = createPublicClient({ chain: optimism, transport: http() })
 const opClient = createWalletClient({ account, chain: optimism, transport: http() })
 
 // Addresses
 const USDT0         = TokenAddresses.USDT0.lisk as `0x${string}`
-const MORPHO_POOL   = MORPHO_POOLS['usdt0-supply'] as `0x${string}`
+const MORPHO_POOL   = MORPHO_POOLS['usdt0-supply'] as `0x${string}` // ERC4626-like vault with deposit(uint256,address)
 const REWARDS_VAULT = '0x1aDBe89F2887a79C64725128fd1D53b10FD6b441' as `0x${string}`
 
 // ABIs
@@ -36,8 +36,7 @@ const ERC20_APPROVE_ABI = parseAbi([
   'function approve(address spender, uint256 value) external returns (bool)',
 ])
 
-
-/* helpers */
+/* ── helpers ───────────────────────────────────────────────────── */
 async function readRelayerBal(): Promise<bigint> {
   return (await liskPublic.readContract({
     address: USDT0,
@@ -56,14 +55,34 @@ async function readAllowance(spender: `0x${string}`): Promise<bigint> {
   })) as bigint
 }
 
+// Robust waiter to avoid Lisk RPC's "block is out of range" during waits
+async function waitReceipt(
+  which: 'lisk' | 'op',
+  hash: `0x${string}`,
+  { timeoutMs = 15 * 60_000, pollMs = 5_000 }: { timeoutMs?: number; pollMs?: number } = {},
+) {
+  const pub = which === 'lisk' ? liskPublic : opPublic
+  const end = Date.now() + timeoutMs
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const r = await pub.getTransactionReceipt({ hash })
+      if (r) return r
+    } catch {
+      // swallow "not found" / -32019 and keep polling
+    }
+    if (Date.now() > end) throw new Error('Timeout waiting for tx receipt')
+    await new Promise((r) => setTimeout(r, pollMs))
+  }
+}
+
+/* ── route ─────────────────────────────────────────────────────── */
 export async function POST(req: Request) {
-  const { userAddress, tokenAmt, expectedMin, timeoutMs, pollMs } = (await req
-    .json()
-    .catch(() => ({}))) as {
+  const { userAddress, tokenAmt, expectedMin, timeoutMs, pollMs } = (await req.json().catch(() => ({}))) as {
     userAddress?: `0x${string}`
     tokenAmt?: string            // exact bridged amount (skip waiting if provided)
-    expectedMin?: string         // optional: min amount expected to arrive (bridged)
-    timeoutMs?: number           // optional: default 15 minutes
+    expectedMin?: string         // optional: min arrival amount to wait for (dec string)
+    timeoutMs?: number           // optional: default 15m
     pollMs?: number              // optional: default 10s
   }
 
@@ -83,6 +102,8 @@ export async function POST(req: Request) {
       const every = pollMs ?? 10_000
 
       let curr = await readRelayerBal()
+      // wait for bridged funds (delta≥want if provided, else any positive delta)
+      // eslint-disable-next-line no-constant-condition
       while (true) {
         const delta = curr - start
         if (expectedMin ? (delta >= want || curr >= want) : (delta > 0n)) break
@@ -96,10 +117,9 @@ export async function POST(req: Request) {
 
     if (amount <= 0n) throw new Error('No tokens available to deposit')
 
-    /* 2) Approvals for USDT-like tokens (no explicit nonce; wait between txs) */
+    /* 2) USDT-style approvals (only if needed), and wait between txs */
     const allowance = await readAllowance(MORPHO_POOL)
     if (allowance < amount) {
-      // If non-zero allowance, reset to 0 first (USDT-style)
       if (allowance > 0n) {
         const { request } = await liskPublic.simulateContract({
           address: USDT0,
@@ -109,10 +129,8 @@ export async function POST(req: Request) {
           account,
         })
         const tx = await liskClient.writeContract(request)
-        await liskPublic.waitForTransactionReceipt({ hash: tx })
+        await waitReceipt('lisk', tx, { timeoutMs, pollMs })
       }
-
-      // Set exact allowance
       {
         const { request } = await liskPublic.simulateContract({
           address: USDT0,
@@ -122,22 +140,22 @@ export async function POST(req: Request) {
           account,
         })
         const tx = await liskClient.writeContract(request)
-        await liskPublic.waitForTransactionReceipt({ hash: tx })
+        await waitReceipt('lisk', tx, { timeoutMs, pollMs })
       }
     }
 
-    /* 3) Supply to Morpho pool (onBehalfOf = SAFE) */
+    /* 3) Vault deposit: deposit(amount, receiver=SAFEVAULT) */
     const { request: supplyReq } = await liskPublic.simulateContract({
       address: MORPHO_POOL,
       abi: morphoAbi,
       functionName: 'deposit',
-      args: [amount, SAFEVAULT as `0x${string}`, ],
+      args: [amount, SAFEVAULT as `0x${string}`],
       account,
     })
     const depositTx = await liskClient.writeContract(supplyReq)
-    await liskPublic.waitForTransactionReceipt({ hash: depositTx })
+    await waitReceipt('lisk', depositTx, { timeoutMs, pollMs })
 
-    /* 4) Record/mint on Optimism */
+    /* 4) Record/mint receipts on OP */
     const { request: recordReq } = await opPublic.simulateContract({
       address: REWARDS_VAULT,
       abi: rewardsAbi,
@@ -146,7 +164,7 @@ export async function POST(req: Request) {
       account,
     })
     const mintTx = await opClient.writeContract(recordReq)
-    await opPublic.waitForTransactionReceipt({ hash: mintTx })
+    await waitReceipt('op', mintTx, { timeoutMs, pollMs })
 
     return Response.json({ success: true, depositTx, mintTx, amount: amount.toString() })
   } catch (err: any) {
