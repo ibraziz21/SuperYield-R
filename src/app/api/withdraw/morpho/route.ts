@@ -95,6 +95,32 @@ function ensureLifiServer() {
   LIFI_READY = true
 }
 
+async function waitForTokenBalance(opts: {
+  client: typeof liskPublic
+  token: `0x${string}`
+  holder: `0x${string}`
+  min: bigint
+  timeoutMs?: number
+  intervalMs?: number
+}) {
+  const { client, token, holder, min, timeoutMs = 45000, intervalMs = 2500 } = opts
+  const start = Date.now()
+  let last = 0n
+  // read with the SAME client you’ll use in executeRoute
+  while (Date.now() - start < timeoutMs) {
+    const bal = await client.readContract({
+      address: token,
+      abi: ERC20_ABI,
+      functionName: 'balanceOf',
+      args: [holder],
+    }) as bigint
+    last = bal
+    if (bal >= min) return bal
+    await new Promise(r => setTimeout(r, intervalMs))
+  }
+  throw new Error(`timeout: waiting for ${min} tokens; last=${last}`)
+}
+
 /* ─────────────── Compensating actions ─────────────── */
 async function recordDepositBackOnOP(params: {
   rewardsVault: `0x${string}`
@@ -339,6 +365,16 @@ export async function POST(req: Request) {
       }, { status: 500 })
     }
 
+    const minNeeded = withdrawAssets
+const relayerBalReady = await waitForTokenBalance({
+  client: liskPublic,
+  token: vaultAsset,
+  holder: relayer.address as `0x${string}`,
+  min: minNeeded,
+})
+// be conservative: bridge the lesser of balance and planned amount
+const fromAmount = relayerBalReady < withdrawAssets ? relayerBalReady : withdrawAssets
+
     /* 3) Bridge Lisk:{USDCe|USDT0} → OP:{USDC|USDT} to user */
     ensureLifiServer()
 
@@ -353,7 +389,7 @@ export async function POST(req: Request) {
       tokenKind,
       fromChain: lisk.id, toChain: optimism.id,
       fromToken: vaultAsset, toToken: toTokenOP,
-      fromAmount: withdrawAssets.toString(),
+      fromAmount: fromAmount.toString(),
       fromAddress: relayer.address, toAddress: user,
       relayerBalBefore: relayerBalBefore.toString(),
     })
@@ -394,12 +430,14 @@ export async function POST(req: Request) {
 
       let depositedAmt = 0n
       try {
+        const freshBal = await liskPublic.readContract({ address: vaultAsset, abi: ERC20_ABI, functionName: 'balanceOf', args: [relayer.address] }) as bigint
         const res = await depositAssetsBackToVaultOnLisk({
           token: vaultAsset,
           vault: vault4626,
           safe: liskSafe,
-          wantAssets: relayerBalBefore,
+          wantAssets: freshBal, // use fresh balance
         })
+        
         depositedAmt = res.depositedAmt
         console.warn('[compensate] depositBack result', res)
       } catch (depErr: any) {
