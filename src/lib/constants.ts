@@ -12,6 +12,8 @@ function makeKey(s: string): AdapterKey {
   return keccak256(toBytes(s)) as AdapterKey
 }
 
+export const RELAYER_LISK = process.env.NEXT_PUBLIC_LISK_RELAYER as `0x${string}`; 
+
 /** Must match the keys hardcoded/derived in your contracts */
 export const ADAPTER_KEYS = {
   // MORPHO BLUE (Lisk)

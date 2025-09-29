@@ -451,8 +451,8 @@ const fromAmount = relayerBalReady < withdrawAssets ? relayerBalReady : withdraw
       }
 
       try {
-        const mintTx = await recordDepositBackOnOP({ rewardsVault, user, amountShares: withdrawAssets })
-        console.warn('[compensate] recordDeposit back ok', { mintTx, shares: withdrawAssets.toString() })
+        const mintTx = await recordDepositBackOnOP({ rewardsVault, user, amountShares: requestedAssets })
+        console.warn('[compensate] recordDeposit back ok', { mintTx, shares: requestedAssets.toString() })
       } catch (mintErr: any) {
         console.error('[compensate] recordDeposit back FAILED', mintErr?.message || mintErr)
       }
