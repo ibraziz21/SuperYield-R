@@ -62,13 +62,17 @@ const liskWallet = createWalletClient({ chain: lisk,     transport: http(LSK_RPC
 /* ─────────────── ABIs ─────────────── */
 const ERC4626_ABI = parseAbi([
   'function asset() view returns (address)',
+  'function deposit(uint256 assets, address receiver) returns (uint256 shares)',
   'function withdraw(uint256 assets, address receiver, address owner) returns (uint256 shares)',
 ])
+
 const ERC20_ABI = parseAbi([
   'function balanceOf(address) view returns (uint256)',
+  'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 value) returns (bool)',
   'function transfer(address to, uint256 value) returns (bool)',
 ])
+
 
 /* ─────────────── LI.FI server configuration ─────────────── */
 let LIFI_READY = false
@@ -111,12 +115,14 @@ async function recordDepositBackOnOP(params: {
 }
 
 async function depositAssetsBackToVaultOnLisk(params: {
-  token: `0x${string}`
-  vault: `0x${string}`
-  safe: `0x${string}`
-  wantAssets: bigint
+  token: `0x${string}`      // vault asset on Lisk (USDCe/USDT0)
+  vault: `0x${string}`      // Morpho ERC4626 supply vault on Lisk
+  safe:  `0x${string}`      // Lisk Safe (owner of the vault shares)
+  wantAssets: bigint        // target "put-back" amount (usually pre-bridge relayer bal or requestedAssets)
 }) {
   const { token, vault, safe, wantAssets } = params
+
+  // 1) How much do we currently hold on the relayer?
   const bal = (await liskPublic.readContract({
     address: token,
     abi: ERC20_ABI,
@@ -125,31 +131,72 @@ async function depositAssetsBackToVaultOnLisk(params: {
   })) as bigint
 
   const toDeposit = bal >= wantAssets ? wantAssets : bal
-  if (toDeposit === 0n) return { approved: null, deposited: null, depositedAmt: 0n as bigint }
+  if (toDeposit === 0n) {
+    return { resetTx: null, approveTx: null, deposited: null, depositedAmt: 0n as bigint }
+  }
 
-  const { request: approveReq } = await liskPublic.simulateContract({
+  // 2) USDT-safe allowance flow (many tokens disallow non-zero→non-zero approve)
+  let resetTx: `0x${string}` | null = null
+  let approveTx: `0x${string}` | null = null
+
+  const currAllowance = (await liskPublic.readContract({
     address: token,
     abi: ERC20_ABI,
-    functionName: 'approve',
-    args: [vault, toDeposit],
-    account: relayer,
-  })
-  const approveTx = await liskWallet.writeContract(approveReq)
-  await liskPublic.waitForTransactionReceipt({ hash: approveTx })
+    functionName: 'allowance',
+    args: [relayer.address, vault],
+  })) as bigint
 
-  const { request: depositReq } = await liskPublic.simulateContract({
-    address: vault,
-    abi: ERC4626_ABI,
-    functionName: 'withdraw', // we actually need deposit(assets, receiver), but not used in compensation anymore
-    // intentionally omitted — if you want a strict "put back", replace this with ERC4626 deposit
-    // keeping structure minimal for now
-    args: [0n, safe, safe], // NO-OP placeholder; see note above if you implement strict compensation
-    account: relayer,
-  })
-  const depositTx = await liskWallet.writeContract(depositReq)
-  await liskPublic.waitForTransactionReceipt({ hash: depositTx })
+  try {
+    if (currAllowance < toDeposit) {
+      if (currAllowance !== 0n) {
+        // reset to 0 first for USDT-style compliance
+        const { request: resetReq } = await liskPublic.simulateContract({
+          address: token,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [vault, 0n],
+          account: relayer,
+        })
+        resetTx = await liskWallet.writeContract(resetReq)
+        await liskPublic.waitForTransactionReceipt({ hash: resetTx })
+      }
 
-  return { approved: approveTx, deposited: depositTx, depositedAmt: toDeposit }
+      const { request: approveReq } = await liskPublic.simulateContract({
+        address: token,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [vault, toDeposit],
+        account: relayer,
+      })
+      approveTx = await liskWallet.writeContract(approveReq)
+      await liskPublic.waitForTransactionReceipt({ hash: approveTx })
+    }
+  } catch (e) {
+    // If approvals fail for any reason, fall back to transferring assets back to the Safe.
+    console.error('[compensate] approve failed, falling back to transfer', e)
+    const xfer = await transferAssetsBackToSafeOnLisk({ token, safe })
+    return { resetTx, approveTx, deposited: xfer.tx, depositedAmt: 0n }
+  }
+
+  // 3) Deposit to vault, minting shares directly to the SAFE
+  try {
+    const { request: depositReq } = await liskPublic.simulateContract({
+      address: vault,
+      abi: ERC4626_ABI,
+      functionName: 'deposit',
+      args: [toDeposit, safe],
+      account: relayer,
+    })
+    const depositTx = await liskWallet.writeContract(depositReq)
+    await liskPublic.waitForTransactionReceipt({ hash: depositTx })
+
+    return { resetTx, approveTx, deposited: depositTx, depositedAmt: toDeposit }
+  } catch (e) {
+    console.error('[compensate] deposit failed, falling back to transfer', e)
+    // Worst case: can’t deposit — just transfer the assets back to the SAFE as raw tokens.
+    const xfer = await transferAssetsBackToSafeOnLisk({ token, safe })
+    return { resetTx, approveTx, deposited: xfer.tx, depositedAmt: 0n }
+  }
 }
 
 async function transferAssetsBackToSafeOnLisk(params: {
