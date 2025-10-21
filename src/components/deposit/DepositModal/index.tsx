@@ -5,7 +5,7 @@ import { FC, useEffect, useMemo, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAppKit } from '@reown/appkit/react'
 import { useWalletClient } from 'wagmi'
-import { parseUnits } from 'viem'
+import { keccak256, parseUnits } from 'viem'
 import { getQuote, convertQuoteToRoute, executeRoute } from '@lifi/sdk'
 import { optimism, base, lisk as liskChain } from 'viem/chains'
 
@@ -43,6 +43,17 @@ function toLiskDestLabel(src: YieldSnapshot['token']): 'USDCe' | 'USDT0' | 'WETH
   if (src === 'USDC') return 'USDCe'
   if (src === 'USDT') return 'USDT0'
   return 'WETH'
+}
+async function ensureWalletChain(walletClient: any, chainId: number) {
+  // no-op if already on this chain
+  try {
+    // Some wallet clients expose .chain.id; if not, the switch will just be idempotent
+    if ((walletClient as any)?.chain?.id === chainId) return
+  } catch {}
+  await walletClient.request({
+    method: 'wallet_switchEthereumChain',
+    params: [{ chainId: `0x${chainId.toString(16)}` }],
+  })
 }
 
 interface DepositModalProps {
@@ -219,62 +230,208 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     sourceAsset, opUsdcBal, baUsdcBal, opUsdtBal, baUsdtBal,
   ])
 
-  /* -------- confirm action -------- */
+  const VAULT_TOKEN_DECIMALS = 6
+  const pow10 = (n: number) => BigInt(10) ** BigInt(n)
+  const scaleAmount = (amt: bigint, fromDec: number, toDec: number) => {
+    if (toDec === fromDec) return amt
+    if (toDec > fromDec) return amt * pow10(toDec - fromDec)
+    return amt / pow10(fromDec - toDec)
+  }
+  const applyBuffer998 = (amt: bigint) => (amt * 997n) / 1000n
+  
+  // quick 32-byte random refId
+  function randomRefId(): `0x${string}` {
+    const b = new Uint8Array(32)
+    crypto.getRandomValues(b)
+    // tiny hash to uniformize
+    const h = keccak256(b)
+    return h as `0x${string}`
+  }
+  
+  // tap hashes from a Li.Fi route update (origin/dest)
+  function tapHashes(route: any) {
+    const steps = route?.steps || []
+    const first = steps[0]
+    const last = steps[steps.length - 1]
+  
+    const originProc = first?.execution?.process?.find((p: any) => p?.txHash)
+    const destProc   = last?.execution?.process?.find((p: any) => p?.txHash)
+  
+    return {
+      fromTxHash: originProc?.txHash as `0x${string}` | undefined,
+      toTxHash: destProc?.txHash as `0x${string}` | undefined,
+      fromChainId: route?.fromChainId ?? first?.action?.fromChainId,
+      toChainId: route?.toChainId ?? last?.action?.toChainId,
+      toAddress: last?.action?.toAddress,
+      toTokenAddress: last?.action?.toToken?.address,
+      toTokenSymbol: last?.action?.toToken?.symbol,
+    }
+  }
+  
   async function handleConfirm() {
     if (!walletClient) { openConnect(); return }
     setError(null)
-
+  
     try {
       const inputAmt = parseUnits(amount || '0', tokenDecimals)
       const user = walletClient.account!.address as `0x${string}`
-
       if (snap.chain !== 'lisk') throw new Error('Only Lisk deposits are supported in this build')
-
-      const destLabelForBridge = (snap.token === 'USDC' ? 'USDCe'
-                                : snap.token === 'USDT' ? 'USDT0'
-                                : 'WETH') as 'USDCe' | 'USDT0' | 'WETH'
-
-      // Helper for OP/Base source selection
+  
+      // Which Lisk asset are we targeting?
+      const destLabelForBridge =
+        snap.token === 'USDC' ? 'USDCe' :
+        snap.token === 'USDT' ? 'USDT0' :
+        'WETH' as 'USDCe'|'USDT0'|'WETH'
+  
+      // Helper for OP/Base selection
       const pickSrcBy = (o?: bigint | null, b?: bigint | null): 'optimism' | 'base' => {
         const op = o ?? 0n, ba = b ?? 0n
         if (op >= inputAmt) return 'optimism'
         if (ba >= inputAmt) return 'base'
         return op >= ba ? 'optimism' : 'base'
       }
-
-      /* ─────────────── USDT0: UI bridges to RELAYER_EOA; server does all relayer ops ─────────────── */
+  
+      /* ──────────────────────────────────────────────────────────
+         PATH A: USDT0 → Intent + tx-hash based settlement
+         ────────────────────────────────────────────────────────── */
       if (destLabelForBridge === 'USDT0') {
         if (!RELAYER_LISK || RELAYER_LISK === '0xREPLACE_ME') {
           throw new Error('Relayer address not configured (NEXT_PUBLIC_LISK_RELAYER)')
         }
-
+  
+        // choose src chain & token for bridge (USDC or USDT)
+        const srcToken = sourceAsset // 'USDC' | 'USDT' (picked in UI)
         const fromChain: 'optimism' | 'base' =
-          sourceAsset === 'USDC'
-            ? pickSrcBy(opUsdcBal, baUsdcBal)
-            : pickSrcBy(opUsdtBal, baUsdtBal)
+          srcToken === 'USDC' ? pickSrcBy(opUsdcBal, baUsdcBal) : pickSrcBy(opUsdtBal, baUsdtBal)
+  
+        // 1) Sign intent (anti-spoofing)
+        const adapterKey = adapterKeyForSnapshot(snap)
+        const assetLisk  = tokenAddrFor('USDT0', 'lisk')
+        const minAmount  = applyBuffer998(inputAmt) // 0.3% slack
+        const deadline   = BigInt(Math.floor(Date.now()/1000) + 20*60) // 20m
+        const nonce      = BigInt(Math.floor(Math.random() * 1e12))
+        const refId      = randomRefId()
+  
+        // EIP-712 domain/types/message (sign on the src chain’s id)
+        const chainIdForSig = fromChain === 'optimism' ? optimism.id : base.id
 
+        await ensureWalletChain(walletClient, chainIdForSig)
+        const domain = { name: 'SuperYLDR', version: '1', chainId: chainIdForSig }
+        const types = {
+          DepositIntent: [
+            { name: 'user',     type: 'address'  },
+            { name: 'key',      type: 'bytes32'  },
+            { name: 'asset',    type: 'address'  },
+            { name: 'amount',   type: 'uint256'  },
+            { name: 'deadline', type: 'uint256'  },
+            { name: 'nonce',    type: 'uint256'  },
+            { name: 'refId',    type: 'bytes32'  },
+          ],
+        } as const
+        const message = {
+          user,
+          key: adapterKey,
+          asset: assetLisk,
+          amount: minAmount,
+          deadline,
+          nonce,
+          refId,
+        } as const
+  
+        // NB: wagmi/viem signTypedData requires explicit type assertions
+        const signature = await walletClient.signTypedData({
+          account: user,
+          domain,
+          types,
+          primaryType: 'DepositIntent',
+          message,
+        } as any)
+  
+        // 2) Create intent (server verifies signature, stores row)
+        const createRes = await fetch('/api/create-intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            intent: {
+              user,
+              adapterKey,
+              asset: assetLisk,
+              amount: minAmount.toString(),
+              deadline: deadline.toString(),
+              nonce: nonce.toString(),
+              refId,
+              // helpful context (not signed): fromChain, srcToken
+              fromChain,
+              srcToken,
+            },
+            signature,
+          }),
+        })
+        if (!createRes.ok) throw new Error(`/api/create-intent failed: ${createRes.status} ${await createRes.text().catch(()=> '')}`)
+        const created = await createRes.json()
+        if (!created?.ok) throw new Error(created?.error || 'Failed to create intent')
+  
+        // 3) Bridge with Li.Fi → toAddress = RELAYER (USDT0 only)
         configureLifiWith(walletClient)
         setStep('bridging')
-
+  
         const { id: fromChainId } = fromChain === 'optimism' ? optimism : base
-        const { id: toChainId } = liskChain
-        const fromToken = tokenAddrFor(sourceAsset, fromChain)   // 'USDC' or 'USDT' on OP/Base
-        const toToken   = tokenAddrFor('USDT0', 'lisk')          // USDT0 on Lisk
-
+        const { id: toChainId }   = liskChain
+        const fromToken = tokenAddrFor(srcToken, fromChain)
+        const toToken   = tokenAddrFor('USDT0', 'lisk')
+  
         const quote = await getQuote({
           fromChain: fromChainId,
           toChain: toChainId,
           fromToken,
-          toToken,
+          toToken,                     // enforce USDT0
           fromAmount: inputAmt.toString(),
           fromAddress: user,
-          toAddress: RELAYER_LISK, // funds land on relayer EOA
+          toAddress: RELAYER_LISK,     // enforce relayer receiver
           slippage: 0.003,
         })
         const routeObj = convertQuoteToRoute(quote)
-
+  
+        // pre-kick finisher with refId (it will wait for tx hash update)
+        fetch('/api/relayer/finish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            refId,
+            fromChainId,
+            toChainId: 1135,
+            minAmount: minAmount.toString(),
+          }),
+        }).catch(()=>{})
+  
+        let seenFromTx: `0x${string}` | undefined
+  
         await executeRoute(routeObj, {
-          updateRouteHook: () => {},
+          updateRouteHook: async (updated) => {
+            // capture tx hashes and persist (idempotent)
+            const snap = tapHashes(updated)
+            if (snap.fromTxHash && snap.fromTxHash !== seenFromTx) {
+              seenFromTx = snap.fromTxHash
+              // upsert progress snapshot
+              fetch('/api/relayer/route-progress', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refId, ...snap }),
+              }).catch(()=>{})
+              // nudge finisher with concrete tx hash (tx-hash based status)
+              fetch('/api/relayer/finish', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  refId,
+                  fromTxHash: snap.fromTxHash,
+                  fromChainId: snap.fromChainId,
+                  toChainId: 1135,
+                  minAmount: minAmount.toString(),
+                }),
+              }).catch(()=>{})
+            }
+          },
           switchChainHook: async (chainId) => {
             await walletClient.request({
               method: 'wallet_switchEthereumChain',
@@ -284,32 +441,36 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
           },
           acceptExchangeRateUpdateHook: async () => true,
         })
-
-        // Hand off to server: it will wait, approve, supply, and mint
+  
+        // 4) Block until backend finishes deposit+mint (optional UI)
         setStep('depositing')
-        const expectedMin = (quote as any)?.estimate?.toAmount as string | undefined
-        const res = await fetch('/api/mintVaultUsdt0', {
+        const finishRes = await fetch('/api/relayer/finish', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            userAddress: user,
-            ...(expectedMin ? { expectedMin } : {}),
+            refId,
+            ...(seenFromTx ? { fromTxHash: seenFromTx } : { fromChainId }),
+            toChainId: 1135,
+            minAmount: minAmount.toString(),
           }),
         })
-        if (!res.ok) throw new Error(`/api/mintVaultUsdt0 failed: ${res.status} ${await res.text().catch(()=> '')}`)
-        const json = await res.json()
-        if (!json?.success) throw new Error(json?.message || 'Deposit & mint failed')
-
+        if (!finishRes.ok) throw new Error(`/api/relayer/finish failed: ${finishRes.status} ${await finishRes.text().catch(()=> '')}`)
+        const finishJson = await finishRes.json()
+        if (!finishJson?.ok) throw new Error(finishJson?.error || 'Settlement failed')
+  
         setStep('success')
         return
       }
-
-      /* ─────────────── USDCe / WETH: keep router-push (bridge+deposit) ─────────────── */
+  
+      /* ──────────────────────────────────────────────────────────
+         PATH B: USDCe / WETH (router-push + (optional) OP mint)
+         ────────────────────────────────────────────────────────── */
       const adapterKey = adapterKeyForSnapshot(snap)
-      const srcToken = destLabelForBridge === 'USDCe' ? 'USDC' : 'WETH'
+      const srcToken =
+        destLabelForBridge === 'USDCe' ? 'USDC' : 'WETH'
       const srcChain: 'optimism' | 'base' =
         srcToken === 'USDC' ? pickSrcBy(opUsdcBal, baUsdcBal) : pickSrcBy(opBal, baBal)
-
+  
       setStep('bridging')
       await bridgeAndDepositViaRouterPush({
         user,
@@ -320,21 +481,24 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
         adapterKey,
         walletClient,
       })
-
-      // Mint receipts for USDCe only (WETH skips mint)
+  
       if (destLabelForBridge === 'USDCe') {
         setStep('depositing')
         const sharesToMint = scaleAmount(applyBuffer998(inputAmt), tokenDecimals, VAULT_TOKEN_DECIMALS)
-        const res = await fetch('/api/mintVault', {
+        const mintRes = await fetch('/api/mintVault', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userAddress: user, tokenAmt: sharesToMint.toString(), tokenKind: 'USDC' as const }),
+          body: JSON.stringify({
+            userAddress: user,
+            tokenAmt: sharesToMint.toString(),
+            tokenKind: 'USDC',
+          }),
         })
-        if (!res.ok) throw new Error(`/api/mintVault failed: ${res.status} ${await res.text().catch(()=> '')}`)
-        const json = await res.json()
-        if (!json?.success) throw new Error(json?.message || 'Minting failed')
+        if (!mintRes.ok) throw new Error(`/api/mintVault failed: ${mintRes.status} ${await mintRes.text().catch(()=> '')}`)
+        const j = await mintRes.json()
+        if (!j?.success) throw new Error(j?.message || 'Minting failed')
       }
-
+  
       setStep('success')
     } catch (e: any) {
       console.error('[ui] deposit error', e)
@@ -342,6 +506,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
       setStep('error')
     }
   }
+  
 
   /* -------- UI flags -------- */
   const hasAmount = amount.trim().length > 0 && Number(amount) > 0

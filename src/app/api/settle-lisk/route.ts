@@ -71,7 +71,7 @@ export async function POST(req: Request) {
 
     // Submit tx
     const hash = await wallet.writeContract({
-      address: EXECUTOR_ADDRESS,
+      address: EXECUTOR_ADDRESS, 
       abi: EXECUTOR_ABI,
       functionName: 'settleAndDeposit',
       args: [

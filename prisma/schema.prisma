@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model DepositIntent {
+  id              String   @id @default(cuid())
+
+  refId           String   @unique
+  user            String
+  adapterKey      String
+  asset           String  
+  amount          String   
+  deadline        String
+  nonce           String
+
+  // execution mirror (minimal)
+  status          String   
+  minAmount       String  
+  fromChainId     Int?
+  fromTxHash      String?  @unique
+  toChainId       Int?
+  toTxHash        String?
+  toAddress       String?
+  toTokenAddress  String?
+  toTokenSymbol   String?
+
+  bridgedAmount   String?
+  depositTxHash   String?
+  mintTxHash      String?
+  error           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
