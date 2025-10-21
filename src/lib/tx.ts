@@ -47,7 +47,7 @@ export async function sendSimulated(
   if (!hash) {
     const gasPrice = await pub.getGasPrice()
     const signed = await account.signTransaction({
-      chain,
+      chainId: chain.id,
       to,
       data,
       value,

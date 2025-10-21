@@ -45,6 +45,7 @@ export async function ensureAllowanceThenDeposit(params: {
         data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [vaultAddr, 0n] }),
         })
       log('[ensureAllowanceThenDeposit] approve(0)', { tx0 })
+      await pub.waitForTransactionReceipt({ hash: tx0 })
     }
 
     const { request } = await pub.simulateContract({
@@ -59,6 +60,8 @@ export async function ensureAllowanceThenDeposit(params: {
       data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [vaultAddr, amount] }),
     })
     log('[ensureAllowanceThenDeposit] approve(N)', { tx1, amount: amount.toString() })
+        // ✅ explicit wait (again) for clarity / safety
+        await pub.waitForTransactionReceipt({ hash: tx1 })
 
     const post = await pub.readContract({
       address: token, abi: erc20Abi, functionName: 'allowance', args: [holder, vaultAddr],
@@ -79,6 +82,7 @@ export async function ensureAllowanceThenDeposit(params: {
     data: encodeFunctionData({ abi: morphoAbi, functionName: 'deposit', args: [amount, receiver] }),
   })
   log('[ensureAllowanceThenDeposit] deposit()', { depositTx })
+  await pub.waitForTransactionReceipt({ hash: depositTx })
 
   return { depositTx }
 }

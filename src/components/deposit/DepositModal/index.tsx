@@ -44,6 +44,45 @@ function toLiskDestLabel(src: YieldSnapshot['token']): 'USDCe' | 'USDT0' | 'WETH
   if (src === 'USDT') return 'USDT0'
   return 'WETH'
 }
+
+async function waitUntilMinted(refId: `0x${string}`, ctx: {
+  fromTxHash?: `0x${string}`
+  fromChainId?: number
+  toChainId?: number
+  minAmount?: string
+  pollMs?: number
+  timeoutMs?: number
+} = {}) {
+  const { pollMs = 6000, timeoutMs = 15 * 60_000 } = ctx
+  const endAt = Date.now() + timeoutMs
+
+  while (true) {
+    const res = await fetch('/api/relayer/finish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refId, ...ctx }),
+    })
+
+    // If backend is still working, it should return 202 with { processing:true }.
+    if (res.status === 202) {
+      if (Date.now() > endAt) throw new Error('Timeout finishing settlement')
+      await new Promise(r => setTimeout(r, pollMs))
+      continue
+    }
+
+    // 200 or 4xx/5xx
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json?.error || `finish failed (${res.status})`)
+
+    // Only done when MINTED
+    if (json?.status === 'MINTED') return json
+    // Defensive: if backend returns “already” + final
+    if (json?.already || json?.status === 'SUCCESS') return json
+
+    // Otherwise keep polling (treat BRIDGED/DEPOSITING/MINTING as in-progress)
+    await new Promise(r => setTimeout(r, pollMs))
+  }
+}
 async function ensureWalletChain(walletClient: any, chainId: number) {
   // no-op if already on this chain
   try {
@@ -442,23 +481,35 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
           acceptExchangeRateUpdateHook: async () => true,
         })
   
-        // 4) Block until backend finishes deposit+mint (optional UI)
-        setStep('depositing')
-        const finishRes = await fetch('/api/relayer/finish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            refId,
-            ...(seenFromTx ? { fromTxHash: seenFromTx } : { fromChainId }),
-            toChainId: 1135,
-            minAmount: minAmount.toString(),
-          }),
-        })
-        if (!finishRes.ok) throw new Error(`/api/relayer/finish failed: ${finishRes.status} ${await finishRes.text().catch(()=> '')}`)
-        const finishJson = await finishRes.json()
-        if (!finishJson?.ok) throw new Error(finishJson?.error || 'Settlement failed')
-  
-        setStep('success')
+       // after executeRoute(...) resolves
+setStep('depositing')
+
+// Nudge backend once (non-blocking); ok if this returns 202
+fetch('/api/relayer/finish', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    refId,
+    ...(seenFromTx ? { fromTxHash: seenFromTx } : {}),
+    fromChainId: fromChainId, // src chain id you used
+    toChainId: 1135,
+    minAmount: minAmount.toString(),
+  }),
+}).catch(()=>{})
+
+// Block UI until backend actually finishes deposit + mint
+const done = await waitUntilMinted(refId, {
+  ...(seenFromTx ? { fromTxHash: seenFromTx } : {}),
+  fromChainId: fromChainId,
+  toChainId: 1135,
+  minAmount: minAmount.toString(),
+})
+
+if (done?.status !== 'MINTED') {
+  throw new Error('Settlement incomplete')
+}
+
+setStep('success')
         return
       }
   
