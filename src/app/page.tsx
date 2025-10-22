@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { PortfolioHeader } from '@/components/dashboard/PortfolioHeader'
 import { TopYields } from '@/components/TopYields'
 import { DepositModal } from '@/components/deposit/DepositModal'
-import { WithdrawModal } from '@/components/WithdrawModal'
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { TokenAddresses } from '@/lib/constants'
 import { MORPHO_VAULTS } from '@/lib/tvl'
@@ -73,14 +72,14 @@ export default function Dashboard() {
         />
       )}
 
-      {/* Keep withdraw open for Morpho (the modal guards unsupported flows itself) */}
+      {/* Keep withdraw open for Morpho (the modal guards unsupported flows itself)
       {withdrawSnap && (
         <WithdrawModal
           open
           onClose={() => setWithdrawSnap(null)}
           snap={withdrawSnap}
         />
-      )}
+      )} */}
     </div>
   )
 }

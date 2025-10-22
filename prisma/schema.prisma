@@ -38,3 +38,31 @@ model DepositIntent {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+
+model WithdrawIntent {
+  id            String   @id @default(cuid())
+  refId         String   @unique        // client-chosen correlation id (bytes32 hex as string)
+  user          String                   // OP user address (checksummed)
+  amountShares  String                   // receipt token shares (as decimal string)
+  dstChainId    Int
+  dstToken      String                   // destination token address on OP/Base
+  minAmountOut  String                   // min post-bridge amount (decimal string)
+  deadline      String                   // unix seconds (string to avoid bigint adapter)
+  nonce         String                   // user-provided nonce (string)
+  status        String   @default("PENDING")
+
+  // Progress mirrors:
+  redeemTxHash  String?                  // Lisk redeem/withdraw tx hash
+  fromTxHash    String?                  // Lisk bridge tx hash (Li.Fi "sending")
+  toTxHash      String?                  // OP/Base receive tx hash (Li.Fi "receiving")
+  amountOut     String?                  // final received amount (decimal string)
+  burnTxHash    String?                  // OP burn/recordWithdrawal tx hash
+
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([user])
+  @@unique([user, nonce]) // replay protection
+}

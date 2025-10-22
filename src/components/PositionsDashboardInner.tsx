@@ -1,4 +1,3 @@
-// src/components/PositionsDashboardInner.tsx
 'use client'
 
 import { FC, useMemo, useState } from 'react'
@@ -7,12 +6,41 @@ import { useYields, type YieldSnapshot } from '@/hooks/useYields'
 import { type Position as BasePosition } from '@/lib/positions'
 import { PositionCard } from './PositionCard'
 import { DepositModal } from '@/components/DepositModal'
-import { WithdrawModal } from '@/components/WithdrawModal'
+import WithdrawModal from '@/components/WithdrawModal'
 import { Input } from '@/components/ui/input'
 import { MORPHO_POOLS, TokenAddresses } from '@/lib/constants'
 
 type EvmChain = 'lisk'
 type MorphoToken = 'USDCe' | 'USDT0' | 'WETH'
+
+type WithdrawSnap = {
+  token: 'USDCe' | 'USDT0'
+  chain: 'lisk'
+  poolAddress?: `0x${string}`
+  shares: bigint
+}
+
+function toWithdrawSnap(pos: PositionLike, snap: YieldSnapshot): WithdrawSnap | null {
+  // Only support USDCe / USDT0 withdrawals for now.
+  const t = String(snap.token).toUpperCase()
+  if (t === 'USDC' || t === 'USDCE') {
+    return {
+      token: 'USDCe',
+      chain: 'lisk',
+      poolAddress: snap.poolAddress as `0x${string}` | undefined,
+      shares: (pos as any).amount ?? 0n,
+    }
+  }
+  if (t === 'USDT' || t === 'USDT0') {
+    return {
+      token: 'USDT0',
+      chain: 'lisk',
+      poolAddress: snap.poolAddress as `0x${string}` | undefined,
+      shares: (pos as any).amount ?? 0n,
+    }
+  }
+  return null // WETH (or anything else) not supported by WithdrawModal
+}
 
 type PositionLike =
   | BasePosition
@@ -20,17 +48,15 @@ type PositionLike =
       protocol: 'Morpho Blue'
       chain: Extract<EvmChain, 'lisk'>
       token: MorphoToken
-      amount: bigint
+      amount: bigint // interpreted as the user’s current **receipt shares** for this modal
     }
 
-const CHAIN_LABEL: Record<EvmChain, string> = {
-  lisk: 'Lisk',
-}
+const CHAIN_LABEL: Record<EvmChain, string> = { lisk: 'Lisk' }
 
 const MORPHO_VAULT_BY_TOKEN: Record<MorphoToken, `0x${string}`> = {
   USDCe: MORPHO_POOLS['usdce-supply'] as `0x${string}`,
   USDT0: MORPHO_POOLS['usdt0-supply'] as `0x${string}`,
-  WETH:  MORPHO_POOLS['weth-supply']  as `0x${string}`,
+  WETH: MORPHO_POOLS['weth-supply'] as `0x${string}`,
 }
 
 export const PositionsDashboardInner: FC = () => {
@@ -49,30 +75,28 @@ export const PositionsDashboardInner: FC = () => {
     return [
       { protocol: 'Morpho Blue', chain: 'lisk', token: 'USDCe', amount: 0n },
       { protocol: 'Morpho Blue', chain: 'lisk', token: 'USDT0', amount: 0n },
-      // { protocol: 'Morpho Blue', chain: 'lisk', token: 'WETH',  amount: 0n },
     ]
   }, [positions])
 
   const subset = useMemo(() => {
     const q = query.trim().toLowerCase()
-
     const filtered = positionsForMorpho.filter(
       (p) =>
         p.protocol === 'Morpho Blue' &&
         (q ? `${p.token} ${p.chain} ${p.protocol}`.toLowerCase().includes(q) : true),
     )
-
     const sorted = filtered.slice().sort((a, b) => {
       if (sort === 'amount_desc') return Number((b.amount ?? 0n) - (a.amount ?? 0n))
       return Number((a.amount ?? 0n) - (b.amount ?? 0n))
     })
-
     return sorted
   }, [positionsForMorpho, query, sort])
 
   // Deposit / Withdraw modals
   const [depositSnap, setDepositSnap] = useState<YieldSnapshot | null>(null)
-  const [withdrawSnap, setWithdrawSnap] = useState<YieldSnapshot | null>(null)
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
+  const [withdrawSnap, setWithdrawSnap] = useState<WithdrawSnap | null>(null)
+  const [withdrawMaxShares, setWithdrawMaxShares] = useState<bigint>(0n)
 
   function findSnapshotForPosition(p: PositionLike): YieldSnapshot {
     const normToken = String(p.token).toLowerCase()
@@ -98,7 +122,6 @@ export const PositionsDashboardInner: FC = () => {
       if (byVault) return byVault
     }
 
-    // Fallback snapshot with correct Lisk underlying address
     const underlyingAddr: `0x${string}` =
       p.token === 'USDCe'
         ? (TokenAddresses.USDCe as any).lisk
@@ -122,7 +145,7 @@ export const PositionsDashboardInner: FC = () => {
   }
 
   const title = 'Morpho Blue (Lisk)'
-  const hint  = 'MetaMorpho vaults live on Lisk.'
+  const hint = 'MetaMorpho vaults live on Lisk.'
   const totalPositions = subset.length
 
   return (
@@ -137,10 +160,7 @@ export const PositionsDashboardInner: FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="rounded-full bg-muted/60 px-3 py-1 text-xs">
-              {CHAIN_LABEL.lisk}
-            </div>
-
+            <div className="rounded-full bg-muted/60 px-3 py-1 text-xs">{CHAIN_LABEL.lisk}</div>
             <div className="w-40 sm:w-56">
               <Input
                 placeholder="Search token…"
@@ -149,7 +169,6 @@ export const PositionsDashboardInner: FC = () => {
                 className="h-8"
               />
             </div>
-
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as typeof sort)}
@@ -161,9 +180,9 @@ export const PositionsDashboardInner: FC = () => {
             </select>
           </div>
         </div>
-
         <p className="text-xs text-muted-foreground">
-          {hint}{yieldsLoading ? ' • Loading yields…' : ''}
+          {hint}
+          {yieldsLoading ? ' • Loading yields…' : ''}
         </p>
       </div>
 
@@ -179,7 +198,16 @@ export const PositionsDashboardInner: FC = () => {
                 key={`${String(p.protocol)}-${String(p.chain)}-${String(p.token)}-${idx}`}
                 p={p as any}
                 onSupply={(pos) => setDepositSnap(findSnapshotForPosition(pos as any))}
-                onWithdraw={(pos) => setWithdrawSnap(findSnapshotForPosition(pos as any))}
+                onWithdraw={(pos) => {
+                  const snap = findSnapshotForPosition(pos as any)
+                  const narrowed = toWithdrawSnap(pos as any, snap)
+                  if (narrowed) {
+                    setWithdrawSnap(narrowed)
+                  } else {
+                    // Optional: toast or silently ignore when token isn’t supported
+                    // toast.error('Withdraw not supported for this asset yet.')
+                  }
+                }}
               />
             ))}
           </div>
@@ -190,8 +218,15 @@ export const PositionsDashboardInner: FC = () => {
         <DepositModal open={true} snap={depositSnap} onClose={() => setDepositSnap(null)} />
       )}
       {withdrawSnap && (
-        <WithdrawModal open={true} snap={withdrawSnap} onClose={() => setWithdrawSnap(null)} />
-      )}
+  <WithdrawModal
+    open={true}
+    snap={{ token: withdrawSnap.token, chain: withdrawSnap.chain, poolAddress: withdrawSnap.poolAddress }}
+    shares={withdrawSnap.shares}
+    onClose={() => setWithdrawSnap(null)}
+  />
+)}
     </>
   )
 }
+
+export default PositionsDashboardInner
