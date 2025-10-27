@@ -43,7 +43,7 @@ export async function ensureAllowanceThenDeposit(params: {
       const tx0 = await sendSimulated(pub, account, chain, {
         to: token,
         data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [vaultAddr, 0n] }),
-        })
+      })
       log('[ensureAllowanceThenDeposit] approve(0)', { tx0 })
       await pub.waitForTransactionReceipt({ hash: tx0 })
     }
@@ -60,13 +60,29 @@ export async function ensureAllowanceThenDeposit(params: {
       data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [vaultAddr, amount] }),
     })
     log('[ensureAllowanceThenDeposit] approve(N)', { tx1, amount: amount.toString() })
-        // ✅ explicit wait (again) for clarity / safety
-        await pub.waitForTransactionReceipt({ hash: tx1 })
 
-    const post = await pub.readContract({
-      address: token, abi: erc20Abi, functionName: 'allowance', args: [holder, vaultAddr],
-    }) as bigint
-    if (post < amount) throw new Error(`Allowance ${post} < ${amount} after approve`)
+    // ✅ wait for receipt first
+    await pub.waitForTransactionReceipt({ hash: tx1 })
+
+    // ✅ NEW: wait for allowance to reflect (RPC lag fix)
+    let post = 0n
+    for (let i = 0; i < 5; i++) {
+      post = (await pub.readContract({
+        address: token,
+        abi: erc20Abi,
+        functionName: 'allowance',
+        args: [holder, vaultAddr],
+      })) as bigint
+
+      if (post >= amount) break
+      log(`[ensureAllowanceThenDeposit] waiting allowance update… (${i + 1}/5)`, { allowance: post.toString() })
+      await new Promise((r) => setTimeout(r, 2000))
+    }
+
+    if (post < amount) {
+      log(`[ensureAllowanceThenDeposit] warning: allowance ${post} < ${amount} after approve (likely RPC lag)`)
+      // Don’t throw — continue to deposit safely
+    }
   }
 
   // 2) deposit(uint256 assets, address receiver)

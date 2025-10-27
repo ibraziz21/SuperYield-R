@@ -4,13 +4,13 @@ export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { advanceDeposit } from '@/domain/advance'
+import type { DepositState } from '@/domain/states'
 
 import {
   createPublicClient,
   createWalletClient,
   http,
-  erc20Abi,
-  encodeFunctionData,
   type PublicClient,
   type WalletClient,
   type Address,
@@ -19,13 +19,12 @@ import {
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { lisk, optimism } from 'viem/chains'
-import {ensureAllowanceThenDeposit} from '@/lib/ensureAllowanceThenDeposit'
+import { ensureAllowanceThenDeposit } from '@/lib/ensureAllowanceThenDeposit'
 import morphoAbi from '@/lib/abi/morphoLisk.json'
 import rewardsAbi from '@/lib/abi/rewardsAbi.json'
 import {
   TokenAddresses,
   SAFEVAULT,
-  MORPHO_POOLS,
   REWARDS_VAULT,
 } from '@/lib/constants'
 
@@ -40,13 +39,11 @@ if (!RELAYER_PRIVATE_KEY_RAW) {
   console.warn('[finish] RELAYER_PRIVATE_KEY is empty or missing')
 }
 const RELAYER_PRIVATE_KEY = (`0x${RELAYER_PRIVATE_KEY_RAW.replace(/^0x/i, '')}`) as `0x${string}`
-const liskPub = createPublicClient({ chain: lisk, transport: http(process.env.LISK_RPC_URL || 'https://rpc.api.lisk.com') })
-const relayer = privateKeyToAccount(RELAYER_PRIVATE_KEY);
-
+const relayer = privateKeyToAccount(RELAYER_PRIVATE_KEY)
 
 // Lisk (USDT0, Morpho), OP (mint)
 const USDT0_LISK = TokenAddresses.USDT0.lisk as `0x${string}`
-const MORPHO_POOL = "0x50cb55be8cf05480a844642cb979820c847782ae" as `0x${string}`
+const MORPHO_POOL = '0x50cb55be8cf05480a844642cb979820c847782ae' as `0x${string}`
 const OP_REWARDS_VAULT = (REWARDS_VAULT.optimismUSDT ??
   '0x1aDBe89F2887a79C64725128fd1D53b10FD6b441') as `0x${string}`
 
@@ -139,7 +136,9 @@ async function writeWithRetry<T>(
   throw lastErr
 }
 
-/** ————— Local sign + raw-send (EIP-1559) ————— */
+/** ————— Local sign + raw-send (EIP-1559) —————
+ * (kept for future use; not used directly in current flow)
+ */
 async function signAndSendRawTx(params: {
   pub: PublicClient
   wallet: WalletClient
@@ -167,7 +166,7 @@ async function signAndSendRawTx(params: {
 
       const signed = await wallet.signTransaction({
         chain,
-        account: from,              // Address is allowed here in viem
+        account: from,
         to,
         data,
         value,
@@ -213,29 +212,31 @@ async function mintReceipt(user: `0x${string}`, amount: bigint) {
   return { mintTx }
 }
 
+/** ————— Simple lock to avoid parallel finishers ————— */
 async function tryLockIntent(refId: string, opts?: { force?: boolean; staleMs?: number }) {
   const force = !!opts?.force
-  const staleMs = opts?.staleMs ?? 60_000  // 1 minute default, was 10 min
+  const staleMs = opts?.staleMs ?? 60_000  // 1 minute default
 
-  // if force: take the lock unless already final
   if (force) {
     const res = await prisma.depositIntent.updateMany({
-      where: {
-        refId,
-        status: { notIn: ['MINTED', 'SUCCESS'] },
-      },
+      where: { refId, status: { notIn: ['MINTED', 'SUCCESS'] } },
       data: { status: 'PROCESSING', error: null, updatedAt: new Date() },
     })
     if (res.count === 1) return { ok: true }
   }
 
-  // normal path: allow lock if PENDING/BRIDGED/FAILED or if the working row is stale
+  // ✅ Include WAITING_ROUTE and BRIDGE_IN_FLIGHT (and BRIDGING) as lockable states
   const res = await prisma.depositIntent.updateMany({
     where: {
       refId,
       OR: [
-        { status: { in: ['PENDING', 'BRIDGED', 'FAILED'] } },
-        { status: { in: ['PROCESSING', 'DEPOSITING', 'MINTING'] }, updatedAt: { lt: new Date(Date.now() - staleMs) } },
+        // fresh states we can pick up immediately
+        { status: { in: ['PENDING', 'WAITING_ROUTE', 'BRIDGE_IN_FLIGHT', 'BRIDGING', 'BRIDGED', 'FAILED'] } },
+        // stale in-flight states we can steal after "staleMs"
+        {
+          status: { in: ['PROCESSING', 'DEPOSITING', 'MINTING'] },
+          updatedAt: { lt: new Date(Date.now() - staleMs) },
+        },
       ],
     },
     data: { status: 'PROCESSING', error: null, updatedAt: new Date() },
@@ -246,10 +247,9 @@ async function tryLockIntent(refId: string, opts?: { force?: boolean; staleMs?: 
   const row = await prisma.depositIntent.findUnique({ where: { refId } })
   if (!row) return { ok: false, reason: 'Unknown refId' }
   if (row.status === 'MINTED' || row.status === 'SUCCESS') return { ok: false, reason: 'Already done' }
-
-  // include status & timestamp for easier debugging
-  return { ok: false, reason: `Already processing`, status: row.status, updatedAt: row.updatedAt }
+  return { ok: false, reason: 'Already processing', status: row.status, updatedAt: row.updatedAt }
 }
+
 export async function POST(req: Request) {
   let refIdForCatch: string | undefined
 
@@ -266,7 +266,7 @@ export async function POST(req: Request) {
     const toChainId = (body?.toChainId as number | undefined) ?? LISK_ID
     const minAmountStr = body?.minAmount as string | undefined
 
-    // try to lock (prevent parallel execution)
+    // try to lock (prevent parallel workers)
     const lock = await tryLockIntent(refId)
     if (!lock.ok) {
       if (lock.reason === 'Already done') return json({ ok: true, already: true })
@@ -288,8 +288,14 @@ export async function POST(req: Request) {
 
     if (!intent.fromTxHash) {
       console.log('[finish] fromTxHash missing (capture via /route-progress)')
-      // keep PROCESSING to avoid multiple workers contending, but allow re-call later
+      await advanceDeposit(refId, 'PROCESSING', 'WAITING_ROUTE')
       return json({ ok: true, waiting: true }, 202)
+    }
+    
+    // if fromTxHash exists, progress past WAITING_ROUTE
+    if (intent.status === 'WAITING_ROUTE') {
+      console.log('[finish] route now has fromTxHash → advancing to BRIDGE_IN_FLIGHT')
+      await advanceDeposit(refId, 'WAITING_ROUTE', 'BRIDGE_IN_FLIGHT')
     }
 
     const srcChain = intent.fromChainId ?? fromChainId
@@ -299,6 +305,12 @@ export async function POST(req: Request) {
 
     // 1) Wait for Li.Fi DONE (by user's tx hash)
     console.log('[finish] waiting Li.Fi by tx…')
+
+    // Move into BRIDGE_IN_FLIGHT the first time we have a tx hash
+    if (intent.status === 'WAITING_ROUTE' || intent.status === 'PROCESSING') {
+      await advanceDeposit(refId, intent.status as DepositState, 'BRIDGE_IN_FLIGHT')
+    }
+
     const { bridgedAmount, receiving } = await waitForLiFiDone({
       fromChainId: srcChain,
       toChainId: dstChain,
@@ -310,30 +322,21 @@ export async function POST(req: Request) {
       throw new Error(`Unexpected dest token ${toTokenAddr}, expected ${USDT0_LISK}`)
     }
 
-    await prisma.depositIntent.update({
-      where: { refId },
-      data: {
-        status: 'BRIDGED',
-        toTxHash: toTxHash ?? intent.toTxHash,
-        toTokenAddress: toTokenAddr ?? intent.toTokenAddress ?? undefined,
-        bridgedAmount: bridgedAmount.toString(),
-      },
+    await advanceDeposit(refId, 'BRIDGE_IN_FLIGHT', 'BRIDGED', {
+      toTxHash: toTxHash ?? intent.toTxHash ?? null,
+      toTokenAddress: toTokenAddr ?? intent.toTokenAddress ?? null,
+      bridgedAmount: bridgedAmount.toString(),
     })
 
     const amt = bridgedAmount
     if (amt <= 0n) throw new Error('Zero bridged amount')
 
-    // 2) Deposit (idempotent + robust allowance) on Lisk via raw tx
+    // 2) Deposit (idempotent + robust allowance) on Lisk
     intent = await prisma.depositIntent.findUnique({ where: { refId } })
-    const { pub: liskPub, wlt: liskWlt, account } = makeLiskClients()
+    const { pub: liskPub } = makeLiskClients()
 
     if (!intent?.depositTxHash) {
-      await prisma.depositIntent.update({
-        where: { refId },
-        data: { status: 'DEPOSITING' },
-      })
-
-
+      await advanceDeposit(refId, 'BRIDGED', 'DEPOSITING')
 
       const { depositTx } = await ensureAllowanceThenDeposit({
         pub: liskPub as PublicClient,
@@ -347,13 +350,7 @@ export async function POST(req: Request) {
         log: console.log,
       })
 
-      await prisma.depositIntent.update({
-        where: { refId },
-        data: {
-          depositTxHash: depositTx,
-          status: 'DEPOSITED',
-        },
-      })
+      await advanceDeposit(refId, 'DEPOSITING', 'DEPOSITED', { depositTxHash: depositTx })
     } else {
       console.log('[finish] deposit already done; skipping')
     }
@@ -362,15 +359,9 @@ export async function POST(req: Request) {
     intent = await prisma.depositIntent.findUnique({ where: { refId } })
     if (!intent?.mintTxHash) {
       if (!intent || !intent.user) throw new Error('Missing user on intent row')
-      await prisma.depositIntent.update({
-        where: { refId },
-        data: { status: 'MINTING' },
-      })
+      await advanceDeposit(refId, 'DEPOSITED', 'MINTING')
       const { mintTx } = await mintReceipt(intent.user as `0x${string}`, amt)
-      await prisma.depositIntent.update({
-        where: { refId },
-        data: { mintTxHash: mintTx, status: 'MINTED' },
-      })
+      await advanceDeposit(refId, 'MINTING', 'MINTED', { mintTxHash: mintTx })
     } else {
       console.log('[finish] mint already done; skipping')
     }

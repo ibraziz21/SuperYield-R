@@ -29,6 +29,10 @@ import rewardsVaultAbi from '@/lib/abi/rewardsAbi.json'
 import morphoAbi from '@/lib/abi/morphoLisk.json'
 import { TokenAddresses, SAFEVAULT, MORPHO_POOLS, REWARDS_VAULT } from '@/lib/constants'
 
+// State guard
+import { advanceWithdraw } from '@/domain/advance'
+import type { WithdrawState } from '@/domain/states'
+
 /* ─────────────── Env & helpers ─────────────── */
 const PK_RE = /^0x[0-9a-fA-F]{64}$/
 function normalizePrivateKey(raw?: string): `0x${string}` {
@@ -118,7 +122,14 @@ function pickFamilies(dstToken: `0x${string}`) {
   }
 }
 
-async function waitForBalanceAtLeast(client = liskPublic, token: `0x${string}`, holder: `0x${string}`, min: bigint, timeoutMs = 60_000, pollMs = 3_000) {
+async function waitForBalanceAtLeast(
+  client = liskPublic,
+  token: `0x${string}`,
+  holder: `0x${string}`,
+  min: bigint,
+  timeoutMs = 60_000,
+  pollMs = 3_000
+) {
   const end = Date.now() + timeoutMs
   while (Date.now() < end) {
     const bal = await client.readContract({ address: token, abi: ERC20_ABI, functionName: 'balanceOf', args: [holder] }) as bigint
@@ -166,7 +177,7 @@ export async function POST(req: Request) {
     /* 1) Burn on OP (idempotent) */
     if (!row.burnTxHash) {
       console.log('[withdraw/finish] burn → OP', { refId, rewardsVault, user, amountShares: amountShares.toString() })
-      await prisma.withdrawIntent.update({ where: { refId }, data: { status: 'PROCESSING' } })
+
       const { request } = await opPublic.simulateContract({
         address: rewardsVault,
         abi: rewardsVaultAbi,
@@ -176,19 +187,18 @@ export async function POST(req: Request) {
       })
       const burnTx = await opWallet.writeContract(request)
       await opPublic.waitForTransactionReceipt({ hash: burnTx })
-      row = await prisma.withdrawIntent.update({
-        where: { refId },
-        data: { burnTxHash: burnTx, status: 'BURNED' },
-      })
+
+      await advanceWithdraw(refId, 'PROCESSING', 'BURNED', { burnTxHash: burnTx })
+      row = await prisma.withdrawIntent.findUnique({ where: { refId } })
       console.log('[withdraw/finish] burn OK', { refId, burnTx })
     } else {
       console.log('[withdraw/finish] burn already done', { refId, burnTx: row.burnTxHash })
     }
 
     /* 2) SAFE executes redeem on Lisk */
-    if (!row.redeemTxHash) {
+    if (!row?.redeemTxHash) {
       console.log('[withdraw/finish] redeem via SAFE → Lisk', { refId, morphoPool, shares: amountShares.toString() })
-      await prisma.withdrawIntent.update({ where: { refId }, data: { status: 'REDEEMING' } })
+      await advanceWithdraw(refId, 'BURNED', 'REDEEMING')
 
       const calldata = encodeFunctionData({
         abi: morphoAbi,
@@ -219,13 +229,11 @@ export async function POST(req: Request) {
 
       if (!redeemTxHash) throw new Error('Safe redeem tx hash not found')
 
-      row = await prisma.withdrawIntent.update({
-        where: { refId },
-        data: { redeemTxHash, status: 'REDEEMED' },
-      })
+      await advanceWithdraw(refId, 'REDEEMING', 'REDEEMED', { redeemTxHash })
+      row = await prisma.withdrawIntent.findUnique({ where: { refId } })
       console.log('[withdraw/finish] redeem OK', { refId, redeemTxHash })
     } else {
-      console.log('[withdraw/finish] redeem already done', { refId, redeemTx: row.redeemTxHash })
+      console.log('[withdraw/finish] redeem already done', { refId, redeemTx: row?.redeemTxHash })
     }
 
     /* 3) Bridge on LI.FI from Lisk -> OP to user */
@@ -236,11 +244,11 @@ export async function POST(req: Request) {
     })
     await waitForBalanceAtLeast(liskPublic, liskAsset, relayer.address as `0x${string}`, minAmountOut, 90_000, 3_000)
 
-    if (!row.fromTxHash || !row.toTxHash || !row.amountOut) {
+    if (!row?.fromTxHash || !row?.toTxHash || !row?.amountOut) {
       console.log('[withdraw/finish] bridging with Li.Fi', {
         refId, fromToken: liskAsset, toToken: opToken, minAmountOut: minAmountOut.toString(), user
       })
-      await prisma.withdrawIntent.update({ where: { refId }, data: { status: 'BRIDGING' } })
+      await advanceWithdraw(refId, 'REDEEMED', 'BRIDGING')
 
       const quote = await getQuote({
         fromChain:  lisk.id,
@@ -282,22 +290,20 @@ export async function POST(req: Request) {
 
       const amountOut = route.toAmount ?? String(minAmountOut)
 
-      row = await prisma.withdrawIntent.update({
-        where: { refId },
-        data: {
-          fromTxHash: seenFrom ?? row.fromTxHash ?? null,
-          toTxHash:   seenTo   ?? row.toTxHash   ?? null,
-          amountOut,
-          status: 'SUCCESS',
-        },
+      await advanceWithdraw(refId, 'BRIDGING', 'SUCCESS', {
+        fromTxHash: seenFrom ?? row?.fromTxHash ?? null,
+        toTxHash:   seenTo   ?? row?.toTxHash   ?? null,
+        amountOut,
       })
-      console.log('[withdraw/finish] bridge OK', { refId, fromTx: row.fromTxHash, toTx: row.toTxHash, amountOut })
+      row = await prisma.withdrawIntent.findUnique({ where: { refId } })
+
+      console.log('[withdraw/finish] bridge OK', { refId, fromTx: row?.fromTxHash, toTx: row?.toTxHash, amountOut })
     } else {
-      console.log('[withdraw/finish] bridge already recorded', { refId, fromTx: row.fromTxHash, toTx: row.toTxHash, amountOut: row.amountOut })
+      console.log('[withdraw/finish] bridge already recorded', { refId, fromTx: row?.fromTxHash, toTx: row?.toTxHash, amountOut: row?.amountOut })
     }
 
-    console.log('[withdraw/finish] done', { refId, status: row.status })
-    return json({ ok: true, refId, status: row.status })
+    console.log('[withdraw/finish] done', { refId, status: row?.status })
+    return json({ ok: true, refId, status: row?.status })
   } catch (e: any) {
     console.error('[withdraw/finish] failed:', e?.message || e)
     // best-effort failure update
