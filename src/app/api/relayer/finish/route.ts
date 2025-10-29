@@ -333,6 +333,7 @@ export async function POST(req: Request) {
     if (minAmount > 0n && bridgedAmount < minAmount) {
       throw new Error(`Bridged amount ${bridgedAmount} < minAmount ${minAmount}`)
     }
+    const toTokenAddr = recvAddr
 
     await advanceIdempotent(refId, 'BRIDGE_IN_FLIGHT', 'BRIDGED', {
       toTxHash: toTxHash ?? null,

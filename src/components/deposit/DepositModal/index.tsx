@@ -442,11 +442,8 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
             options: {
               slippage: 0.007, // 0.3%
             }
-
           },
-
         )
-
         const safeRoutes = (routesRes.routes ?? []).filter((r: any) => {
           const last = r?.steps?.[r.steps.length - 1]
           const out = last?.action?.toToken
