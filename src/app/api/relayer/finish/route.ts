@@ -171,7 +171,7 @@ async function mintReceipt(user: `0x${string}`, amount: bigint) {
     account,
   })
   const mintTx = await wlt.writeContract(request)
-  await pub.waitForTransactionReceipt({ hash: mintTx })
+  await pub.waitForTransactionReceipt({ hash: mintTx , confirmations: 3 })
   return { mintTx }
 }
 
@@ -353,7 +353,7 @@ export async function POST(req: Request) {
       await renewLease(refId, owner)
 
       await advanceIdempotent(refId, 'BRIDGED', 'DEPOSITING')
-      const { depositTx } = await ensureAllowanceThenDeposit({
+      const { depositTx, verified } = await ensureAllowanceThenDeposit({
         pub: liskPub as PublicClient,
         account: relayer,
         chain: lisk,
@@ -364,7 +364,26 @@ export async function POST(req: Request) {
         morphoAbi,
         log: console.log,
       })
-      await advanceIdempotent(refId, 'DEPOSITING', 'DEPOSITED', { depositTxHash: depositTx })
+
+      if (verified.sender.toLowerCase()  !== relayer.address.toLowerCase()) {
+        throw new Error('Deposit sender mismatch (expected relayer EOA)')
+      }
+      if (verified.vault.toLowerCase()   !== MORPHO_POOL.toLowerCase()) {
+        throw new Error('Deposit vault mismatch')
+      }
+      if (verified.receiver.toLowerCase()!== SAFEVAULT.toLowerCase()) {
+        throw new Error('Deposit receiver mismatch (must be SAFE)')
+      }
+      if (verified.token.toLowerCase()   !== USDT0_LISK.toLowerCase()) {
+        throw new Error('Deposit token mismatch (must be USDT0)')
+      }
+      if (verified.amount !== amt) {
+        throw new Error(`Deposit amount mismatch: ${verified.amount} != ${amt}`)
+      }
+      
+      await advanceIdempotent(refId, 'DEPOSITING', 'DEPOSITED', {
+        depositTxHash: depositTx,
+      })
     } else {
       console.log('[finish] deposit already done; skipping')
     }

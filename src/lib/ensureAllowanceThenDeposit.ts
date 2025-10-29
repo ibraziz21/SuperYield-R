@@ -1,9 +1,30 @@
 // src/lib/ensureAllowanceThenDeposit.ts
-import { erc20Abi, type PublicClient, type Address, encodeFunctionData } from 'viem'
+import { erc20Abi, type PublicClient, type Address, encodeFunctionData,decodeEventLog } from 'viem'
 import type { PrivateKeyAccount } from 'viem/accounts'
 import type { Chain, Hex } from 'viem'
 import { sendSimulated } from './tx'
+// src/lib/ensureAllowanceThenDeposit.ts
 
+const ERC20_Transfer = [{
+  type: 'event',
+  name: 'Transfer',
+  inputs: [
+    { indexed: true,  name: 'from',  type: 'address' },
+    { indexed: true,  name: 'to',    type: 'address' },
+    { indexed: false, name: 'value', type: 'uint256' },
+  ],
+}] as const
+
+const ERC4626_Deposit = [{
+  type: 'event',
+  name: 'Deposit',
+  inputs: [
+    { indexed: true,  name: 'sender', type: 'address' },
+    { indexed: true,  name: 'owner',  type: 'address' },
+    { indexed: false, name: 'assets', type: 'uint256' },
+    { indexed: false, name: 'shares', type: 'uint256' },
+  ],
+}] as const
 export async function ensureAllowanceThenDeposit(params: {
   pub: PublicClient
   account: PrivateKeyAccount          // from privateKeyToAccount(RELAYER_PRIVATE_KEY)
@@ -98,7 +119,65 @@ export async function ensureAllowanceThenDeposit(params: {
     data: encodeFunctionData({ abi: morphoAbi, functionName: 'deposit', args: [amount, receiver] }),
   })
   log('[ensureAllowanceThenDeposit] deposit()', { depositTx })
-  await pub.waitForTransactionReceipt({ hash: depositTx })
 
-  return { depositTx }
+  // sendSimulated waits already; just fetch for logs
+  const depRcpt = await pub.getTransactionReceipt({ hash: depositTx })
+
+  // ---- Validate: ERC20 Transfer -> vault ----
+  let transferred: bigint | null = null
+  let transferMatches = false
+  for (const lg of depRcpt.logs) {
+    if (lg.address.toLowerCase() !== token.toLowerCase()) continue
+    try {
+      const ev = decodeEventLog({ abi: ERC20_Transfer, ...lg })
+      if (ev.eventName === 'Transfer') {
+        const from = (ev.args as any).from as Address
+        const to   = (ev.args as any).to as Address
+        const val  = (ev.args as any).value as bigint
+        if (from.toLowerCase() === holder.toLowerCase()
+         && to.toLowerCase()   === vaultAddr.toLowerCase()) {
+          transferred = val
+          transferMatches = true
+          break
+        }
+      }
+    } catch {}
+  }
+
+  // ---- Optional: Validate ERC4626 Deposit(owner=receiver, assets=amount) ----
+  let erc4626Ok = false
+  for (const lg of depRcpt.logs) {
+    if (lg.address.toLowerCase() !== vaultAddr.toLowerCase()) continue
+    try {
+      const ev = decodeEventLog({ abi: ERC4626_Deposit, ...lg })
+      if (ev.eventName === 'Deposit') {
+        const owner  = (ev.args as any).owner as Address
+        const assets = (ev.args as any).assets as bigint
+        if (owner.toLowerCase() === receiver.toLowerCase() && assets === amount) {
+          erc4626Ok = true
+          break
+        }
+      }
+    } catch {}
+  }
+
+  if (!transferMatches) {
+    log('[ensureAllowanceThenDeposit] warning: no matching ERC20 Transfer to vault found in logs')
+  }
+  if (!erc4626Ok) {
+    log('[ensureAllowanceThenDeposit] note: ERC4626 Deposit event not found or non-matching (vault may not emit standard event)')
+  }
+
+  return {
+    depositTx,
+    verified: {
+      sender: holder,
+      token,
+      vault: vaultAddr,
+      receiver,
+      amount,
+      transferOk: transferMatches,
+      erc4626Ok,
+    },
+  }
 }
