@@ -1,5 +1,5 @@
-
-import { MagnifyingGlassIcon } from "@phosphor-icons/react";
+// src/components/ClaimRewards/index.tsx  (a.k.a. ClaimRewardTable)
+// If your file is named differently, apply the same change to that wrapper.
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -12,36 +12,34 @@ import {
 } from "@tanstack/react-table";
 import React from "react";
 import { DataTable } from "../data-table";
+
 interface TblProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
+  meta?: any;               // NEW: forward table meta (for onClaim, isClaiming)
+  isLoading?: boolean;      // optional passthrough
 }
 
-export default function TransfersTable<TData , TValue>({
+export default function ClaimRewardTable<TData, TValue>({
   columns,
   data,
+  meta,
 }: TblProps<TData, TValue>) {
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    []
-  );
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [sorting, setSorting] = React.useState<SortingState>([]);
 
   const table = useReactTable({
     data,
     columns,
+    meta, // NEW: pass meta so cells can call onClaim
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onColumnFiltersChange: setColumnFilters,
     getFilteredRowModel: getFilteredRowModel(),
     onSortingChange: setSorting,
-    state: {
-      columnFilters,
-      sorting,
-    },
+    state: { columnFilters, sorting },
   });
 
-  return (
-    <DataTable table={table} columns={columns} data={data} />
-  );
+  return <DataTable table={table} columns={columns} data={data} />;
 }

@@ -54,16 +54,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <PortfolioHeader />
 
-      {/* Markets preview */}
-      <section className=" bg-[#F9FAFB] m-4 p-4 rounded-xl">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight">Top yields</h2>
-          <Link href="/markets" className="text-sm font-medium text-primary underline-offset-4 hover:underline">
-            See all markets →
-          </Link>
-        </div>
-        <TopYields limit={5} />
-      </section>
+    
 
       {/* Action modals */}
       {depositSnap && (

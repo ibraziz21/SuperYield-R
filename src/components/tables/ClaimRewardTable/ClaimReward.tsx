@@ -1,58 +1,131 @@
+// src/components/ClaimRewards/ClaimRewards.tsx
 "use client";
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import ClaimRewardTable from ".";
-import { ClaimableRewardColumns, ClaimableReward } from "./columns";
+import { ClaimableRewardColumns, type ClaimableReward } from "./columns";
 
-const ClaimRewards = () => {
-  // Dummy data for demonstration
-  const claimableRewardsSource: ClaimableReward[] = [
-    {
-      network: "Ethereum",
-      source: "Aave V3",
-      claimable: "125.50",
-      token: "AAVE",
-    },
-    {
-      network: "Lisk",
-      source: "Morpho Blue",
-      claimable: "2,340.00",
-      token: "USDC",
-    },
-    {
-      network: "Ethereum",
-      source: "Compound",
-      claimable: "0.045",
-      token: "ETH",
-    },
-    {
-      network: "Arbitrum",
-      source: "GMX",
-      claimable: "89.30",
-      token: "GMX",
-    },
-    {
-      network: "Lisk",
-      source: "Morpho Blue",
-      claimable: "1.25",
-      token: "WETH",
-    },
-  ];
+import { useMerklRewards, type FlatReward } from "@/hooks/useMerklRewards";
+import { useAppKit } from "@reown/appkit/react";
+import { useWalletClient, useSwitchChain, useChainId } from "wagmi";
+import { base, optimism, lisk } from "viem/chains";
+import type { Address } from "viem";
+import { formatUnits } from "viem";
+import { Button } from "@/components/ui/button";
+import { RefreshCw, Loader2 } from "lucide-react";
+import { MERKL_DISTRIBUTOR, distributorAbi, buildClaimArgs } from "@/lib/merkl";
 
-  const generateTblData = (item: ClaimableReward): ClaimableReward => {
-    return {
-      network: item.network,
-      source: item.source,
-      claimable: item.claimable,
-      token: item.token,
-    };
-  };
+const CHAIN_LABEL: Record<number, string> = {
+  [lisk.id]: "Lisk",
+  [optimism.id]: "Optimism",
+  [base.id]: "Base",
+};
 
-  const tableData = Array.isArray(claimableRewardsSource)
-    ? claimableRewardsSource.map((element) => generateTblData(element))
-    : [];
+function formatNumber(n: number, maxFrac = 6) {
+  return n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: maxFrac });
+}
 
-  return <ClaimRewardTable columns={ClaimableRewardColumns} data={tableData} />;
+const ClaimRewards: React.FC = () => {
+  const { rewards, isLoading, refetch } = useMerklRewards();
+  const { open: openConnect } = useAppKit();
+  const { data: wallet } = useWalletClient();
+  const { switchChainAsync } = useSwitchChain();
+  const activeChainId = useChainId();
+
+  // Track which row is claiming to disable its button
+  const [claimingKey, setClaimingKey] = useState<string | null>(null);
+
+  // Keep a 1:1 mapping (row -> underlying Merkl item) by attaching __raw
+  const tableData: (ClaimableReward & { __raw: FlatReward })[] = useMemo(() => {
+    if (!rewards || rewards.length === 0) return [];
+    return rewards.map((r) => {
+      const qty = Number(formatUnits(BigInt(r.amount), r.token.decimals)) || 0;
+      return {
+        network: CHAIN_LABEL[r.chainId] ?? `Chain ${r.chainId}`,
+        source: "Merkl",
+        claimable: formatNumber(qty, 6),
+        token: r.token.symbol,
+        __raw: r,
+      };
+    });
+  }, [rewards]);
+
+  async function onClaim(row: ClaimableReward & { __raw?: FlatReward }) {
+    if (!wallet) return openConnect?.();
+
+    const item = row.__raw!;
+    const chainId = item.chainId;
+
+    try {
+      const key = `${chainId}-${item.token.address.toLowerCase()}`;
+      setClaimingKey(key);
+
+      const distributor = MERKL_DISTRIBUTOR[chainId];
+      if (!distributor) throw new Error(`Missing Merkl Distributor for chain ${chainId}`);
+
+      if (activeChainId !== chainId && switchChainAsync) {
+        await switchChainAsync({ chainId });
+      }
+
+      const { users, tokens, amounts, proofs } = buildClaimArgs({
+        user: wallet.account!.address as Address,
+        items: [item],
+      });
+
+      await wallet.writeContract({
+        address: distributor,
+        abi: distributorAbi,
+        functionName: "claim",
+        args: [users, tokens, amounts, proofs],
+        account: wallet.account!.address as Address,
+      });
+
+      await refetch();
+    } catch (err) {
+      console.error("[ClaimRewards] claim error:", err);
+    } finally {
+      setClaimingKey(null);
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-border/60 p-4 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading claimable rewards…
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={() => refetch()} title="Refresh" className="gap-2">
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
+      </div>
+
+      {tableData.length === 0 ? (
+        <div className="flex min-h-[120px] flex-col items-center justify-center rounded-xl border border-dashed border-border/50 text-sm text-muted-foreground">
+          No claimable rewards found.
+        </div>
+      ) : (
+        <ClaimRewardTable
+          columns={ClaimableRewardColumns}
+          data={tableData as ClaimableReward[]}
+          meta={{
+            onClaim,
+            isClaiming: (r: any) => {
+              const raw = (r as any).__raw as FlatReward | undefined;
+              if (!raw) return false;
+              return claimingKey === `${raw.chainId}-${raw.token.address.toLowerCase()}`;
+            },
+          }}
+        />
+      )}
+    </div>
+  );
 };
 
 export default ClaimRewards;
