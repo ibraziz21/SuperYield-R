@@ -9,6 +9,7 @@ import { useAppKit } from '@reown/appkit/react' // keep only useAppKit
 import { useAccount, useDisconnect, useChainId, useSwitchChain } from 'wagmi'
 import { Button } from '@/components/ui/button'
 import socialImg from '@/public/logo_horizontal.svg'
+import ecovaults from "@/public/eco-vaults.svg"
 
 /* ──────────────────────────────────────────────────────────────── */
 
@@ -26,10 +27,9 @@ function NetworkBadge({ chainId }: { chainId?: number }) {
   if (!chainId || !CHAIN_META[chainId]) return null
   const m = CHAIN_META[chainId]
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold text-white ${m.bg} ring-1 ${m.ring}`}>
-      <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
+    <div className={`min-h-full  gap-1 rounded-md px-1 py-0.5 text-[10px] font-semibold border border-gray-200 text-black`}>
       {m.badge}
-    </span>
+    </div>
   )
 }
 
@@ -39,7 +39,7 @@ function ActiveLink({ href, children }: { href: string; children: React.ReactNod
   return (
     <Link
       href={href}
-      className={`rounded-full px-3 py-1 text-sm transition ${active ? 'bg-teal-600 text-white' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+      className={`rounded-md px-3 py-2 text-sm transition ${active ? 'bg-gray-200 text-black' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
         }`}
     >
       {children}
@@ -133,8 +133,8 @@ export function Navbar() {
           <div className="flex items-center gap-3 min-w-0">
             <Link href="/" className="group inline-flex items-center gap-2 min-w-0">
               <Image
-                src={socialImg}
-                alt="SuperYield-R"
+                src={ecovaults}
+                alt="ecovaults"
                 width={160}
                 height={28}
                 priority
@@ -179,7 +179,7 @@ export function Navbar() {
               <div className="relative" ref={accountMenuRef}>
                 <button
                   onClick={() => setMenuOpen((v) => !v)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-border/60 bg-background/60 px-3 py-1.5 text-sm font-semibold hover:bg-background active:scale-[.98]"
+                  className="inline-flex items-center gap-2 rounded-lg  border border-gray-200 bg-background/60 px-3 py-1.5 text-sm font-semibold hover:bg-background active:scale-[.98]"
                   title="Wallet menu"
                   aria-expanded={menuOpen}
                   aria-haspopup="menu"
@@ -283,8 +283,8 @@ export function Navbar() {
           <div className="flex h-14 items-center justify-between border-b px-3">
             <div className="inline-flex items-center gap-2">
               <Image
-                src={socialImg}
-                alt="SuperYield-R"
+                src={ecovaults}
+                alt="ecovaults"
                 width={140}
                 height={24}
                 className="h-6 w-auto"

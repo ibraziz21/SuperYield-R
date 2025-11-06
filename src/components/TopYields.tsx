@@ -85,7 +85,7 @@ export const TopYields: FC<Props> = ({ limit = 6 }) => {
         Array.from({ length: limit }).map((_, i) => (
           <Card
             key={`sk-${i}`}
-            className="overflow-hidden rounded-2xl bg-white/60 shadow-sm ring-1 ring-black/5 backdrop-blur-md dark:bg-white/5 dark:ring-white/10"
+            className="overflow-hidden rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none ring-1 ring-black/5 backdrop-blur-md dark:bg-white/5 dark:ring-white/10"
           >
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
@@ -141,7 +141,7 @@ export const TopYields: FC<Props> = ({ limit = 6 }) => {
           return (
             <Card
               key={snap.id}
-              className="group overflow-hidden rounded-2xl bg-white/75 shadow-sm ring-1 ring-black/5 backdrop-blur-md transition hover:-translate-y-0.5 hover:shadow-md dark:bg-white/5 dark:ring-white/10"
+              className="group overflow-hidden rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none transition hover:-translate-y-0.5 "
             >
               <CardContent className="p-5">
                 {/* Top row: token + chips + APY pill */}

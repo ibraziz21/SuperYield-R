@@ -18,7 +18,7 @@ const buttonVariants = cva(
           "border border-input bg-background shadow-sm hover:bg-accent hover:text-white rounded-2xl",
         secondary:
           "font-medium bg-[#f2a2a2] text-white shadow-sm hover:bg-secondary/80 rounded-2xl",
-        ghost: "hover:bg-accent hover:text-white",
+        ghost: "hover:bg-gray-100",
         link: " underline-offset-4 hover:underline",
       },
       size: {
@@ -39,7 +39,7 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
   VariantProps<typeof buttonVariants> {
   asChild?: boolean;
-  title: string;
+  title?: string;
   onClick?: () => void;
   widthFull?: boolean;
   disabled?: boolean;
@@ -57,6 +57,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     widthFull = false,
     disabled,
     loading,
+    children,
     ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
     return (
@@ -70,7 +71,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         {...props}
       >
-        {loading ? <>Loading...</> : title}
+        {loading ? <>Loading...</> : (children || title)}
       </Comp>
     )
   }

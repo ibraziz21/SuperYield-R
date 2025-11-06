@@ -8,6 +8,8 @@ import { DepositModal } from '@/components/deposit/DepositModal'
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { TokenAddresses } from '@/lib/constants'
 import { MORPHO_VAULTS } from '@/lib/tvl'
+import ClaimRewards from '@/components/tables/ClaimRewardTable/ClaimReward'
+import MyPositions from '@/components/tables/MyPositionsTable/MyPositions'
 
 /** Morpho-only helper: Lisk positions → YieldSnapshot */
 function toSnapshotFromPosition(p: {
@@ -52,16 +54,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <PortfolioHeader />
 
-      {/* Markets preview */}
-      <section className="mx-auto w-full max-w-6xl">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight">Top yields</h2>
-          <Link href="/markets" className="text-sm font-medium text-primary underline-offset-4 hover:underline">
-            See all markets →
-          </Link>
-        </div>
-        <TopYields limit={5} />
-      </section>
+    
 
       {/* Action modals */}
       {depositSnap && (
@@ -71,6 +64,22 @@ export default function Dashboard() {
           snap={depositSnap}
         />
       )}
+
+      {/* Claimable Rewards */}
+      <section className="bg-[#F9FAFB] m-4 p-4 rounded-xl">
+        <div className="mb-3">
+          <h2 className="text-base font-semibold tracking-tight">Claimable Rewards</h2>
+        </div>
+        <ClaimRewards />
+      </section>
+
+      {/* My Positions */}
+      <section className="bg-[#F9FAFB] m-4 p-4 rounded-xl">
+        <div className="mb-3">
+          <h2 className="text-base font-semibold tracking-tight">My Positions</h2>
+        </div>
+        <MyPositions />
+      </section>
 
       {/* Keep withdraw open for Morpho (the modal guards unsupported flows itself)
       {withdrawSnap && (
