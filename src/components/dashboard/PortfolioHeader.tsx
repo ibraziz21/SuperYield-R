@@ -19,7 +19,8 @@ export const PortfolioHeader: FC = () => {
   }, [totalUsd, apy, loading, positions])
 
   return (
-    <div className="sticky top-0 z-20 bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/50">
+    <div className="sticky top-0 z-20 bg-[#F9FAFB] m-4 rounded-xl">
+      <h3 className='p-4 font-semibold'>Overview</h3>
       <div className="mx-auto grid w-full max-w-6xl gap-3 p-3 sm:grid-cols-4 sm:p-4">
         <Kpi title="Total Supplied" value={
           kpis.total ? `$${kpis.total.toLocaleString(undefined,{maximumFractionDigits:2})}` : '—'
@@ -37,10 +38,10 @@ export const PortfolioHeader: FC = () => {
 }
 
 const Kpi = ({ title, value, sub }: { title:string; value:string; sub?:string }) => (
-  <Card className="rounded-2xl">
+  <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
     <CardContent className="space-y-1 p-4">
       <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
-      <p className="text-2xl font-extrabold">{value}</p>
+      <p className="text-2xl font-semibold">{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </CardContent>
   </Card>

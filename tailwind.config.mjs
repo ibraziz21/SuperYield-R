@@ -4,6 +4,12 @@ module.exports = {
   darkMode: 'media',      // or 'class' if you prefer manual toggle
   theme: {
     extend: {
+      fontFamily: {
+        poppins: ["Poppins", "sans-serif"],
+        DM: ["DM Sans", "sans-serif"],
+        clash: ["Clash Display", "sans-serif"],
+        clashDisplay: ['var(--font-clashDisplay)'],
+      },
       borderRadius: { lg: 'var(--radius)' },
       colors: {
         background: 'hsl(var(--background))',
