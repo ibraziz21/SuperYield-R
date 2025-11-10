@@ -40,7 +40,7 @@ const TOKEN_DECIMALS: Record<MorphoToken, number> = {
   WETH: 18,
 };
 
-function formatAmountBigint(amount: bigint, decimals: number): string {
+export function formatAmountBigint(amount: bigint, decimals: number): string {
   // humanize: 1) convert to decimal string 2) add thousand separators 3) trim trailing zeros
   const neg = amount < 0n;
   const abs = neg ? -amount : amount;
@@ -157,7 +157,7 @@ const MyPositions: React.FC = () => {
   const tableData: TableRow[] = useMemo(() => {
     return positionsForMorpho.map((p) => {
       const snap = findSnapshotForPosition(p, snapshots);
-      const decimals = TOKEN_DECIMALS[(p.token as MorphoToken) ?? "USDCe"] ?? 6;
+      const decimals = 18;
       const depositsHuman = formatAmountBigint(p.amount ?? 0n, decimals);
 
       const row: TableRow = {

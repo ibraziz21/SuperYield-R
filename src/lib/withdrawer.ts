@@ -56,7 +56,13 @@ export async function withdrawMorphoOnLisk(opts: {
   })
 
   const tx = await wallet.writeContract(request)
-  await waitReceiptLisk(tx)
+  const withdrawTx = await publicLisk.waitForTransactionReceipt({ hash: tx })
+  
+  const minedAt = BigInt(withdrawTx.blockNumber ?? 0)
+  const target = minedAt + 2n
+  while ((await publicLisk.getBlockNumber()) < target) {
+    await new Promise((r) => setTimeout(r, 1200)) // ~1.2s poll; tweak if needed
 
   return { tx }
+}
 }

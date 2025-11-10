@@ -95,7 +95,14 @@ export async function ensureAllowanceForRouterOnLisk(
     chain: liskChain,
     account: owner,
   })
-  await waitReceiptLisk(approveHash)
+  const approveRcpt=await publicLisk.waitForTransactionReceipt({ hash: approveHash })
+
+   // Wait 2 confirmations after the approval is mined
+  const minedAt = BigInt(approveRcpt.blockNumber ?? 0)
+  const target = minedAt + 2n
+  while ((await publicLisk.getBlockNumber()) < target) {
+    await new Promise((r) => setTimeout(r, 1200)) // ~1.2s poll; tweak if needed
+  }
 }
 
 /* ────────────────────────────────────────────────────────────

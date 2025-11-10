@@ -10,13 +10,13 @@ import { getRoutes, executeRoute } from '@lifi/sdk'
 import { optimism, base, lisk as liskChain } from 'viem/chains'
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { quoteUsdceOnLisk, getBridgeQuote } from '@/lib/quotes'
-
+import { switchOrAddChain, CHAINS } from '@/lib/wallet'
 import { AmountCard } from '../AmountCard'
 import { BalanceStrip } from '../BalanceStrip'
 import { RouteFeesCard } from '../RouteFeesCard'
 import { ProgressSteps } from '../Progress'
 import { ActionBar } from '../ActionBar'
-import { configureLifiWith } from '@/lib/bridge'
+import { configureLifiWith, bridgeTokens } from '@/lib/bridge'
 import { adapterKeyForSnapshot } from '@/lib/adapters'
 import { trackActiveDeposit, clearActiveDeposit, updateActiveDeposit } from '@/lib/recovery'
 import {
@@ -316,186 +316,118 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
   /* ──────────────────────────────────────────────────────────
      NEW handleConfirm: user-recipient bridging + user deposit
      ────────────────────────────────────────────────────────── */
-     async function handleConfirm() {
-      if (!walletClient) { openConnect(); return }
-      setError(null)
-  
-      // helper: wait until user's Lisk balance for a token reaches a target
-      const waitForLiskBalanceAtLeast = async ({
-        user,
-        tokenAddr,
-        target,
-        start = 0n,
-        pollMs = 5000,
-        timeoutMs = 12 * 60_000,
-      }: {
-        user: `0x${string}`
-        tokenAddr: `0x${string}`
-        target: bigint
-        start?: bigint
-        pollMs?: number
-        timeoutMs?: number
-      }) => {
-        const endAt = Date.now() + timeoutMs
-        let last: bigint = start
-  
-        while (true) {
-          const bal = await readWalletBalance('lisk', tokenAddr, user).catch(() => null)
-          if (bal !== null) {
-            last = bal
-            if (bal >= target) return bal
-          }
-          if (Date.now() > endAt) {
-            throw new Error(`Bridging not finalized on Lisk: balance ${last} < required ${target}`)
-          }
-          await new Promise(r => setTimeout(r, pollMs))
+
+  async function handleConfirm() {
+    if (!walletClient) { openConnect(); return }
+    setError(null)
+
+    const waitForLiskBalanceAtLeast = async ({
+      user, tokenAddr, target, start = 0n, pollMs = 5000, timeoutMs = 12 * 60_000,
+    }: {
+      user: `0x${string}`; tokenAddr: `0x${string}`; target: bigint; start?: bigint; pollMs?: number; timeoutMs?: number
+    }) => {
+      const endAt = Date.now() + timeoutMs
+      let last = start
+      while (true) {
+        const bal = await readWalletBalance('lisk', tokenAddr, user).catch(() => null)
+        if (bal !== null) {
+          last = bal
+          if (bal >= target) return bal
         }
-      }
-  
-      try {
-        const inputAmt = parseUnits(amount || '0', tokenDecimals)
-        const user = walletClient.account!.address as `0x${string}`
-        if (snap.chain !== 'lisk') throw new Error('Only Lisk deposits are supported in this build')
-  
-        // Lisk destination token for Morpho
-        const destLabelForBridge: 'USDCe' | 'USDT0' | 'WETH' =
-          snap.token === 'USDC' ? 'USDCe' :
-          snap.token === 'USDT' ? 'USDT0' : 'WETH'
-  
-        const destTokenAddr =
-          destLabelForBridge === 'USDCe' ? (TokenAddresses.USDCe.lisk as `0x${string}`) :
-          destLabelForBridge === 'USDT0' ? (TokenAddresses.USDT0.lisk as `0x${string}`) :
-          (TokenAddresses.WETH.lisk  as `0x${string}`)
-  
-        // ✅ SHORT-CIRCUIT: if user already has enough on Lisk, skip bridging and just deposit
-        if (destLabelForBridge === 'USDCe' && (liBal ?? 0n) >= inputAmt) {
-          setStep('depositing')
-          await ensureWalletChain(walletClient, liskChain.id) // auto-switch to Lisk
-          await depositMorphoOnLiskAfterBridge(snap, inputAmt, walletClient)
-          setStep('success')
-          return
-        }
-        if (destLabelForBridge === 'USDT0' && (liBalUSDT0 ?? 0n) >= inputAmt) {
-          setStep('depositing')
-          await ensureWalletChain(walletClient, liskChain.id) // auto-switch to Lisk
-          await depositMorphoOnLiskAfterBridge(snap, inputAmt, walletClient)
-          setStep('success')
-          return
-        }
-  
-        // Helper to pick source chain by available balance
-        const pickSrcBy = (o?: bigint | null, b?: bigint | null): 'optimism' | 'base' => {
-          const op = o ?? 0n, ba = b ?? 0n
-          if (op >= inputAmt) return 'optimism'
-          if (ba >= inputAmt) return 'base'
-          return op >= ba ? 'optimism' : 'base'
-        }
-  
-        // Choose source token/chain for bridging
-        const srcToken: 'USDC' | 'USDT' | 'WETH' =
-          destLabelForBridge === 'USDT0' ? sourceAsset :
-          destLabelForBridge === 'USDCe' ? 'USDC' : 'WETH'
-  
-        const srcChain: 'optimism' | 'base' =
-          srcToken === 'USDC' ? pickSrcBy(opUsdcBal, baUsdcBal) :
-          srcToken === 'USDT' ? pickSrcBy(opUsdtBal, baUsdtBal) :
-          pickSrcBy(opBal, baBal)
-  
-        // 1) Bridge via Li.Fi to the USER on Lisk
-        configureLifiWith(walletClient)
-        setStep('bridging')
-  
-        const fromChainId = (srcChain === 'optimism' ? optimism.id : base.id)
-        const toChainId = liskChain.id
-        const fromTokenAddr = tokenAddrFor(srcToken, srcChain)
-  
-        // capture pre-bridge Lisk balance to know when it increases
-        const preBal = await readWalletBalance('lisk', destTokenAddr, user).catch(() => 0n) as bigint | null
-        const preBalSafe = preBal ?? 0n
-  
-        const routesRes = await getRoutes({
-          fromChainId,
-          toChainId,
-          fromAmount: inputAmt.toString(),
-          fromTokenAddress: fromTokenAddr,
-          toTokenAddress: destTokenAddr,
-          fromAddress: user,
-          toAddress: user, // ✅ USER receives on Lisk
-          options: {
-            slippage: 0.003,
-            bridges:  { deny: [] },
-            exchanges:{ allow: [] },
-          },
-        })
-  
-        const routeObj = (routesRes.routes ?? []).find((r: any) => {
-          const last = r?.steps?.[r.steps.length - 1]
-          return last?.action?.toAddress?.toLowerCase?.() === user.toLowerCase()
-              && last?.action?.toToken?.address?.toLowerCase?.() === destTokenAddr.toLowerCase()
-        })
-        if (!routeObj) throw new Error('No safe route to your address with the desired token')
-  
-        const finalMinOutStr =
-          (routeObj.toAmountMin as string)
-          ?? (routeObj.steps?.at(-1)?.estimate?.toAmountMin as string)
-        if (!finalMinOutStr) throw new Error('Route does not expose toAmountMin')
-        const minOut = BigInt(finalMinOutStr)
-  
-        await executeRoute(routeObj as any, {
-          updateRouteHook: async (updated) => {
-            const last = (updated as any)?.steps?.at(-1)
-            const lastToAddr  = last?.action?.toAddress?.toLowerCase?.()
-            const lastToToken = last?.action?.toToken?.address?.toLowerCase?.()
-            if (lastToAddr && lastToAddr !== user.toLowerCase()) {
-              throw new Error('Final recipient changed. Aborting.')
-            }
-            if (lastToToken && lastToToken !== destTokenAddr.toLowerCase()) {
-              throw new Error(`Final token changed (expected ${destLabelForBridge}). Aborting.`)
-            }
-          },
-          // Do not let Li.Fi force a destination wallet action
-          switchChainHook: async (chainId) => {
-            if (chainId === toChainId) {
-              throw new Error('Route requested a destination wallet action on Lisk; aborting for safety.')
-            }
-            await walletClient.request({
-              method: 'wallet_switchEthereumChain',
-              params: [{ chainId: `0x${chainId.toString(16)}` }],
-            })
-            return walletClient
-          },
-          acceptExchangeRateUpdateHook: async () => true,
-        })
-  
-        // 1b) Ensure bridging is finalized on Lisk by checking the user's on-chain balance
-        await waitForLiskBalanceAtLeast({
-          user,
-          tokenAddr: destTokenAddr,
-          target: preBalSafe + minOut, // at least the bridged minimum
-          start: preBalSafe,
-          pollMs: 6000,
-          timeoutMs: 15 * 60_000,
-        })
-  
-        // 2) Switch to Lisk *automatically* before deposit
-        setStep('depositing')
-        try {
-          await ensureWalletChain(walletClient, liskChain.id) // auto-switch to Lisk
-        } catch {
-          throw new Error('Please switch your wallet to Lisk to complete the deposit.')
-        }
-  
-        // 3) Deposit from the user's wallet on Lisk (use bridged minOut floor)
-        await depositMorphoOnLiskAfterBridge(snap, minOut, walletClient)
-  
-        setStep('success')
-      } catch (e: any) {
-        console.error('[ui] deposit error (user-only path)', e)
-        setError(e instanceof Error ? e.message : String(e))
-        setStep('error')
+        if (Date.now() > endAt) throw new Error(`Bridging not finalized on Lisk: balance ${last} < required ${target}`)
+        await new Promise(r => setTimeout(r, pollMs))
       }
     }
-  
+
+    try {
+      const inputAmt = parseUnits(amount || '0', tokenDecimals)
+      const user = walletClient.account!.address as `0x${string}`
+      if (snap.chain !== 'lisk') throw new Error('Only Lisk deposits are supported in this build')
+
+      const destLabel: 'USDCe' | 'USDT0' | 'WETH' =
+        snap.token === 'USDC' ? 'USDCe' :
+          snap.token === 'USDT' ? 'USDT0' : 'WETH'
+
+      const destTokenAddr =
+        destLabel === 'USDCe' ? (TokenAddresses.USDCe.lisk as `0x${string}`) :
+          destLabel === 'USDT0' ? (TokenAddresses.USDT0.lisk as `0x${string}`) :
+            (TokenAddresses.WETH.lisk as `0x${string}`)
+
+      if (destLabel === 'USDCe' && (liBal ?? 0n) >= inputAmt) {
+        setStep('depositing')
+        await ensureWalletChain(walletClient, liskChain.id)
+        await depositMorphoOnLiskAfterBridge(snap, inputAmt, walletClient)
+        setStep('success')
+        return
+      }
+      if (destLabel === 'USDT0' && (liBalUSDT0 ?? 0n) >= inputAmt) {
+        setStep('depositing')
+        await ensureWalletChain(walletClient, liskChain.id)
+        await depositMorphoOnLiskAfterBridge(snap, inputAmt, walletClient)
+        setStep('success')
+        return
+      }
+
+      const pickSrcBy = (o?: bigint | null, b?: bigint | null): 'optimism' | 'base' => {
+        const op = o ?? 0n, ba = b ?? 0n
+        if (op >= inputAmt) return 'optimism'
+        if (ba >= inputAmt) return 'base'
+        return op >= ba ? 'optimism' : 'base'
+      }
+
+      const srcToken: 'USDC' | 'USDT' | 'WETH' =
+        destLabel === 'USDT0' ? sourceAsset :
+          destLabel === 'USDCe' ? 'USDC' : 'WETH'
+
+      const srcChain: 'optimism' | 'base' =
+        srcToken === 'USDC' ? pickSrcBy(opUsdcBal, baUsdcBal) :
+          srcToken === 'USDT' ? pickSrcBy(opUsdtBal, baUsdtBal) :
+            pickSrcBy(opBal, baBal)
+
+      setStep('bridging')
+
+      const preBal = (await readWalletBalance('lisk', destTokenAddr, user).catch(() => 0n)) as bigint
+
+      // Quote to get a conservative minOut
+      const q = await getBridgeQuote({
+        token: destLabel, amount: inputAmt, from: srcChain, to: 'lisk',
+        fromAddress: user, fromTokenSym: srcToken === 'WETH' ? undefined : srcToken,
+      })
+      const minOut = BigInt(q.estimate?.toAmountMin ?? '0')
+
+      const srcViem = srcChain === 'optimism' ? CHAINS.optimism : CHAINS.base
+      await switchOrAddChain(walletClient, srcViem)
+      await bridgeTokens(destLabel, inputAmt, srcChain, 'lisk', walletClient, {
+        sourceToken: srcToken === 'WETH' ? undefined : srcToken,
+        onUpdate: () => { },
+      })
+
+      // Wait for funds to land on user’s Lisk wallet
+      await waitForLiskBalanceAtLeast({
+        user,
+        tokenAddr: destTokenAddr,
+        target: preBal + (minOut > 0n ? minOut : 1n),
+        start: preBal,
+        pollMs: 6000,
+        timeoutMs: 15 * 60_000,
+      })
+
+      setStep('depositing')
+      await ensureWalletChain(walletClient, liskChain.id)
+
+      await switchOrAddChain(walletClient, CHAINS.lisk)
+      await depositMorphoOnLiskAfterBridge(snap, minOut > 0n ? minOut : inputAmt, walletClient)
+      
+
+      setStep('success')
+    } catch (e: any) {
+      console.error('[ui] deposit error (bridgeTokens path)', e)
+      setError(e instanceof Error ? e.message : String(e))
+      setStep('error')
+    }
+  }
+
+
 
   /* -------- UI flags -------- */
   const hasAmount = amount.trim().length > 0 && Number(amount) > 0
