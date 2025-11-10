@@ -1,5 +1,6 @@
 // src/lib/positions.ts
 // Morpho Blue positions only (Lisk). Keeps OP receipt-token check for pending deposits.
+// Returns **shares** for Lisk vaults (and OP receipt tokens are already shares).
 
 import { publicOptimism, publicLisk } from './clients'
 import { MORPHO_POOLS, TokenAddresses, type TokenSymbol } from './constants'
@@ -21,22 +22,13 @@ export interface Position {
   protocol: 'Morpho Blue'
   chain:    EvmChain
   token:    Extract<TokenSymbol, 'USDCe' | 'USDT0' | 'WETH'>
+  /** Amount is in **shares** (ERC-4626 share tokens for Lisk, sVault shares on OP). */
   amount:   bigint
 }
 
 /* ──────────────────────────────────────────────────────────────── */
-/* Morpho Blue (Lisk) – ERC-4626 vaults                             */
+/* Morpho Blue (Lisk) – return **shares** (ERC-4626 share token)    */
 /* ──────────────────────────────────────────────────────────────── */
-
-const erc4626Abi = [
-  {
-    type: 'function',
-    name: 'convertToAssets',
-    stateMutability: 'view',
-    inputs:   [{ name: 'shares', type: 'uint256' }],
-    outputs:  [{ type: 'uint256' }],
-  },
-] as const
 
 const MORPHO_VAULT_BY_TOKEN: Record<
   Extract<TokenSymbol, 'USDCe' | 'USDT0' | 'WETH'>,
@@ -47,42 +39,32 @@ const MORPHO_VAULT_BY_TOKEN: Record<
   WETH:  MORPHO_POOLS['weth-supply']  as `0x${string}`,
 }
 
-async function morphoSupplyLisk(
+/** Read the user's **share** balance directly from the vault (ERC20 balanceOf). */
+async function morphoSharesLisk(
   token: Extract<TokenSymbol, 'USDCe' | 'USDT0' | 'WETH'>,
   user:  `0x${string}`,
 ): Promise<bigint> {
   const vault = MORPHO_VAULT_BY_TOKEN[token]
-  dbg('morphoSupplyLisk()', { token, user, vault })
+  dbg('morphoSharesLisk()', { token, user, vault })
 
   try {
-    const [shares] = await Promise.all([
-      publicLisk.readContract({
-        address: vault,
-        abi: erc20Abi,
-        functionName: 'balanceOf',
-        args: [user],
-      }) as Promise<bigint>,
-    ])
-
-    if (shares === 0n) return 0n
-
-    const assets = await publicLisk.readContract({
+    const shares = await publicLisk.readContract({
       address: vault,
-      abi: erc4626Abi,
-      functionName: 'convertToAssets',
-      args: [shares],
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [user],
     }) as bigint
-    dbg('morphoSupplyLisk.assets', { assets: assets.toString() })
 
-    return assets
+    dbg('morphoSharesLisk.shares', { shares: shares.toString() })
+    return shares ?? 0n
   } catch (e) {
-    err('morphoSupplyLisk.error', e)
+    err('morphoSharesLisk.error', e)
     return 0n
   }
 }
 
 /* ──────────────────────────────────────────────────────────────── */
-/* Optimism receipt tokens (sVault)                                 */
+/* Optimism receipt tokens (sVault) — also **shares**               */
 /* ──────────────────────────────────────────────────────────────── */
 
 const maxBigint = (a: bigint, b: bigint) => (a > b ? a : b)
@@ -114,26 +96,33 @@ async function fetchReceiptBalance(
   }
 }
 
-async function morphoUSDCeViaReceiptOrLisk(user: `0x${string}`): Promise<bigint> {
-  dbg('morphoUSDCeViaReceiptOrLisk()', { user })
-  const [receipt, liskAssets] = await Promise.all([
+/**
+ * For USDCe: return the greater of OP receipt **shares** and Lisk vault **shares**.
+ * This keeps your “pending deposit” logic intact but now everything is in shares.
+ */
+async function morphoUSDCeSharesViaReceiptOrLisk(user: `0x${string}`): Promise<bigint> {
+  dbg('morphoUSDCeSharesViaReceiptOrLisk()', { user })
+  const [receiptShares, liskShares] = await Promise.all([
     fetchReceiptBalance(user, 'USDC'),
-    morphoSupplyLisk('USDCe', user),
+    morphoSharesLisk('USDCe', user),
   ])
-  return maxBigint(receipt, liskAssets)
+  return maxBigint(receiptShares, liskShares)
 }
 
-async function morphoUSDT0ViaReceiptOrLisk(user: `0x${string}`): Promise<bigint> {
-  dbg('morphoUSDT0ViaReceiptOrLisk()', { user })
-  const [receipt, liskAssets] = await Promise.all([
+/**
+ * For USDT0: return the greater of OP receipt **shares** and Lisk vault **shares**.
+ */
+async function morphoUSDT0SharesViaReceiptOrLisk(user: `0x${string}`): Promise<bigint> {
+  dbg('morphoUSDT0SharesViaReceiptOrLisk()', { user })
+  const [receiptShares, liskShares] = await Promise.all([
     fetchReceiptBalance(user, 'USDT'),
-    morphoSupplyLisk('USDT0', user),
+    morphoSharesLisk('USDT0', user),
   ])
-  return maxBigint(receipt, liskAssets)
+  return maxBigint(receiptShares, liskShares)
 }
 
 /* ──────────────────────────────────────────────────────────────── */
-/* Aggregator – fetch all positions                                 */
+/* Aggregator – fetch all positions (shares)                        */
 /* ──────────────────────────────────────────────────────────────── */
 
 export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
@@ -142,15 +131,15 @@ export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
   const tasks: Promise<Position>[] = []
 
   tasks.push(
-    morphoUSDCeViaReceiptOrLisk(user)
+    morphoUSDCeSharesViaReceiptOrLisk(user)
       .then((amt) => ({ protocol: 'Morpho Blue' as const, chain: 'lisk' as const, token: 'USDCe' as const, amount: amt })),
   )
   tasks.push(
-    morphoUSDT0ViaReceiptOrLisk(user)
+    morphoUSDT0SharesViaReceiptOrLisk(user)
       .then((amt) => ({ protocol: 'Morpho Blue' as const, chain: 'lisk' as const, token: 'USDT0' as const, amount: amt })),
   )
   tasks.push(
-    morphoSupplyLisk('WETH', user)
+    morphoSharesLisk('WETH', user)
       .then((amt) => ({ protocol: 'Morpho Blue' as const, chain: 'lisk' as const, token: 'WETH' as const, amount: amt }))
       .catch(() => ({ protocol: 'Morpho Blue' as const, chain: 'lisk' as const, token: 'WETH' as const, amount: 0n })),
   )
