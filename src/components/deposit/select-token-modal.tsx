@@ -1,6 +1,7 @@
 "use client"
 
 import { X } from "lucide-react"
+import Image from "next/image"
 
 interface Token {
   id: string
@@ -39,7 +40,9 @@ export function SelectTokenModal({ tokens, selectedToken, onSelect, onClose }: S
               className="w-full px-6 py-4 hover:bg-muted transition-colors flex items-center justify-between group"
             >
               <div className="flex items-center gap-4 flex-1 text-left">
-                <div className="text-4xl">{token.icon}</div>
+                <div className="w-8 h-8 relative">
+                  <Image src={token.icon} alt={token.symbol} width={32} height={32} className="rounded-full" />
+                </div>
                 <div>
                   <p className="font-semibold text-lg text-foreground">{token.name}</p>
                   <p className="text-sm text-muted-foreground">{token.address}</p>

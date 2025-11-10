@@ -89,7 +89,7 @@ export default function VaultsTable<TData , TValue>({
           </SelectTrigger>
           <SelectContent className="bg-[#ffffff] text-[#808195]">
             <SelectItem value="all">All Protocols</SelectItem>
-            <SelectItem value="MorphoBlue">MorphoBlue</SelectItem>
+            <SelectItem value="MorphoBlue">Morpho Blue</SelectItem>
           </SelectContent>
         </Select>
 

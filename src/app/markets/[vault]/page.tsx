@@ -1,12 +1,13 @@
 'use client'
 
 import { useParams, useRouter } from 'next/navigation'
-import { vaultsData } from '@/lib/vaultsData'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { ArrowLeftIcon } from '@radix-ui/react-icons'
 import { Card, CardContent } from '@/components/ui/Card'
 import { DepositWithdraw } from '@/components/deposit/deposit-withdraw'
+import { useMemo } from 'react'
+import { useYields, type YieldSnapshot } from '@/hooks/useYields'
 
 // Token icon mapping
 const tokenIcons: Record<string, string> = {
@@ -26,30 +27,59 @@ const networkIcons: Record<string, string> = {
   Base: "/networks/base.png",
 };
 
-// Protocol icon mapping
-const protocolIcons: Record<string, string> = {
-  "Aave V3": "/protocols/aave.png",
-  "Morpho Blue": "/protocols/morpho-icon.png",
-  Compound: "/protocols/compound.png",
-  Yearn: "/protocols/yearn.png",
-  Merkle: "/protocols/merkle.png",
+// Normalize for display (same as YieldRow)
+const DISPLAY_TOKEN: Record<string, string> = {
+  USDCe: 'USDC',
+  USDT0: 'USDT',
+  USDC: 'USDC',
+  USDT: 'USDT',
+  WETH: 'WETH',
 };
+
+// Only Lisk + Morpho Blue + (USDC/USDT)
+const HARD_FILTER = (y: Pick<YieldSnapshot, 'chain' | 'protocolKey' | 'token'>) =>
+  y.chain === 'lisk' &&
+  y.protocolKey === 'morpho-blue' &&
+  (y.token === 'USDC' || y.token === 'USDT');
 
 export default function VaultDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const vaultName = params.vault as string
+  const vaultName = (params.vault as string) || ''
 
-  // Filter all vaults matching this vault name
-  const vaultVariants = vaultsData.filter(v => v.vault === vaultName)
+  const { yields, isLoading, error } = useYields()
 
-  if (vaultVariants.length === 0) {
+  // Derive “variants” (shape-compatible with previous usage)
+  const vaultVariants = useMemo(() => {
+    if (!yields) return []
+
+    const filtered = yields.filter(HARD_FILTER)
+    const forThisVault = filtered.filter(s => (DISPLAY_TOKEN[s.token] ?? s.token) === vaultName)
+
+    return forThisVault.map(s => ({
+      vault: DISPLAY_TOKEN[s.token] ?? s.token,
+      network: 'Lisk',
+      protocol: 'Morpho Blue',
+      apy: (Number(s.apy) || 0).toFixed(2),
+      tvl: Number.isFinite(s.tvlUSD) ? Math.round(s.tvlUSD).toLocaleString() : '0',
+    }))
+  }, [yields, vaultName])
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
+        Loading vault…
+      </div>
+    )
+  }
+
+  if (error || vaultVariants.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">Vault Not Found</h1>
           <p className="text-muted-foreground mb-6">
-            The vault "{vaultName}" does not exist.
+            The vault &quot;{vaultName}&quot; does not exist.
           </p>
           <Button onClick={() => router.push('/markets')}>
             Back to Markets
@@ -58,6 +88,12 @@ export default function VaultDetailPage() {
       </div>
     )
   }
+
+  // pick the first snapshot that matches this vault for the right pane
+  // (USDC or USDT, Morpho on Lisk)
+  const snapCandidate = (yields ?? []).find(
+    s => s.chain === 'lisk' && s.protocolKey === 'morpho-blue' && (DISPLAY_TOKEN[s.token] ?? s.token) === vaultName
+  )
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] p-4 md:p-6">
@@ -102,13 +138,22 @@ export default function VaultDetailPage() {
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                 <CardContent className="space-y-1 p-4">
                   <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Total TVL</p>
-                  <p className="text-2xl font-semibold">${vaultVariants.reduce((sum, v) => sum + parseFloat(v.tvl.replace(/,/g, '')), 0).toLocaleString()}</p>
+                  <p className="text-2xl font-semibold">
+                    $
+                    {vaultVariants
+                      .reduce((sum, v) => sum + Number((v.tvl || '0').toString().replace(/,/g, '')), 0)
+                      .toLocaleString()}
+                  </p>
                 </CardContent>
               </Card>
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                 <CardContent className="space-y-1 p-4">
                   <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Average APY</p>
-                  <p className="text-2xl font-semibold">{(vaultVariants.reduce((sum, v) => sum + parseFloat(v.apy), 0) / vaultVariants.length).toFixed(2)}%</p>
+                  <p className="text-2xl font-semibold">
+                    {(
+                      vaultVariants.reduce((sum, v) => sum + Number(v.apy || 0), 0) / vaultVariants.length
+                    ).toFixed(2)}%
+                  </p>
                 </CardContent>
               </Card>
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
@@ -170,7 +215,7 @@ export default function VaultDetailPage() {
 
         {/* Right Column - Deposit/Withdraw */}
         <div className="lg:sticky lg:top-6 h-fit">
-          <DepositWithdraw initialTab="deposit" />
+          {snapCandidate && <DepositWithdraw initialTab="deposit" snap={snapCandidate} />}
         </div>
       </div>
     </div>
