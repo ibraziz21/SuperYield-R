@@ -220,7 +220,7 @@ export const PositionsDashboardInner: FC = () => {
       {withdrawSnap && (
   <WithdrawModal
     open={true}
-    snap={{ token: withdrawSnap.token, chain: withdrawSnap.chain, poolAddress: withdrawSnap.poolAddress }}
+    snap={{ token: withdrawSnap.token, chain: withdrawSnap.chain, poolAddress: withdrawSnap.poolAddress as `0x${string}` }}
     shares={withdrawSnap.shares}
     onClose={() => setWithdrawSnap(null)}
   />

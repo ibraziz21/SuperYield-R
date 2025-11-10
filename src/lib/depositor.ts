@@ -1,57 +1,36 @@
 // src/lib/depositor.ts
-// Morpho-only app: user-initiated Lisk deposits are executed by the relayer.
-// We keep allowance helpers (useful for OP/Base funding flows), but block direct Lisk deposits.
+// Lisk + Morpho only: call these AFTER bridging finishes (user already received token on Lisk).
 
-import type { WalletClient } from 'viem'
+import type { WalletClient, Address } from 'viem'
 import { erc20Abi, maxUint256 } from 'viem'
-import { optimism, base, lisk } from 'viem/chains'
+import { lisk as liskChain } from 'viem/chains'
 import { ROUTERS, TokenAddresses } from './constants'
 import aggregatorRouterAbi from './abi/AggregatorRouter.json'
-import { publicOptimism, publicBase, publicLisk } from './clients'
+import { publicLisk } from './clients'
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { adapterKeyForSnapshot } from './adapters'
 
-type ChainId = 'optimism' | 'base' | 'lisk'
-const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000' as const
 
-function pub(chain: ChainId) {
-  return chain === 'optimism' ? publicOptimism : chain === 'base' ? publicBase : publicLisk
-}
-function chainObj(chain: ChainId) {
-  return chain === 'optimism' ? optimism : chain === 'base' ? base : lisk
-}
-function isUSDT(addr: `0x${string}`) {
-  const a = addr.toLowerCase()
-  return (
-    a === '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58'.toLowerCase() || // OP USDT
-    a === '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2'.toLowerCase()    // Base USDT
-  )
-}
-async function waitReceipt(chain: ChainId, hash: `0x${string}`) {
-  await pub(chain).waitForTransactionReceipt({ hash })
+/* ────────────────────────────────────────────────────────────
+   Helpers (Lisk-only)
+   ──────────────────────────────────────────────────────────── */
+
+function toLower(x?: string | null) { return (x ?? '').toLowerCase() }
+
+function isUSDTLikeOnLisk(addr: Address) {
+  const usdt0 = (TokenAddresses as any)?.USDT0?.lisk as Address | undefined
+  const usdt  = (TokenAddresses as any)?.USDT?.lisk  as Address | undefined
+  const a = toLower(addr)
+  return (usdt0 && toLower(usdt0) === a) || (usdt && toLower(usdt) === a)
 }
 
-async function getAdapterAddress(
-  chain: ChainId,
-  key: `0x${string}`,
-): Promise<`0x${string}`> {
-  const router = ROUTERS[chain]
-  const addr = await pub(chain).readContract({
-    address: router,
-    abi: aggregatorRouterAbi as any,
-    functionName: 'adapters',
-    args: [key],
-  }) as `0x${string}`
-  return addr
+async function waitReceiptLisk(hash: `0x${string}`) {
+  await publicLisk.waitForTransactionReceipt({ hash })
 }
 
-async function readAllowance(
-  token: `0x${string}`,
-  owner: `0x${string}`,
-  spender: `0x${string}`,
-  chain: ChainId,
-) {
-  return (await pub(chain).readContract({
+async function readAllowanceLisk(token: Address, owner: Address, spender: Address): Promise<bigint> {
+  return (await publicLisk.readContract({
     address: token,
     abi: erc20Abi,
     functionName: 'allowance',
@@ -59,30 +38,53 @@ async function readAllowance(
   })) as bigint
 }
 
-export async function ensureAllowanceForRouter(
-  token: `0x${string}`,
-  router: `0x${string}`,
+async function readBalanceLisk(token: Address, owner: Address): Promise<bigint> {
+  return (await publicLisk.readContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [owner],
+  })) as bigint
+}
+
+/** Map UI token to actual Lisk asset used by Morpho: USDC→USDCe, USDT→USDT0, WETH→WETH */
+export function resolveMorphoAssetOnLisk(snap: YieldSnapshot): Address {
+  if (snap.protocolKey !== 'morpho-blue') {
+    throw new Error('resolveMorphoAssetOnLisk: unsupported protocol (morpho-only)')
+  }
+  const morphoToken =
+    snap.token === 'USDC' ? 'USDCe' :
+    snap.token === 'USDT' ? 'USDT0' :
+    snap.token
+  const addr = (TokenAddresses as any)?.[morphoToken]?.lisk as Address | undefined
+  if (!addr) throw new Error(`Token address not configured on Lisk for ${morphoToken}`)
+  return addr
+}
+
+/** Ensure allowance to the Lisk Router (USDT0 requires approve(0) then approve(MAX)) */
+export async function ensureAllowanceForRouterOnLisk(
+  token: Address,
+  router: Address,
   amount: bigint,
   wallet: WalletClient,
-  chain: ChainId,
 ) {
-  const owner = wallet.account?.address as `0x${string}` | undefined
+  const owner = wallet.account?.address as Address | undefined
   if (!owner) throw new Error('Wallet not connected')
 
-  const current = await readAllowance(token, owner, router, chain)
+  const current = await readAllowanceLisk(token, owner, router)
   if (current >= amount) return
 
-  // USDT quirk: reset to 0 first if non-zero
-  if (current > BigInt(0) && isUSDT(token)) {
+  // USDT-like quirk (covers USDT0 on Lisk): set to 0 first if non-zero
+  if (current > 0n && isUSDTLikeOnLisk(token)) {
     const resetHash = await wallet.writeContract({
       address: token,
       abi: erc20Abi,
       functionName: 'approve',
-      args: [router, BigInt(0)],
-      chain: chainObj(chain),
+      args: [router, 0n],
+      chain: liskChain,
       account: owner,
     })
-    await waitReceipt(chain, resetHash)
+    await waitReceiptLisk(resetHash)
   }
 
   const approveHash = await wallet.writeContract({
@@ -90,72 +92,84 @@ export async function ensureAllowanceForRouter(
     abi: erc20Abi,
     functionName: 'approve',
     args: [router, maxUint256],
-    chain: chainObj(chain),
+    chain: liskChain,
     account: owner,
   })
-  await waitReceipt(chain, approveHash)
+  const approveRcpt=await publicLisk.waitForTransactionReceipt({ hash: approveHash })
+
+   // Wait 2 confirmations after the approval is mined
+  const minedAt = BigInt(approveRcpt.blockNumber ?? 0)
+  const target = minedAt + 2n
+  while ((await publicLisk.getBlockNumber()) < target) {
+    await new Promise((r) => setTimeout(r, 1200)) // ~1.2s poll; tweak if needed
+  }
 }
+
+/* ────────────────────────────────────────────────────────────
+   Public entrypoint: deposit to Morpho via Router (user wallet)
+   Call after bridge success. Will clamp to user balance.
+   ──────────────────────────────────────────────────────────── */
 
 /**
- * Resolve the on-chain asset given a Morpho snapshot.
- * For Morpho (Lisk): map display tokens to the actual Lisk asset addresses.
+ * depositMorphoOnLiskAfterBridge
+ *
+ * Bridges are complete and the user holds the Lisk-side asset.
+ * This function:
+ *  1) Resolves the Lisk token for Morpho (USDC→USDCe, USDT→USDT0, WETH),
+ *  2) Reads the user’s balance and clamps to min(minExpectedOut, balance),
+ *  3) Ensures allowance to the Lisk Router,
+ *  4) Calls Router.deposit(adapterKey, asset, amount, onBehalfOf=user, data=0x) from the user wallet.
+ *
+ * @param snap            Morpho snapshot for the selected vault (must be morpho-blue on Lisk)
+ * @param minExpectedOut  Conservative min-out from Li.Fi route (BigInt)
+ * @param wallet          Connected WalletClient (must be able to sign on Lisk)
+ * @returns { tx: 0x…, amount: bigint }
  */
-export function resolveAssetForSnapshot(
+export async function depositMorphoOnLiskAfterBridge(
   snap: YieldSnapshot,
-  chain: ChainId,
-): `0x${string}` {
-  if (snap.protocolKey === 'morpho-blue') {
-    // Lisk: USDC -> USDCe, USDT -> USDT0 (WETH is the same)
-    const morphoToken =
-      snap.token === 'USDC' ? 'USDCe' :
-      snap.token === 'USDT' ? 'USDT0' :
-      snap.token
-    return (TokenAddresses as any)[morphoToken].lisk as `0x${string}`
-  }
-
-  // No other protocols supported in morpho-only build.
-  throw new Error('Unsupported protocol in resolveAssetForSnapshot')
-}
-
-/** Router.deposit(adapterKey, asset, amount, onBehalfOf, data)
- *  NOTE: Morpho (Lisk) deposits are executed server-side by the relayer.
- */
-export async function depositToPool(
-  snap: YieldSnapshot,
-  amount: bigint,
+  minExpectedOut: bigint,
   wallet: WalletClient,
-) {
-  const owner = wallet.account?.address as `0x${string}` | undefined
+): Promise<{ tx: `0x${string}`; amount: bigint }> {
+  const owner = wallet.account?.address as Address | undefined
   if (!owner) throw new Error('Wallet not connected')
 
-  if (snap.protocolKey === 'morpho-blue') {
-    throw new Error('Lisk deposits are executed by the relayer; no user action on Lisk required.')
+  if (snap.protocolKey !== 'morpho-blue') {
+    throw new Error('Only Morpho (Lisk) is supported in this depositor')
   }
 
-  // If you ever re-enable non-Lisk user deposits, the code below remains a reference.
-  const chain: ChainId = snap.chain as ChainId
-  const router = ROUTERS[chain]
-  if (!router || router.toLowerCase() === ZERO_ADDR) throw new Error(`Router missing for ${chain}`)
+  // (Optional) Safety: ensure wallet is on Lisk; caller may have already switched
+  // If your wallet client doesn’t auto-switch, do it outside before calling.
+  if ((wallet as any)?.chain?.id !== liskChain.id) {
+    throw new Error('Switch wallet to Lisk, then retry deposit')
+  }
 
-  const key = adapterKeyForSnapshot(snap)
-  const adapter = await getAdapterAddress(chain, key)
-  if (!adapter || adapter.toLowerCase() === ZERO_ADDR)
-    throw new Error(`Adapter not registered for key on ${chain}: ${key}`)
+  const router = ROUTERS?.lisk as Address | undefined
+  if (!router || toLower(router) === toLower(ZERO_ADDR)) {
+    throw new Error('Lisk Router address not configured')
+  }
 
-  const asset = resolveAssetForSnapshot(snap, chain)
+  const adapterKey = adapterKeyForSnapshot(snap)
+  const asset = resolveMorphoAssetOnLisk(snap)
 
-  // approve router (router does transferFrom)
-  await ensureAllowanceForRouter(asset, router, amount, wallet, chain)
+  // Clamp deposit to what the user actually received on Lisk
+  const balance = await readBalanceLisk(asset, owner)
+  const amount = balance >= minExpectedOut ? minExpectedOut : balance
+  if (amount <= 0n) throw new Error('No Lisk balance available to deposit')
 
-  // simulate then write (kept for completeness)
-  const { request } = await pub(chain).simulateContract({
+  // Approve (if needed)
+  await ensureAllowanceForRouterOnLisk(asset, router, amount, wallet)
+
+  // Simulate then write
+  const { request } = await publicLisk.simulateContract({
     address: router,
     abi: aggregatorRouterAbi as any,
     functionName: 'deposit',
-    args: [key, asset, amount, owner, '0x'],
+    args: [adapterKey, asset, amount, owner, '0x'],
     account: owner,
   })
 
   const tx = await wallet.writeContract(request)
-  await waitReceipt(chain, tx)
+  await waitReceiptLisk(tx)
+
+  return { tx, amount }
 }

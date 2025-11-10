@@ -5,10 +5,27 @@ import { Card, CardContent } from '@/components/ui/Card'
 import { usePositions } from '@/hooks/usePositions'
 import { usePortfolioApy } from '@/hooks/usePortfolioApy'
 import { rewardForecast } from '@/lib/rewardForecast'
+import { formatAmountBigint } from '@/components/tables/MyPositionsTable/MyPositions'
 
 export const PortfolioHeader: FC = () => {
   const { data: positions } = usePositions()
   const { apy, loading, totalUsd } = usePortfolioApy()
+
+  // totalUsd comes as 18-decimals (bigint or decimal string). Convert ONCE to a number.
+  const totalNum = useMemo<number>(() => {
+    try {
+      if (typeof totalUsd === 'bigint') {
+        return Number(formatAmountBigint(totalUsd, 18) ?? 0)
+      }
+      if (typeof totalUsd === 'string') {
+        return Number(formatAmountBigint(BigInt(totalUsd), 18) ?? 0)
+      }
+      if (typeof totalUsd === 'number') {
+        return totalUsd
+      }
+    } catch {}
+    return 0
+  }, [totalUsd])
 
   const kpis = useMemo(() => {
     const total = totalUsd ?? 0
@@ -38,7 +55,7 @@ export const PortfolioHeader: FC = () => {
   )
 }
 
-const Kpi = ({ title, value, sub }: { title:string; value:string; sub?:string }) => (
+const Kpi = ({ title, value, sub }: { title: string; value: string; sub?: string }) => (
   <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
     <CardContent className="space-y-1 p-4">
       <p className="text-[11px] font-medium tracking-wide text-muted-foreground">{title}</p>

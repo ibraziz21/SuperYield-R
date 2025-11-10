@@ -113,6 +113,67 @@ export function configureLifiWith(walletClient: WalletClient) {
  *   - USDC (OP/Base) -> USDCe (Lisk)   ✅
  *   - USDT/USDC between OP/Base        ✅ (single-asset)
  */
+export async function bridgeWithdrawal(params: {
+  srcVaultToken: 'USDCe' | 'USDT0' | 'WETH'   // token you HAVE on Lisk after redeem
+  destToken:     'USDC'  | 'USDT'  | 'WETH'   // token you want to RECEIVE on OP/Base
+  amount: bigint
+  to: 'optimism' | 'base'
+  walletClient: WalletClient
+  opts?: {
+    slippage?: number
+    allowBridges?: string[]
+    allowExchanges?: string[]
+    onUpdate?: (route: any) => void
+    onRateChange?: (nextToAmount: string) => Promise<boolean> | boolean
+  }
+}) {
+  const { srcVaultToken, destToken, amount, to, walletClient, opts } = params
+
+  const account = walletClient.account?.address as `0x${string}` | undefined
+  if (!account) throw new Error('No account found on WalletClient – connect a wallet first')
+
+  // Wire LI.FI to the active wallet (auto switch supported by switchChainHook below)
+  configureLifiWith(walletClient)
+
+  // Source is ALWAYS Lisk for withdrawals
+  const originChainId      = CHAIN_ID.lisk
+  const destinationChainId = CHAIN_ID[to]
+
+  // Force the source token to the exact vault token on Lisk (USDCe/USDT0/WETH)
+  const inputToken  = tokenAddress(srcVaultToken, 'lisk')
+  // Destination is the native representation on OP/Base (USDC/USDT/WETH)
+  const outputToken = tokenAddress(destToken, to)
+
+  const quote = await getQuote({
+    fromChain: originChainId,
+    toChain: destinationChainId,
+    fromToken: inputToken,
+    toToken: outputToken,
+    fromAmount: amount.toString(),
+    fromAddress: account,
+    slippage: opts?.slippage ?? 0.003,
+    allowBridges: opts?.allowBridges,
+    allowExchanges: opts?.allowExchanges,
+  })
+
+  const route = convertQuoteToRoute(quote)
+
+  return executeRoute(route, {
+    updateRouteHook: (updated) => opts?.onUpdate?.(updated),
+    switchChainHook: async (chainId) => {
+      await walletClient.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: `0x${chainId.toString(16)}` }],
+      })
+      return walletClient
+    },
+    acceptExchangeRateUpdateHook: async (p) => {
+      if (opts?.onRateChange) return await opts.onRateChange(p.newToAmount)
+      return true
+    },
+  })
+}
+
 export async function bridgeTokens(
   token: TokenSymbol,        // token you want to receive on `to`
   amount: bigint,
@@ -342,7 +403,7 @@ export async function bridgeAndDepositViaRouterPush(params: {
   const depositCalldata = encodeFunctionData({
     abi: ROUTER_ABI_PUSH,
     functionName: 'depositFromBalance',
-    args: [adapterKey, toToken, amount, SAFEVAULT, '0x'],
+    args: [adapterKey, toToken, amount, user, '0x'],
   })
 
   const contractCalls:ContractCall[] = [

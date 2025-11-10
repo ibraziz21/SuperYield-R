@@ -2,7 +2,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { optimism } from 'viem/chains'
+import { optimism, base, lisk as liskChain } from 'viem/chains'
 import type { Address } from 'viem'
 import { useAccount, useWalletClient } from 'wagmi'
 import { Button } from '@/components/ui/button'
@@ -14,13 +14,15 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { TokenAddresses } from '@/lib/constants'
+import { withdrawMorphoOnLisk } from '@/lib/withdrawer'
+import { bridgeWithdrawal } from '@/lib/bridge'
+import { publicLisk } from '@/lib/clients'
+import { erc20Abi } from 'viem'
 
 type Props = {
   open: boolean
   onClose: () => void
-  /** Only USDCe or USDT0 on Lisk are supported here */
-  snap: { token: 'USDCe' | 'USDT0'; chain: 'lisk'; poolAddress?: `0x${string}` }
-  /** Max withdrawable shares (already computed by caller) */
+  snap: { token: 'USDCe' | 'USDT0'; chain: 'lisk'; poolAddress: `0x${string}` }
   shares: bigint
 }
 
@@ -31,23 +33,14 @@ function fmtAmount(x: bigint, decimals = 6) {
   return tail ? `${head}.${tail}` : head
 }
 
-/* ---------- purely visual helpers (UI only) ---------- */
-
-const STEP_ORDER = ['signing', 'creating', 'queued', 'settling', 'done'] as const
+const STEP_ORDER = ['withdrawing', 'bridging', 'done'] as const
 type VisualStep = (typeof STEP_ORDER)[number] | 'error' | 'idle'
-
 function stepIndex(s: VisualStep): number {
   const i = STEP_ORDER.indexOf(s as any)
   return i === -1 ? -1 : i
 }
 
-function StepRow({
-  label,
-  state,
-}: {
-  label: string
-  state: 'pending' | 'active' | 'done' | 'error'
-}) {
+function StepRow({ label, state }: { label: string; state: 'pending' | 'active' | 'done' | 'error' }) {
   return (
     <div
       className={cn(
@@ -74,46 +67,65 @@ function StepRow({
   )
 }
 
+async function ensureWalletChain(walletClient: any, chainId: number) {
+  try {
+    if ((walletClient as any)?.chain?.id === chainId) return
+  } catch {}
+  await walletClient.request({
+    method: 'wallet_switchEthereumChain',
+    params: [{ chainId: `0x${chainId.toString(16)}` }],
+  })
+}
+
+// inline minimal balance reader on Lisk
+async function readWalletBalanceLisk(tokenAddr: `0x${string}`, user: `0x${string}`): Promise<bigint> {
+  try {
+    return (await publicLisk.readContract({
+      address: tokenAddr,
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [user],
+    })) as bigint
+  } catch {
+    return 0n
+  }
+}
+
 export default function WithdrawModal({ open, onClose, snap, shares }: Props) {
   const { address } = useAccount()
   const { data: walletClient } = useWalletClient()
 
-  const [submitting, setSubmitting] = useState(false) // preserved — not repurposed
-  const [step, setStep] = useState<
-    'idle' | 'signing' | 'creating' | 'settling' | 'done' | 'error' | 'queued'
-  >('idle')
+  const [dest, setDest] = useState<'lisk' | 'optimism' | 'base'>('lisk')
+  const [submitting, setSubmitting] = useState(false)
+  const [step, setStep] = useState<VisualStep>('idle')
   const [error, setError] = useState<string | null>(null)
 
-  const tokenSym = snap.token // 'USDCe' | 'USDT0'
-  const dstTokenOnOp: Address = useMemo(() => {
-    return tokenSym === 'USDT0'
-      ? (TokenAddresses.USDT.optimism as Address)
-      : (TokenAddresses.USDC.optimism as Address)
-  }, [tokenSym])
+  const underlyingOnLisk: Address = useMemo(
+    () => (snap.token === 'USDT0' ? (TokenAddresses.USDT0.lisk as Address) : (TokenAddresses.USDCe.lisk as Address)),
+    [snap.token]
+  )
 
-  // tiny safety buffer for min out (0.5%)
-  const minAmountOut = useMemo(() => (shares * 995n) / 1000n, [shares])
+  const destTokenSymbol = useMemo(() => {
+    if (dest === 'lisk') return snap.token // USDCe | USDT0
+    return snap.token === 'USDT0' ? 'USDT' : 'USDC' // bridge mapping
+  }, [dest, snap.token])
+
+  const destBadge = useMemo(() => {
+    if (dest === 'lisk') return `${snap.token} to you (Lisk)`
+    if (dest === 'optimism') return `${destTokenSymbol} to you (Optimism)`
+    return `${destTokenSymbol} to you (Base)`
+  }, [dest, destTokenSymbol, snap.token])
 
   useEffect(() => {
     if (!open) {
       setSubmitting(false)
       setStep('idle')
       setError(null)
+      setDest('lisk')
     }
   }, [open])
 
-  /* ---------- purely visual mapping of your existing step states ---------- */
-  const visualActive: VisualStep = (() => {
-    if (step === 'error') return 'error'
-    if (step === 'idle') return 'idle'
-    if (step === 'signing') return 'signing'
-    if (step === 'creating') return 'creating'
-    if (step === 'queued') return 'queued'
-    if (step === 'settling') return 'settling'
-    if (step === 'done') return 'done'
-    return 'idle'
-  })()
-
+  const visualActive: VisualStep = step
   const currentIdx = stepIndex(visualActive)
 
   return (
@@ -123,120 +135,91 @@ export default function WithdrawModal({ open, onClose, snap, shares }: Props) {
           <DialogTitle className="flex items-center justify-between">
             <span>Withdraw {snap.token}</span>
             <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-              Optimism → Lisk SAFE → Bridge to you
+              Lisk vault shares → {destBadge}
             </span>
           </DialogTitle>
         </DialogHeader>
 
-        {/* Summary card */}
+        {/* Destination picker */}
+        <div className="mt-2 flex items-center justify-between rounded-lg border p-2">
+          <span className="text-xs text-muted-foreground">Receive on</span>
+          <div className="inline-flex rounded-md bg-gray-100 p-1">
+            {(['lisk', 'optimism', 'base'] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDest(d)}
+                className={`px-3 py-1 text-xs rounded ${dest === d ? 'bg-white shadow font-medium' : 'opacity-70'}`}
+              >
+                {d.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Summary */}
         <div className="mt-2 rounded-lg border bg-card p-3 text-sm">
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Max shares</span>
             <span className="font-medium">{fmtAmount(shares, 6)} shares</span>
           </div>
-          <div className="mt-1 flex items-center justify-between">
-            <span className="text-muted-foreground">Min receive (est.)</span>
-            <span className="font-medium">
-              {fmtAmount(minAmountOut, 6)} {snap.token === 'USDT0' ? 'USDT' : 'USDC'}
-            </span>
-          </div>
-
           <div className="mt-3 rounded-md border border-amber-400/40 bg-amber-500/10 p-2 text-xs text-amber-700">
-            This will burn your vault shares on Optimism, redeem assets from the Lisk Safe, then
-            bridge {snap.token === 'USDT0' ? 'USDT' : 'USDC'} back to your wallet on Optimism.
+            Shares are redeemed on Lisk, then {dest !== 'lisk' ? `bridged to ${dest.toUpperCase()}` : 'sent to you on Lisk'}.
           </div>
         </div>
 
-        {/* Stepper */}
+        {/* Steps */}
         <div className="mt-4 space-y-2">
           <StepRow
-            label="Sign withdrawal intent (Optimism)"
+            label="Withdraw on Lisk"
             state={
               visualActive === 'error'
                 ? 'pending'
-                : currentIdx < stepIndex('signing')
-                ? 'done'
-                : visualActive === 'signing'
+                : currentIdx < stepIndex('withdrawing')
+                ? 'pending'
+                : visualActive === 'withdrawing'
                 ? 'active'
-                : currentIdx > stepIndex('signing')
+                : currentIdx > stepIndex('withdrawing')
                 ? 'done'
                 : 'pending'
             }
           />
           <StepRow
-            label="Create intent"
+            label={dest === 'lisk' ? 'No bridge needed' : `Bridge to ${dest.toUpperCase()}`}
             state={
-              visualActive === 'error'
+              dest === 'lisk'
+                ? currentIdx >= stepIndex('withdrawing')
+                  ? 'done'
+                  : 'pending'
+                : visualActive === 'error'
                 ? 'pending'
-                : currentIdx < stepIndex('creating')
+                : currentIdx < stepIndex('bridging')
                 ? 'pending'
-                : visualActive === 'creating'
+                : visualActive === 'bridging'
                 ? 'active'
-                : currentIdx > stepIndex('creating')
+                : currentIdx > stepIndex('bridging')
                 ? 'done'
                 : 'pending'
             }
           />
-          <StepRow
-            label="Queued on relayer"
-            state={
-              visualActive === 'error'
-                ? 'pending'
-                : currentIdx < stepIndex('queued')
-                ? 'pending'
-                : visualActive === 'queued'
-                ? 'active'
-                : currentIdx > stepIndex('queued')
-                ? 'done'
-                : 'pending'
-            }
-          />
-          <StepRow
-            label="Burn shares → Redeem on Lisk SAFE → Bridge to you"
-            state={
-              visualActive === 'error'
-                ? 'pending'
-                : currentIdx < stepIndex('settling')
-                ? 'pending'
-                : visualActive === 'settling'
-                ? 'active'
-                : currentIdx > stepIndex('settling')
-                ? 'done'
-                : 'pending'
-            }
-          />
-          <StepRow
-            label="Withdrawal complete"
-            state={
-              visualActive === 'error'
-                ? 'pending'
-                : visualActive === 'done'
-                ? 'done'
-                : 'pending'
-            }
-          />
+          <StepRow label="Complete" state={visualActive === 'done' ? 'done' : 'pending'} />
         </div>
 
-        {/* Status text */}
+        {/* Status */}
         <div
           className={cn(
             'mt-3 rounded-md border p-2 text-xs',
-            step === 'error'
-              ? 'border-destructive/40 bg-destructive/10 text-destructive'
-              : 'border-border/60 text-muted-foreground'
+            step === 'error' ? 'border-destructive/40 bg-destructive/10 text-destructive' : 'border-border/60 text-muted-foreground'
           )}
         >
           {step === 'idle' && 'Ready to withdraw.'}
-          {step === 'signing' && 'Please sign the withdrawal intent on Optimism…'}
-          {step === 'creating' && 'Creating intent on the relayer…'}
-          {step === 'queued' &&
-            'Your intent is queued. The relayer will burn shares, redeem on Lisk SAFE, and bridge back to you.'}
-          {step === 'settling' && 'Processing withdrawal (burn → redeem → bridge)…'}
-          {step === 'done' && 'All set. Funds are on their way / delivered.'}
+          {step === 'withdrawing' && 'Confirm the Lisk transaction…'}
+          {step === 'bridging' && `Bridging ${snap.token === 'USDT0' ? 'USDT' : 'USDC'} to ${dest.toUpperCase()}…`}
+          {step === 'done' && 'All set.'}
           {step === 'error' && error}
         </div>
 
-        {/* Actions (no DialogFooter) */}
+        {/* Actions */}
         <div className="mt-4 flex justify-end gap-2">
           <Button title="Cancel" onClick={onClose} disabled={submitting} variant="ghost">
             Cancel
@@ -245,155 +228,69 @@ export default function WithdrawModal({ open, onClose, snap, shares }: Props) {
           <Button
             title="Withdraw now"
             onClick={() => {
-              // NOTE: no functional changes — same call & state setters
               if (!walletClient || !address) return
               setError(null)
-              setStep('signing')
+              setSubmitting(true)
 
               ;(async () => {
                 try {
-                  // We reuse your same flow, only UI changes around it.
-                  const dstToken =
-                    snap.token === 'USDT0'
-                      ? (TokenAddresses.USDT.optimism as `0x${string}`)
-                      : (TokenAddresses.USDC.optimism as `0x${string}`)
+                  // 1) Switch to Lisk and withdraw shares -> underlying to user
+                  await ensureWalletChain(walletClient, liskChain.id)
+                  setStep('withdrawing')
 
-                  // Delegate to the same handle path you already wired in:
-                  // (kept inline per your current file; logic unchanged)
-                  await (async function handleWithdraw(opts: {
-                    walletClient: any
-                    userAddress: `0x${string}`
-                    tokenKind: 'USDCe' | 'USDT0'
-                    maxShares: bigint
-                    dstChainId?: number
-                    dstTokenAddressOnOP: `0x${string}`
-                    onStatus?: (
-                      s: 'signing' | 'creating' | 'queued' | 'error' | 'done',
-                      extra?: any
-                    ) => void
-                  }) {
-                    const {
-                      walletClient,
-                      userAddress,
-                      tokenKind,
-                      maxShares,
-                      dstChainId = optimism.id,
-                      dstTokenAddressOnOP,
-                      onStatus,
-                    } = opts
+                  const pre = await readWalletBalanceLisk(underlyingOnLisk as `0x${string}`, address as `0x${string}`)
 
-                    try {
-                      onStatus?.('signing')
-
-                      // ensure OP for EIP-712 domain
-                      try {
-                        const cur = await walletClient.getChainId?.()
-                        if (cur !== dstChainId) {
-                          await walletClient.switchChain?.({ id: dstChainId })
-                        }
-                      } catch {}
-
-                      const minOut = (maxShares * 995n) / 1000n
-                      const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60)
-                      const nonce = BigInt(Math.floor(Math.random() * 1e12))
-                      const refId = (() => {
-                        const b = crypto.getRandomValues(new Uint8Array(32))
-                        return ('0x' +
-                          [...b].map((x) => x.toString(16).padStart(2, '0')).join('')) as `0x${string}`
-                      })()
-
-                      const domain = { name: 'SuperYLDR', version: '1', chainId: dstChainId }
-                      const types = {
-                        WithdrawIntent: [
-                          { name: 'user', type: 'address' },
-                          { name: 'amountShares', type: 'uint256' },
-                          { name: 'dstChainId', type: 'uint256' },
-                          { name: 'dstToken', type: 'address' },
-                          { name: 'minAmountOut', type: 'uint256' },
-                          { name: 'deadline', type: 'uint256' },
-                          { name: 'nonce', type: 'uint256' },
-                          { name: 'refId', type: 'bytes32' },
-                        ],
-                      } as const
-
-                      const message = {
-                        user: userAddress,
-                        amountShares: maxShares,
-                        dstChainId: BigInt(dstChainId),
-                        dstToken: dstTokenAddressOnOP,
-                        minAmountOut: minOut,
-                        deadline,
-                        nonce,
-                        refId,
-                      } as const
-
-                      const signature = await walletClient.signTypedData({
-                        account: userAddress,
-                        domain,
-                        types,
-                        primaryType: 'WithdrawIntent',
-                        message,
-                      } as any)
-
-                      onStatus?.('creating')
-                      const createRes = await fetch('/api/withdraw/create-intent', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          intent: {
-                            user: userAddress,
-                            amountShares: message.amountShares.toString(),
-                            dstChainId,
-                            dstToken: message.dstToken,
-                            minAmountOut: message.minAmountOut.toString(),
-                            deadline: message.deadline.toString(),
-                            nonce: message.nonce.toString(),
-                            refId: message.refId,
-                            signedChainId: dstChainId,
-                            tokenKind,
-                          },
-                          signature,
-                        }),
-                      })
-                      if (!createRes.ok) {
-                        const t = await createRes.text().catch(() => '')
-                        throw new Error(`/api/withdraw/create-intent failed: ${createRes.status} ${t}`)
-                      }
-                      const cj = await createRes.json()
-                      if (!cj?.ok) throw new Error(cj?.error || 'create-intent failed')
-
-                      onStatus?.('queued', { refId })
-                      // kick finisher async; UI shows queued/settling via polling on your page if needed
-                      fetch('/api/withdraw/finish', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ refId }),
-                      }).catch(() => {})
-
-                      onStatus?.('done', { refId })
-                      return { ok: true as const, refId }
-                    } catch (e: any) {
-                      onStatus?.('error', e?.message || String(e))
-                      return { ok: false as const, error: e?.message || String(e) }
-                    }
-                  })({
-                    walletClient,
-                    userAddress: address as `0x${string}`,
-                    tokenKind: snap.token,
-                    maxShares: shares,
-                    dstTokenAddressOnOP: dstToken,
-                    onStatus: (s, extra) => {
-                      // keep your original step values; just display them better
-                      setStep(s)
-                      if (s === 'error') setError(extra as string)
-                      if (s === 'done') {
-                        // optional toast could go here — UI only
-                      }
-                    },
+                  await withdrawMorphoOnLisk({
+                    token: snap.token,                 // 'USDCe' | 'USDT0'
+                    shares,                            // shares amount
+                    shareToken: snap.poolAddress,      // vault shares token
+                    underlying: underlyingOnLisk as `0x${string}`,
+                    to: address as `0x${string}`,
+                    wallet: walletClient,
                   })
+
+                  // Wait until balance increases on Lisk
+                  let tries = 0
+                  while (tries++ < 30) {
+                    const cur = await readWalletBalanceLisk(underlyingOnLisk as `0x${string}`, address as `0x${string}`)
+                    if (cur > pre) break
+                    await new Promise((r) => setTimeout(r, 2000))
+                  }
+
+                  // 2) If destination is Lisk, done
+                  if (dest === 'lisk') {
+                    setStep('done')
+                    setSubmitting(false)
+                    return
+                  }
+
+                  // 3) Bridge to chosen chain (USDCe->USDC, USDT0->USDT)
+                  setStep('bridging')
+                  const toChain = dest === 'optimism' ? 'optimism' : 'base' as const
+                  const sourceToken = snap.token === 'USDT0' ? 'USDT' : 'USDC' // Li.Fi input mapper when leaving Lisk
+                  const destToken = snap.token === 'USDT0' ? 'USDT' : 'USDC'
+
+                  // Re-read actual balance to bridge all newly received underlying (or use a %)
+                  const afterBal = await readWalletBalanceLisk(underlyingOnLisk as `0x${string}`, address as `0x${string}`)
+                  const delta = afterBal - pre
+                  if (delta <= 0n) throw new Error('No underlying received from withdraw')
+
+                    await bridgeWithdrawal({
+                      srcVaultToken: snap.token,                   // 'USDCe' | 'USDT0' (or 'WETH')
+                      destToken:     snap.token === 'USDT0' ? 'USDT'
+                                    : snap.token === 'USDCe' ? 'USDC'
+                                    : 'WETH',
+                      amount:        delta,                // bigint
+                      to:            toChain,
+                      walletClient,
+                    })
+
+                  setStep('done')
                 } catch (e: any) {
                   setError(e?.message || String(e))
                   setStep('error')
+                } finally {
+                  setSubmitting(false)
                 }
               })()
             }}

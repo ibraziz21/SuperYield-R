@@ -1,4 +1,4 @@
- [
+[
     {
       "inputs": [
         {
@@ -43,22 +43,12 @@
     },
     {
       "inputs": [],
-      "name": "InsufficientReceipts",
-      "type": "error"
-    },
-    {
-      "inputs": [],
       "name": "InvalidInitialization",
       "type": "error"
     },
     {
       "inputs": [],
       "name": "NotInitializing",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "OnlyRelayer",
       "type": "error"
     },
     {
@@ -116,11 +106,6 @@
       "type": "error"
     },
     {
-      "inputs": [],
-      "name": "ZeroAmount",
-      "type": "error"
-    },
-    {
       "anonymous": false,
       "inputs": [
         {
@@ -164,6 +149,12 @@
           "indexed": false,
           "internalType": "uint256",
           "name": "gross",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "fee",
           "type": "uint256"
         },
         {
@@ -290,19 +281,6 @@
         {
           "indexed": true,
           "internalType": "address",
-          "name": "newRelayer",
-          "type": "address"
-        }
-      ],
-      "name": "RelayerSet",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "address",
           "name": "who",
           "type": "address"
         },
@@ -347,12 +325,30 @@
       "inputs": [
         {
           "indexed": true,
+          "internalType": "bytes32",
+          "name": "key",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
           "internalType": "address",
-          "name": "newSafe",
+          "name": "user",
           "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "asset",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
         }
       ],
-      "name": "VaultSafeSet",
+      "name": "Withdrawn",
       "type": "event"
     },
     {
@@ -379,11 +375,23 @@
         {
           "indexed": false,
           "internalType": "uint256",
-          "name": "amount",
+          "name": "gross",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "fee",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "net",
           "type": "uint256"
         }
       ],
-      "name": "Withdrawn",
+      "name": "WithdrawnWithFee",
       "type": "event"
     },
     {
@@ -423,6 +431,39 @@
         }
       ],
       "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "key",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "asset",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "onBehalfOf",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes",
+          "name": "data",
+          "type": "bytes"
+        }
+      ],
+      "name": "deposit",
+      "outputs": [],
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -500,16 +541,6 @@
           "internalType": "uint16",
           "name": "feeBps_",
           "type": "uint16"
-        },
-        {
-          "internalType": "address",
-          "name": "vaultSafe_",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "relayer_",
-          "type": "address"
         }
       ],
       "name": "initialize",
@@ -638,19 +669,6 @@
     },
     {
       "inputs": [],
-      "name": "relayer",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "",
-          "type": "address"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
       "name": "renounceOwnership",
       "outputs": [],
       "stateMutability": "nonpayable",
@@ -670,19 +688,6 @@
         }
       ],
       "name": "setFee",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "newRelayer",
-          "type": "address"
-        }
-      ],
-      "name": "setRelayer",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -757,30 +762,6 @@
       "type": "function"
     },
     {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "",
-          "type": "bytes32"
-        },
-        {
-          "internalType": "address",
-          "name": "",
-          "type": "address"
-        }
-      ],
-      "name": "userStake",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
       "inputs": [],
       "name": "vaultSafe",
       "outputs": [
@@ -806,14 +787,14 @@
           "type": "address"
         },
         {
-          "internalType": "address",
-          "name": "user",
-          "type": "address"
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
         },
         {
-          "internalType": "uint256",
-          "name": "assets",
-          "type": "uint256"
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
         },
         {
           "internalType": "bytes",
@@ -821,7 +802,7 @@
           "type": "bytes"
         }
       ],
-      "name": "withdrawViaAdapter",
+      "name": "withdraw",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

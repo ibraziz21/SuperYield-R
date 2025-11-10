@@ -9,7 +9,7 @@ import type { Position } from '@/lib/positions'
 
 /** Decimals for Morpho Blue on Lisk (assets): WETH=18, stables=6 */
 function decimalsFor(p: Position): number {
-  return p.token === 'WETH' ? 18 : 6
+  return 18
 }
 
 /** Treat these as $1 for naive portfolio USD weighting */
