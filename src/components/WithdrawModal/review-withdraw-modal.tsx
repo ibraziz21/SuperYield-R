@@ -354,7 +354,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
           <div className="px-5 pb-5">
             <Button
               onClick={onPrimary}
-              className="w-full h-12 text-base"
+              className="w-full h-12 text-base bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-60"
               disabled={disabled}
             >
               {primaryLabel}
