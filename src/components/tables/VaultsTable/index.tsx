@@ -1,4 +1,3 @@
-
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -26,7 +25,19 @@ interface TblProps<TData, TValue> {
   data: TData[];
 }
 
-export default function VaultsTable<TData , TValue>({
+/** Fallback mapper from display label -> route slug */
+function normalizeVaultRoute(label: string): string {
+  const clean = (label || "").trim();
+
+  // Explicit cases first
+  if (/^USDC\.?e$/i.test(clean) || /^USDC$/i.test(clean)) return "USDCe";
+  if (/^USDT0$/i.test(clean) || /^USDT$/i.test(clean)) return "USDT0";
+
+  // Otherwise: remove spaces, replace ".e" -> "e"
+  return clean.replace(/\s+/g, "").replace(/\.e$/i, "e");
+}
+
+export default function VaultsTable<TData, TValue>({
   columns,
   data,
 }: TblProps<TData, TValue>) {
@@ -52,8 +63,15 @@ export default function VaultsTable<TData , TValue>({
   });
 
   const handleRowClick = (row: any) => {
-    const vaultName = row.original.vault;
-    router.push(`/vaults/${vaultName}`);
+    // Prefer a canonical key if your data rows provide it (recommended):
+    // e.g. in Vaults.tsx, set `routeKey: 'USDCe' | 'USDT0'`
+    const routeKey = row.original?.routeKey as string | undefined;
+
+    // Otherwise, normalize from display label (USDC.e -> USDCe, USDT0 -> USDT0, etc.)
+    const display = (row.original?.vault as string) ?? "";
+    const vaultParam = routeKey ?? normalizeVaultRoute(display);
+
+    router.push(`/vaults/${encodeURIComponent(vaultParam)}`);
   };
 
   return (
@@ -89,7 +107,8 @@ export default function VaultsTable<TData , TValue>({
           </SelectTrigger>
           <SelectContent className="bg-[#ffffff] text-[#808195]">
             <SelectItem value="all">All Protocols</SelectItem>
-            <SelectItem value="MorphoBlue">Morpho Blue</SelectItem>
+            {/* IMPORTANT: this must match the actual cell value exactly */}
+            <SelectItem value="Morpho Blue">Morpho Blue</SelectItem>
           </SelectContent>
         </Select>
 
