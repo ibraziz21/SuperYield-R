@@ -14,6 +14,7 @@ import { formatUnits } from "viem";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { MERKL_DISTRIBUTOR, distributorAbi, buildClaimArgs } from "@/lib/merkl";
+import { ClaimRewardsModal } from "@/components/claim-rewards-modal";
 
 const CHAIN_LABEL: Record<number, string> = {
   [lisk.id]: "Lisk",
@@ -35,6 +36,10 @@ const ClaimRewards: React.FC = () => {
   // Track which row is claiming to disable its button
   const [claimingKey, setClaimingKey] = useState<string | null>(null);
 
+  // Modal state
+  const [showModal, setShowModal] = useState(false);
+  const [selectedReward, setSelectedReward] = useState<(ClaimableReward & { __raw?: FlatReward }) | null>(null);
+
   // Keep a 1:1 mapping (row -> underlying Merkl item) by attaching __raw
   const tableData: (ClaimableReward & { __raw: FlatReward })[] = useMemo(() => {
     if (!rewards || rewards.length === 0) return [];
@@ -50,10 +55,16 @@ const ClaimRewards: React.FC = () => {
     });
   }, [rewards]);
 
-  async function onClaim(row: ClaimableReward & { __raw?: FlatReward }) {
+  function onClaimClick(row: ClaimableReward & { __raw?: FlatReward }) {
     if (!wallet) return openConnect?.();
+    setSelectedReward(row);
+    setShowModal(true);
+  }
 
-    const item = row.__raw!;
+  async function handleModalClaim() {
+    if (!wallet || !selectedReward) return;
+
+    const item = selectedReward.__raw!;
     const chainId = item.chainId;
 
     try {
@@ -83,6 +94,7 @@ const ClaimRewards: React.FC = () => {
       await refetch();
     } catch (err) {
       console.error("[ClaimRewards] claim error:", err);
+      throw err;
     } finally {
       setClaimingKey(null);
     }
@@ -98,33 +110,60 @@ const ClaimRewards: React.FC = () => {
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={() => refetch()} title="Refresh" className="gap-2">
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
+    <>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" size="sm" onClick={() => refetch()} title="Refresh" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
+
+        {tableData.length === 0 ? (
+          <div className="flex min-h-[120px] flex-col items-center justify-center rounded-xl border border-dashed border-border/50 text-sm text-muted-foreground">
+            No claimable rewards found.
+          </div>
+        ) : (
+          <ClaimRewardTable
+            columns={ClaimableRewardColumns}
+            data={tableData as ClaimableReward[]}
+            meta={{
+              onClaim: onClaimClick,
+              isClaiming: (r: any) => {
+                const raw = (r as any).__raw as FlatReward | undefined;
+                if (!raw) return false;
+                return claimingKey === `${raw.chainId}-${raw.token.address.toLowerCase()}`;
+              },
+            }}
+          />
+        )}
       </div>
 
-      {tableData.length === 0 ? (
-        <div className="flex min-h-[120px] flex-col items-center justify-center rounded-xl border border-dashed border-border/50 text-sm text-muted-foreground">
-          No claimable rewards found.
-        </div>
-      ) : (
-        <ClaimRewardTable
-          columns={ClaimableRewardColumns}
-          data={tableData as ClaimableReward[]}
-          meta={{
-            onClaim,
-            isClaiming: (r: any) => {
-              const raw = (r as any).__raw as FlatReward | undefined;
-              if (!raw) return false;
-              return claimingKey === `${raw.chainId}-${raw.token.address.toLowerCase()}`;
-            },
+      {/* Claim Rewards Modal */}
+      {selectedReward && (
+        <ClaimRewardsModal
+          isOpen={showModal}
+          onClose={() => {
+            setShowModal(false);
+            setSelectedReward(null);
           }}
+          onClaim={async () => {
+            await handleModalClaim();
+          }}
+          rewards={[
+            {
+              token: selectedReward.token,
+              symbol: `${selectedReward.claimable} ${selectedReward.token}`,
+              amount: parseFloat(selectedReward.claimable),
+              usdValue: parseFloat(selectedReward.claimable) * 1.0, // You can add actual price calculation here
+              icon: `/tokens/${selectedReward.token.toLowerCase()}-icon.png`,
+              color: "bg-blue-100 dark:bg-blue-900/30",
+              checked: true,
+            }
+          ]}
         />
       )}
-    </div>
+    </>
   );
 };
 

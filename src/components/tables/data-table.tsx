@@ -27,6 +27,7 @@ interface DataTableProps<TData, TValue> {
   data: TData[];
   children?: React.ReactNode;
   table: TableTanstack<TData>;
+  onRowClick?: (row: any) => void;
 }
 
 export function DataTable<TData, TValue>({
@@ -34,6 +35,7 @@ export function DataTable<TData, TValue>({
   data,
   children,
   table,
+  onRowClick,
 }: DataTableProps<TData, TValue>) {
   // const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
   //   []
@@ -98,6 +100,8 @@ export function DataTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
+                  onClick={() => onRowClick?.(row)}
+                  className={onRowClick ? "cursor-pointer hover:bg-gray-50 transition-colors" : ""}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>

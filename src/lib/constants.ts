@@ -28,7 +28,7 @@ export type AdapterKeyName = keyof typeof ADAPTER_KEYS
 export const ROUTERS: Record<'optimism' | 'base' | 'lisk', `0x${string}`> = {
   optimism: '0x74298D4c82f06797029b90ca7e50B1AEB9edB501',
   base:     '0x7AE3e0e585b1663Dc876e8b36B47494166d38F2F',
-  lisk:     '0xb533CB94DeaBDd37F870E47510a03539C413CEFF',
+  lisk:     '0x538e15a133b72C60Ddcea6af0Ff7EFEC1fD512fA',
 } as const
 
 export const SAFEVAULT = '0x2bbcdd9B52906c360c4d0789719982efC681B224'

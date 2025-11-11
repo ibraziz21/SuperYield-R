@@ -6,17 +6,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useAppKit } from '@reown/appkit/react'
 import { useWalletClient } from 'wagmi'
 import { keccak256, parseUnits } from 'viem'
-import { getQuote, convertQuoteToRoute, executeRoute, getRoutes } from '@lifi/sdk'
-import { optimism, base, lisk as liskChain, lisk } from 'viem/chains'
+import { getRoutes, executeRoute } from '@lifi/sdk'
+import { optimism, base, lisk as liskChain } from 'viem/chains'
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { quoteUsdceOnLisk, getBridgeQuote } from '@/lib/quotes'
-
+import { switchOrAddChain, CHAINS } from '@/lib/wallet'
 import { AmountCard } from '../AmountCard'
 import { BalanceStrip } from '../BalanceStrip'
 import { RouteFeesCard } from '../RouteFeesCard'
 import { ProgressSteps } from '../Progress'
 import { ActionBar } from '../ActionBar'
-import { bridgeAndDepositViaRouterPush, configureLifiWith } from '@/lib/bridge'
+import { configureLifiWith, bridgeTokens } from '@/lib/bridge'
 import { adapterKeyForSnapshot } from '@/lib/adapters'
 import { trackActiveDeposit, clearActiveDeposit, updateActiveDeposit } from '@/lib/recovery'
 import {
@@ -26,6 +26,7 @@ import {
 } from '../helpers'
 import type { EvmChain, FlowStep } from '../types'
 import { TokenAddresses, RELAYER_LISK } from '@/lib/constants'
+import { depositMorphoOnLiskAfterBridge } from '@/lib/depositor'
 
 /* ── helpers ───────────────────────────────────────────────────── */
 const VAULT_TOKEN_DECIMALS = 6
@@ -274,14 +275,14 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     sourceAsset, opUsdcBal, baUsdcBal, opUsdtBal, baUsdtBal,
   ])
 
-  const VAULT_TOKEN_DECIMALS = 6
-  const pow10 = (n: number) => BigInt(10) ** BigInt(n)
-  const scaleAmount = (amt: bigint, fromDec: number, toDec: number) => {
+  const VAULT_TOKEN_DECIMALS_ = 6
+  const pow10_ = (n: number) => BigInt(10) ** BigInt(n)
+  const scaleAmount_ = (amt: bigint, fromDec: number, toDec: number) => {
     if (toDec === fromDec) return amt
-    if (toDec > fromDec) return amt * pow10(toDec - fromDec)
-    return amt / pow10(fromDec - toDec)
+    if (toDec > fromDec) return amt * pow10_(toDec - fromDec)
+    return amt / pow10_(fromDec - toDec)
   }
-  const applyBuffer998 = (amt: bigint) => (amt * 997n) / 1000n
+  const applyBuffer998_ = (amt: bigint) => (amt * 997n) / 1000n
 
   // quick 32-byte random refId
   function randomRefId(): `0x${string}` {
@@ -312,317 +313,120 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
     }
   }
 
+  /* ──────────────────────────────────────────────────────────
+     NEW handleConfirm: user-recipient bridging + user deposit
+     ────────────────────────────────────────────────────────── */
+
   async function handleConfirm() {
     if (!walletClient) { openConnect(); return }
     setError(null)
-  
+
+    const waitForLiskBalanceAtLeast = async ({
+      user, tokenAddr, target, start = 0n, pollMs = 5000, timeoutMs = 12 * 60_000,
+    }: {
+      user: `0x${string}`; tokenAddr: `0x${string}`; target: bigint; start?: bigint; pollMs?: number; timeoutMs?: number
+    }) => {
+      const endAt = Date.now() + timeoutMs
+      let last = start
+      while (true) {
+        const bal = await readWalletBalance('lisk', tokenAddr, user).catch(() => null)
+        if (bal !== null) {
+          last = bal
+          if (bal >= target) return bal
+        }
+        if (Date.now() > endAt) throw new Error(`Bridging not finalized on Lisk: balance ${last} < required ${target}`)
+        await new Promise(r => setTimeout(r, pollMs))
+      }
+    }
+
     try {
       const inputAmt = parseUnits(amount || '0', tokenDecimals)
       const user = walletClient.account!.address as `0x${string}`
       if (snap.chain !== 'lisk') throw new Error('Only Lisk deposits are supported in this build')
-  
-      // Lisk target token (authoritative label)
-      const destLabelForBridge =
+
+      const destLabel: 'USDCe' | 'USDT0' | 'WETH' =
         snap.token === 'USDC' ? 'USDCe' :
-        snap.token === 'USDT' ? 'USDT0' :
-        'WETH' as 'USDCe' | 'USDT0' | 'WETH'
-  
-      // Helper for OP/Base source pick
+          snap.token === 'USDT' ? 'USDT0' : 'WETH'
+
+      const destTokenAddr =
+        destLabel === 'USDCe' ? (TokenAddresses.USDCe.lisk as `0x${string}`) :
+          destLabel === 'USDT0' ? (TokenAddresses.USDT0.lisk as `0x${string}`) :
+            (TokenAddresses.WETH.lisk as `0x${string}`)
+
+      if (destLabel === 'USDCe' && (liBal ?? 0n) >= inputAmt) {
+        setStep('depositing')
+        await ensureWalletChain(walletClient, liskChain.id)
+        await depositMorphoOnLiskAfterBridge(snap, inputAmt, walletClient)
+        setStep('success')
+        return
+      }
+      if (destLabel === 'USDT0' && (liBalUSDT0 ?? 0n) >= inputAmt) {
+        setStep('depositing')
+        await ensureWalletChain(walletClient, liskChain.id)
+        await depositMorphoOnLiskAfterBridge(snap, inputAmt, walletClient)
+        setStep('success')
+        return
+      }
+
       const pickSrcBy = (o?: bigint | null, b?: bigint | null): 'optimism' | 'base' => {
         const op = o ?? 0n, ba = b ?? 0n
         if (op >= inputAmt) return 'optimism'
         if (ba >= inputAmt) return 'base'
         return op >= ba ? 'optimism' : 'base'
       }
-  
-      /* ──────────────────────────────────────────────────────────
-         PATH A: USDT0 → Intent + tx-hash based settlement
-         ────────────────────────────────────────────────────────── */
-      if (destLabelForBridge === 'USDT0') {
-        if (!RELAYER_LISK || RELAYER_LISK === '0xREPLACE_ME') {
-          throw new Error('Relayer address not configured (NEXT_PUBLIC_LISK_RELAYER)')
-        }
-  
-        // Source chain & token for the bridge (USDC or USDT)
-        const srcToken = sourceAsset // 'USDC' | 'USDT' (UI toggle)
-        const fromChain: 'optimism' | 'base' =
-          srcToken === 'USDC' ? pickSrcBy(opUsdcBal, baUsdcBal) : pickSrcBy(opUsdtBal, baUsdtBal)
-  
-        // 1) Sign EIP-712 DepositIntent (anti-spoofing + replay via salt)
-        const adapterKey = adapterKeyForSnapshot(snap)
-        const assetLisk  = tokenAddrFor('USDT0', 'lisk')
-        const deadline   = BigInt(Math.floor(Date.now()/1000) + 20 * 60) // 20m
-        const nonce      = BigInt(Math.floor(Math.random() * 1e12))
-        const refId      = ((): `0x${string}` => {
-          const b = new Uint8Array(32); crypto.getRandomValues(b); return keccak256(b) as `0x${string}`
-        })()
-        const salt       = randomSalt32()
-  
-        // Sign on the source chain id
-        const chainIdForSig = fromChain === 'optimism' ? optimism.id : base.id
-        await ensureWalletChain(walletClient, chainIdForSig)
-        const domain = { name: 'SuperYLDR', version: '1', chainId: chainIdForSig }
-        const types = {
-          DepositIntent: [
-            { name: 'user',     type: 'address'  },
-            { name: 'key',      type: 'bytes32'  },
-            { name: 'asset',    type: 'address'  },
-            { name: 'amount',   type: 'uint256'  }, // will be set from LiFi route minOut later in server (relaxed only)
-            { name: 'deadline', type: 'uint256'  },
-            { name: 'nonce',    type: 'uint256'  },
-            { name: 'refId',    type: 'bytes32'  },
-            { name: 'salt',     type: 'bytes32'  },
-          ],
-        } as const
-  
-        // For signature, use a conservative client-side floor to start; we’ll relax server-side to the route’s minOut.
-        const provisionalMin = applyBuffer998(inputAmt)
-        const message = {
-          user,
-          key: adapterKey,
-          asset: assetLisk,
-          amount: provisionalMin,
-          deadline,
-          nonce,
-          refId,
-          salt,
-        } as const
-  
-        const signature = await walletClient.signTypedData({
-          account: user, domain, types, primaryType: 'DepositIntent', message,
-        } as any)
-  
-        // 2) Create intent → server verifies & stores PENDING
-        const createRes = await fetch('/api/create-intent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            intent: {
-              user,
-              adapterKey,
-              asset: assetLisk,
-              amount: provisionalMin.toString(),
-              deadline: deadline.toString(),
-              nonce: nonce.toString(),
-              refId,
-              salt,
-              fromChain,
-              srcToken,
-            },
-            signature,
-          }),
-        })
-        if (!createRes.ok) throw new Error(`/api/create-intent failed: ${createRes.status} ${await createRes.text().catch(()=> '')}`)
-        const created = await createRes.json()
-        if (!created?.ok) throw new Error(created?.error || 'Failed to create intent')
-        const intentToken: string | undefined = created.intentToken
-  
-        // ⏺️ Start local recovery record (new ActiveMeta)
-        trackActiveDeposit({
-          refId,
-          user,
-          fromChainId: fromChain === 'optimism' ? optimism.id : base.id,
-          toChainId: liskChain.id,
-        })
-  
-        // 3) Bridge with Li.Fi → enforce final toToken=USDT0(to relayer)
-        configureLifiWith(walletClient)
-        setStep('bridging')
-  
-        const { id: fromChainId } = fromChain === 'optimism' ? optimism : base
-        const { id: toChainId }   = liskChain
-        const fromToken = tokenAddrFor(srcToken, fromChain)
-        const toToken   = TokenAddresses.USDT0.lisk as `0x${string}`
-  
-        const routesRes = await getRoutes({
-          fromChainId,
-          toChainId,
-          fromAmount: inputAmt.toString(),
-          fromTokenAddress: fromToken,
-          toTokenAddress: toToken,
-          fromAddress: user,
-          toAddress: RELAYER_LISK,
-          options: {
-            slippage: 0.003,
-            bridges:  { deny: [] },
-            exchanges:{ allow: [] },
-          },
-        })
-  
-        const safeRoutes = (routesRes.routes ?? []).filter((r: any) => {
-          const last = r?.steps?.[r.steps.length - 1]
-          const out  = last?.action?.toToken
-          const to   = last?.action?.toAddress
-          return out?.address?.toLowerCase?.() === toToken.toLowerCase()
-              && to?.toLowerCase?.() === RELAYER_LISK.toLowerCase()
-        })
-        if (!safeRoutes.length) throw new Error('No route that ends with USDT0 to the relayer. Retry or switch source asset/chain.')
-  
-        const routeObj = safeRoutes[0]
-        const finalMinOutStr =
-          (routeObj.toAmountMin as string)
-          ?? (routeObj.steps?.at(-1)?.estimate?.toAmountMin as string)
-        if (!finalMinOutStr) throw new Error('Route does not expose toAmountMin')
-        const minOut = BigInt(finalMinOutStr)
-  
-        // 🔄 persist minOut to recovery immediately
-        updateActiveDeposit(refId, { minAmount: minOut.toString() })
-  
-        // Pre-kick finisher (it will wait until we give it the fromTxHash)
-        fetch('/api/relayer/finish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            refId,
-            intentToken,
-            fromChainId,
-            toChainId,
-            minAmount: minOut.toString(), // server relaxes only; never tightens
-          }),
-        }).catch(()=>{})
-  
-        let seenFromTx: `0x${string}` | undefined
-  
-        await executeRoute(routeObj as any, {
-          updateRouteHook: async (updated) => {
-            const last = (updated as any)?.steps?.at(-1)
-            const lastToAddr  = last?.action?.toAddress?.toLowerCase?.()
-            const lastToToken = last?.action?.toToken?.address?.toLowerCase?.()
-            if (lastToAddr && lastToAddr !== RELAYER_LISK.toLowerCase()) {
-              throw new Error('Final recipient changed. Aborting for safety.')
-            }
-            if (lastToToken && lastToToken !== toToken.toLowerCase()) {
-              throw new Error('Final token changed (not USDT0). Aborting for safety.')
-            }
-  
-            const snapRt = tapHashes(updated)
-            // ⏺️ keep recovery record current
-            updateActiveDeposit(refId, {
-              fromTxHash: snapRt.fromTxHash ?? undefined,
-              toTxHash:   snapRt.toTxHash   ?? undefined,
-            })
-  
-            if (snapRt.fromTxHash && snapRt.fromTxHash !== seenFromTx) {
-              seenFromTx = snapRt.fromTxHash
-  
-              // Persist progress snapshot
-              fetch('/api/relayer/route-progress', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  refId,
-                  intentToken,
-                  ...snapRt,
-                  toChainId,
-                  toTokenAddress: toToken,
-                }),
-              }).catch(()=>{})
-  
-              // Finisher nudge with concrete fromTxHash
-              fetch('/api/relayer/finish', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  refId,
-                  intentToken,
-                  fromTxHash: snapRt.fromTxHash,
-                  fromChainId: snapRt.fromChainId ?? fromChainId,
-                  toChainId,
-                  minAmount: minOut.toString(),
-                }),
-              }).catch(()=>{})
-            }
-          },
-          // Never let Li.Fi switch to Lisk for a dest tx
-          switchChainHook: async (chainId) => {
-            if (chainId === toChainId) {
-              throw new Error('This route requires a destination transaction on Lisk, which is not allowed.')
-            }
-            await walletClient.request({
-              method: 'wallet_switchEthereumChain',
-              params: [{ chainId: `0x${chainId.toString(16)}` }],
-            })
-            return walletClient
-          },
-          acceptExchangeRateUpdateHook: async () => true,
-        })
-  
-        // executeRoute finished → backend should finish deposit+mint
-        setStep('depositing')
-  
-        // Final nudge (ok if 202)
-        fetch('/api/relayer/finish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            refId,
-            intentToken,
-            ...(seenFromTx ? { fromTxHash: seenFromTx } : {}),
-            fromChainId,
-            toChainId,
-            minAmount: minOut.toString(),
-          }),
-        }).catch(()=>{})
-  
-        // Block until backend marks MINTED
-        const done = await waitUntilMinted(refId, {
-          ...(seenFromTx ? { fromTxHash: seenFromTx } : {}),
-          fromChainId,
-          toChainId,
-          minAmount: minOut.toString(), // ✅ use route minOut (not provisional)
-        })
-        if (done?.status !== 'MINTED') throw new Error('Settlement incomplete')
-  
-        clearActiveDeposit(refId)
-        setStep('success')
-        return
-      }
-  
-      /* ──────────────────────────────────────────────────────────
-         PATH B: USDCe / WETH (router-push + optional OP mint)
-         ────────────────────────────────────────────────────────── */
-      const adapterKey = adapterKeyForSnapshot(snap)
-      const srcToken =
-        destLabelForBridge === 'USDCe' ? 'USDC' : 'WETH'
+
+      const srcToken: 'USDC' | 'USDT' | 'WETH' =
+        destLabel === 'USDT0' ? sourceAsset :
+          destLabel === 'USDCe' ? 'USDC' : 'WETH'
+
       const srcChain: 'optimism' | 'base' =
-        srcToken === 'USDC' ? pickSrcBy(opUsdcBal, baUsdcBal) : pickSrcBy(opBal, baBal)
-  
+        srcToken === 'USDC' ? pickSrcBy(opUsdcBal, baUsdcBal) :
+          srcToken === 'USDT' ? pickSrcBy(opUsdtBal, baUsdtBal) :
+            pickSrcBy(opBal, baBal)
+
       setStep('bridging')
-      await bridgeAndDepositViaRouterPush({
-        user,
-        destToken: destLabelForBridge,
-        srcChain,
-        srcToken: srcToken as 'USDC' | 'WETH',
-        amount: inputAmt,
-        adapterKey,
-        walletClient,
+
+      const preBal = (await readWalletBalance('lisk', destTokenAddr, user).catch(() => 0n)) as bigint
+
+      // Quote to get a conservative minOut
+      const q = await getBridgeQuote({
+        token: destLabel, amount: inputAmt, from: srcChain, to: 'lisk',
+        fromAddress: user, fromTokenSym: srcToken === 'WETH' ? undefined : srcToken,
       })
-  
-      if (destLabelForBridge === 'USDCe') {
-        setStep('depositing')
-        const sharesToMint = scaleAmount(applyBuffer998(inputAmt), tokenDecimals, VAULT_TOKEN_DECIMALS)
-        const mintRes = await fetch('/api/mintVault', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userAddress: user,
-            tokenAmt: sharesToMint.toString(),
-            tokenKind: 'USDC',
-          }),
-        })
-        if (!mintRes.ok) throw new Error(`/api/mintVault failed: ${mintRes.status} ${await mintRes.text().catch(()=> '')}`)
-        const j = await mintRes.json()
-        if (!j?.success) throw new Error(j?.message || 'Minting failed')
-      }
-  
+      const minOut = BigInt(q.estimate?.toAmountMin ?? '0')
+
+      const srcViem = srcChain === 'optimism' ? CHAINS.optimism : CHAINS.base
+      await switchOrAddChain(walletClient, srcViem)
+      await bridgeTokens(destLabel, inputAmt, srcChain, 'lisk', walletClient, {
+        sourceToken: srcToken === 'WETH' ? undefined : srcToken,
+        onUpdate: () => { },
+      })
+
+      // Wait for funds to land on user’s Lisk wallet
+      await waitForLiskBalanceAtLeast({
+        user,
+        tokenAddr: destTokenAddr,
+        target: preBal + (minOut > 0n ? minOut : 1n),
+        start: preBal,
+        pollMs: 6000,
+        timeoutMs: 15 * 60_000,
+      })
+
+      setStep('depositing')
+      await ensureWalletChain(walletClient, liskChain.id)
+
+      await switchOrAddChain(walletClient, CHAINS.lisk)
+      await depositMorphoOnLiskAfterBridge(snap, minOut > 0n ? minOut : inputAmt, walletClient)
+      
+
       setStep('success')
     } catch (e: any) {
-      console.error('[ui] deposit error', e)
-      // NOTE: we intentionally do NOT clearActiveDeposit here — recovery should resume from banner on reload
+      console.error('[ui] deposit error (bridgeTokens path)', e)
       setError(e instanceof Error ? e.message : String(e))
       setStep('error')
     }
   }
+
 
 
   /* -------- UI flags -------- */
@@ -736,7 +540,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                 <div className="text-center">
                   <div className="text-lg font-semibold">Deposit successful</div>
                   <div className="mt-1 text-sm text-muted-foreground">
-                    Your {snap.token} was bridged to Lisk and deposited via our relayer.
+                    Your {snap.token} was bridged to Lisk and deposited to Morpho from your wallet.
                   </div>
                 </div>
               </div>
