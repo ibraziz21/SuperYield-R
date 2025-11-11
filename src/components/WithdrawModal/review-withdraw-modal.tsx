@@ -249,8 +249,8 @@ export const ReviewWithdrawModal: FC<Props> = ({
   return (
     <div className={`fixed inset-0 z-[100] ${open ? '' : 'pointer-events-none'}`}>
       <div className={`absolute inset-0 bg-black/50 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} />
-      <div className="absolute inset-0 flex items-start justify-center p-3 sm:p-4">
-        <div className={`w-full max-w-md rounded-2xl bg-background border border-border shadow-xl overflow-hidden transform transition-all ${open ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+      <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className={`w-full max-w-md my-8 rounded-2xl bg-background border border-border shadow-xl overflow-hidden transform transition-all ${open ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
           {/* header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border">
             <h3 className="text-lg font-semibold">{state === 'error' ? 'Review withdrawal – Error' : 'Review withdrawal'}</h3>
@@ -354,7 +354,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
           <div className="px-5 pb-5">
             <Button
               onClick={onPrimary}
-              className="w-full h-12 text-base"
+              className="w-full h-12 text-base bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-60"
               disabled={disabled}
             >
               {primaryLabel}

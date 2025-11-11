@@ -6,16 +6,12 @@ import { Button } from '@/components/ui/button'
 import Image from 'next/image'
 
 interface WithdrawSuccessModalProps {
-  // amounts shown in your review modal
-  liskAmount: number                       // e.g. 10
-  liskToken: 'USDCe' | 'USDT0' | 'WETH'    // token on Lisk
-  destAmount?: number                      // e.g. 9.9975 (omit if dest === 'lisk')
+  liskAmount: number
+  liskToken: 'USDCe' | 'USDT0' | 'WETH'
+  destAmount?: number
   destToken?: 'USDC' | 'USDT' | 'WETH'
-  destChain?: 'optimism' | 'base' | 'lisk' // if 'lisk', we hide the bottom row
-
-  // vault label (e.g. "Re7 USDC Vault (Morpho Blue)")
+  destChain?: 'optimism' | 'base' | 'lisk'
   vault: string
-
   onClose: () => void
 }
 
@@ -47,11 +43,13 @@ export function WithdrawSuccessModal({
   const bridged = destChain !== 'lisk' && !!destToken && typeof destAmount === 'number'
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] p-4">
-      <div className="bg-background rounded-2xl w-full max-w-md shadow-lg border border-border overflow-hidden">
+    // match position/behavior with other modals
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto z-[110]">
+      {/* match size & style */}
+      <div className="w-full max-w-lg my-8 rounded-2xl bg-background border border-border shadow-xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border bg-green-50 dark:bg-green-900/20">
-          <h2 className="text-2xl font-bold text-green-700 dark:text-green-300">Withdrawal successful</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-green-700 dark:text-green-300">Withdrawal successful</h2>
           <div className="flex items-center justify-center w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30">
             <Check size={28} className="text-green-600 dark:text-green-400" strokeWidth={3} />
           </div>
@@ -112,8 +110,11 @@ export function WithdrawSuccessModal({
             </div>
           )}
 
-          {/* Done */}
-          <Button onClick={onClose} size="lg" className="w-full text-white bg-blue-600 hover:bg-blue-700 text-lg font-semibold py-6">
+          <Button
+            onClick={onClose}
+            size="lg"
+            className="w-full text-white bg-blue-600 hover:bg-blue-700 text-lg font-semibold py-6"
+          >
             Done
           </Button>
         </div>
