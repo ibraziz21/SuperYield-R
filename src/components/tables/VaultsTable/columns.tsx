@@ -16,6 +16,8 @@ import { DataTableColumnHeader } from "../data-table-header";
 const tokenIcons: Record<string, string> = {
   USDC: "/tokens/usdc-icon.png",
   USDT: "/tokens/usdt-icon.png",
+  USDCe: '/tokens/usdc-icon.png',
+  USDCE: '/tokens/usdc-icon.png',
   USDT0: "/tokens/usdt0-icon.png",
   WETH: "/tokens/weth.png",
   DAI: "/tokens/dai.png",
@@ -46,8 +48,19 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
       <DataTableColumnHeader column={column} title="Vault" />
     ),
     cell: ({ row }) => {
-      const vault = row.getValue("vault") as string;
-      const iconPath = tokenIcons[vault] || "/tokens/default.svg";
+      const vault = String(row.getValue("vault") ?? "");
+      // normalize: remove dots, uppercase, then map families
+      const key = vault.replace(/\./g, "").toUpperCase();
+  
+      const iconPath =
+        // exact keys first
+        tokenIcons[vault] ||
+        tokenIcons[key] ||
+        // family fallbacks (so USDCE/USDC.e → USDC icon, USDT0 → USDT0 icon)
+        (/^USDC/.test(key) ? tokenIcons.USDCe
+         : /^USDT0/.test(key) ? tokenIcons.USDT0
+         : /^USDT/.test(key) ? tokenIcons.USDT
+         : tokenIcons.WETH) || "/tokens/default.svg";
 
       return (
         <div className="flex items-center justify-center gap-2">

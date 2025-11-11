@@ -6,16 +6,16 @@ import VaultsTable from ".";
 import { VaultsColumns } from "./columns";
 import { useYields, type YieldSnapshot } from "@/hooks/useYields";
 
-// Match YieldRow's display normalization
+/** Display names for Morpho Lisk vault tokens */
 const DISPLAY_TOKEN: Record<string, string> = {
-  USDCe: "USDC",
-  USDT0: "USDT",
-  USDC: "USDC",
-  USDT: "USDT",
+  USDC: "USDC.e",
+  USDT: "USDT0",
+  USDCe: "USDC.e",
+  USDT0: "USDT0",
   WETH: "WETH",
 };
 
-/** Hard filter: only show Lisk + Morpho Blue + (USDCe/USDT0 underlying) */
+/** Hard filter: only show Lisk + Morpho Blue + (USDC/USDT underlying) */
 const HARD_FILTER = (y: Pick<YieldSnapshot, "chain" | "protocolKey" | "token">) =>
   y.chain === "lisk" &&
   y.protocolKey === "morpho-blue" &&
@@ -33,8 +33,10 @@ const Vaults: React.FC = () => {
     // Map YieldSnapshot -> Vault row shape
     return filtered.map((snap) => {
       const vaultDisplay = DISPLAY_TOKEN[snap.token] ?? snap.token;
+      const routeKey = snap.token === "USDC" ? "USDCe" : snap.token === "USDT" ? "USDT0" : snap.token;
       return {
-        vault: vaultDisplay,                     // "USDC" | "USDT"
+        vault: vaultDisplay,                     // "USDC.e" | "USDT0"
+        royteKey: routeKey,                     // "USDCe" | "USDT0"
         network: "Lisk",                         // fixed per filter
         protocol: "Morpho Blue",                 // fixed per filter
         apy: (Number(snap.apy) || 0).toFixed(2), // string for column renderer
