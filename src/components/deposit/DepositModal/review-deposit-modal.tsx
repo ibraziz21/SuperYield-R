@@ -183,8 +183,10 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         return
       }
 
-      // choose source token/chain for the bridge
-      const srcToken: 'USDC' | 'USDT' = destTokenLabel === 'USDT0' ? sourceSymbol : 'USDC'
+      // UNIFORM: always use the user's chosen source token
+      const srcToken: 'USDC' | 'USDT' = sourceSymbol
+
+      // choose source chain by which wallet holds enough / more
       const srcChain: 'optimism' | 'base' =
         srcToken === 'USDC'
           ? pickSrcBy(inputAmt, opUsdcBal, baUsdcBal)
@@ -194,7 +196,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
 
       const preBal = (await readWalletBalance('lisk', destAddr, user).catch(() => 0n)) as bigint
 
-      // conservative minOut via fresh quote
+      // fresh quote (no pre-approval; we rely on Permit2 during bridge)
       const q = await getBridgeQuote({
         token: destTokenLabel,
         amount: inputAmt,
@@ -206,11 +208,13 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       const minOut = BigInt(q.estimate?.toAmountMin ?? '0')
       setCachedMinOut(minOut)
 
-      // switch to src chain & execute bridge
+      // switch to source chain & execute bridge (LI.FI will request a Permit2 signature if needed)
       const srcViem = srcChain === 'optimism' ? CHAINS.optimism : CHAINS.base
       await switchOrAddChain(walletClient, srcViem)
       await bridgeTokens(destTokenLabel, inputAmt, srcChain, 'lisk', walletClient, {
         sourceToken: srcToken,
+        // If your wrapper supports an explicit flag, you can pass one, e.g.:
+        // permitMode: 'permit2'
         onUpdate: (u) => {
           try { console.info('[bridge/update]', JSON.stringify(u)) }
           catch { console.info('[bridge/update]', u) }
