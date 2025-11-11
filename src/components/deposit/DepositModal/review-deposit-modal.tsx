@@ -1,166 +1,362 @@
-"use client"
+// src/components/DepositModal/review-deposit-modal.tsx
+'use client'
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import Image from "next/image"
-import { X } from "lucide-react"
-import React from "react"
+import { FC, useMemo, useState } from 'react'
+import Image from 'next/image'
+import { X, Check, ExternalLink, AlertCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { useAppKit } from '@reown/appkit/react'
+import { useWalletClient } from 'wagmi'
+import { keccak256, parseUnits, formatUnits } from 'viem'
+import { lisk as liskChain } from 'viem/chains'
+import type { YieldSnapshot } from '@/hooks/useYields'
 
-type ChainLabel = "OP Mainnet" | "Base" | string
+import { getBridgeQuote } from '@/lib/quotes'
+import { switchOrAddChain, CHAINS } from '@/lib/wallet'
+import { bridgeTokens } from '@/lib/bridge'
+import { TokenAddresses } from '@/lib/constants'
+import { readWalletBalance } from '../helpers'
+import { depositMorphoOnLiskAfterBridge } from '@/lib/depositor'
+import { switchOrAddChainStrict } from '@/lib/switch'
+
+type EvmChain = 'optimism' | 'base' | 'lisk'
+type FlowStep = 'idle' | 'bridging' | 'depositing' | 'success' | 'error'
 
 interface ReviewDepositModalProps {
   open: boolean
   onClose: () => void
-  onConfirm: () => void
-  /** Decimal user input as string (e.g. "10") */
-  amountInput: string
-  /** Source token on source chain (USDC | USDT) */
-  sourceToken: "USDC" | "USDT"
-  /** Destination token label on Lisk (USDCe | USDT0 | WETH) */
-  destToken: "USDCe" | "USDT0" | "WETH"
-  /** Source chain label for display */
-  sourceChainLabel?: ChainLabel
-  /** Bridge fee in *source token* units (e.g. 0.0025 USDC) */
-  bridgeFeeTokenAmount?: number
-  /** Expected amount on Lisk after fees/slippage (dest token units) */
-  destAmount?: number
-  /** A small %-delta display like -0.04 (pass negative for -0.04%) */
-  estDeltaPct?: number
-  /** Vault label – e.g. "Re7 USDC Vault (Morpho Blue)" */
-  vaultLabel: string
-  /** Busy while executing */
-  confirming?: boolean
-  /** Optional error to surface inline */
-  errorText?: string | null
+
+  // vault snapshot (USDC or USDT on Lisk/Morpho)
+  snap: YieldSnapshot
+
+  // from parent (already typed in your caller)
+  amount: string
+  sourceSymbol: 'USDC' | 'USDT'
+  destTokenLabel: 'USDCe' | 'USDT0' | 'WETH'
+  routeLabel: string
+  bridgeFeeDisplay: number
+  receiveAmountDisplay: number
+
+  // balances to decide source chain
+  opBal: bigint | null
+  baBal: bigint | null
+  liBal: bigint | null
+  liBalUSDT0: bigint | null
+  opUsdcBal: bigint | null
+  baUsdcBal: bigint | null
+  opUsdtBal: bigint | null
+  baUsdtBal: bigint | null
 }
 
-const tokenIcons: Record<string, string> = {
-  USDC: "/tokens/usdc-icon.png",
-  USDT: "/tokens/usdt-icon.png",
-  USDT0: "/tokens/usdt0-icon.png",
-  USDCe: "/tokens/usdc-icon.png",
-  WETH: "/tokens/weth.png",
+function toTokenDecimals(sym: 'USDC' | 'USDT' | 'WETH' | 'USDCe' | 'USDT0') {
+  return sym === 'WETH' ? 18 : 6
 }
 
-export const ReviewDepositModal: React.FC<ReviewDepositModalProps> = ({
-  open,
-  onClose,
-  onConfirm,
-  amountInput,
-  sourceToken,
-  destToken,
-  sourceChainLabel = "OP Mainnet",
-  bridgeFeeTokenAmount = 0,
-  destAmount = 0,
-  estDeltaPct = -0.04,
-  vaultLabel,
-  confirming = false,
-  errorText,
-}) => {
-  const srcIcon = tokenIcons[sourceToken] || "/tokens/usdc-icon.png"
-  const dstIcon = tokenIcons[destToken] || srcIcon
+export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
+  const {
+    open, onClose, snap,
+    amount, sourceSymbol, destTokenLabel,
+    routeLabel, bridgeFeeDisplay, receiveAmountDisplay,
+    opBal, baBal, liBal, liBalUSDT0,
+    opUsdcBal, baUsdcBal, opUsdtBal, baUsdtBal,
+  } = props
+
+  const { open: openConnect } = useAppKit()
+  const { data: walletClient } = useWalletClient()
+
+  const tokenDecimals = useMemo(
+    () => toTokenDecimals((snap.token as any) === 'WETH' ? 'WETH' : 'USDC'),
+    [snap.token]
+  )
+
+  const [step, setStep] = useState<FlowStep>('idle')
+  const [error, setError] = useState<string | null>(null)
+
+  const canStart = open && !!walletClient && Number(amount) > 0 && !error
+
+  const feeDisplay = useMemo(() => bridgeFeeDisplay ?? 0, [bridgeFeeDisplay])
+  const receiveDisplay = useMemo(() => receiveAmountDisplay ?? 0, [receiveAmountDisplay])
+  const amountNumber = Number(amount || 0)
+
+  function pickSrcBy(target: bigint, o?: bigint | null, b?: bigint | null): 'optimism' | 'base' {
+    const amt = target
+    const op = o ?? 0n
+    const ba = b ?? 0n
+    if (op >= amt) return 'optimism'
+    if (ba >= amt) return 'base'
+    return op >= ba ? 'optimism' : 'base'
+  }
+
+  async function ensureWalletChain(chainId: number) {
+    try {
+      if ((walletClient as any)?.chain?.id === chainId) return
+    } catch {}
+    await walletClient!.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: `0x${chainId.toString(16)}` }],
+    })
+  }
+
+  async function waitForLiskBalanceAtLeast(opts: {
+    user: `0x${string}`
+    tokenAddr: `0x${string}`
+    target: bigint
+    start?: bigint
+    pollMs?: number
+    timeoutMs?: number
+  }) {
+    const { user, tokenAddr, target, start = 0n, pollMs = 6000, timeoutMs = 15 * 60_000 } = opts
+    const endAt = Date.now() + timeoutMs
+    let last = start
+    while (true) {
+      const bal = await readWalletBalance('lisk', tokenAddr, user).catch(() => null)
+      if (bal !== null) {
+        last = bal
+        if (bal >= target) return bal
+      }
+      if (Date.now() > endAt) throw new Error(`Bridging not finalized on Lisk: balance ${last} < required ${target}`)
+      await new Promise(r => setTimeout(r, pollMs))
+    }
+  }
+
+  async function handleConfirm() {
+    if (!walletClient) { openConnect(); return }
+    setError(null)
+
+    try {
+      const inputAmt = parseUnits(amount || '0', snap.token === 'WETH' ? 18 : 6)
+      const user = walletClient.account!.address as `0x${string}`
+
+      if (snap.chain !== 'lisk') throw new Error('Only Lisk deposits are supported in this build')
+
+      // pick dest token + address
+      const destAddr =
+        destTokenLabel === 'USDCe' ? (TokenAddresses.USDCe.lisk as `0x${string}`) :
+        destTokenLabel === 'USDT0' ? (TokenAddresses.USDT0.lisk as `0x${string}`) :
+        (TokenAddresses.WETH.lisk as `0x${string}`)
+
+      // short-circuit: already on Lisk with enough balance
+      const haveOnLisk =
+        destTokenLabel === 'USDCe' ? (liBal ?? 0n) :
+        destTokenLabel === 'USDT0' ? (liBalUSDT0 ?? 0n) : 0n
+
+      if (haveOnLisk >= inputAmt) {
+        console.info('[deposit] already on Lisk with enough balance → depositing', {
+          token: destTokenLabel, haveOnLisk: haveOnLisk.toString(), need: inputAmt.toString(),
+        })
+        setStep('depositing')
+        await ensureWalletChain(liskChain.id)
+        await depositMorphoOnLiskAfterBridge(snap, inputAmt, walletClient)
+        setStep('success')
+        return
+      }
+
+      // choose source token/chain for the bridge
+      const srcToken: 'USDC' | 'USDT' = destTokenLabel === 'USDT0' ? sourceSymbol : 'USDC'
+      const srcChain: 'optimism' | 'base' =
+        srcToken === 'USDC'
+          ? pickSrcBy(inputAmt, opUsdcBal, baUsdcBal)
+          : pickSrcBy(inputAmt, opUsdtBal, baUsdtBal)
+
+      console.info('[deposit] starting bridge', {
+        srcToken, srcChain, destTokenLabel, amount: inputAmt.toString(),
+        routeHint: routeLabel,
+      })
+
+      setStep('bridging')
+
+      const preBal = (await readWalletBalance('lisk', destAddr, user).catch(() => 0n)) as bigint
+
+      // conservative minOut via fresh quote (even though UI already showed numbers)
+      const q = await getBridgeQuote({
+        token: destTokenLabel,
+        amount: inputAmt,
+        from: srcChain,
+        to: 'lisk',
+        fromAddress: user,
+        fromTokenSym: srcToken,
+      })
+      const minOut = BigInt(q.estimate?.toAmountMin ?? '0')
+      console.info('[deposit] quote', {
+        srcChain, dest: 'lisk', toAmountMin: minOut.toString(), bridge: q.route,
+      })
+
+      // switch to src chain & execute bridge
+      const srcViem = srcChain === 'optimism' ? CHAINS.optimism : CHAINS.base
+      await switchOrAddChain(walletClient, srcViem)
+      console.log('[Bridge params]', srcChain, srcToken, destTokenLabel, inputAmt.toString())
+      await bridgeTokens(destTokenLabel, inputAmt, srcChain, 'lisk', walletClient, {
+        sourceToken: srcToken,
+        onUpdate: (u) => {
+          // real-time log of LI.FI executor updates
+          try {
+            console.info('[bridge/update]', JSON.stringify(u))
+          } catch {
+            console.info('[bridge/update]', u)
+          }
+        },
+      })
+
+      // wait until tokens land on user's Lisk wallet
+      await waitForLiskBalanceAtLeast({
+        user,
+        tokenAddr: destAddr,
+        target: preBal + (minOut > 0n ? minOut : 1n),
+        start: preBal,
+        pollMs: 6000,
+        timeoutMs: 15 * 60_000,
+      })
+
+      console.info('[deposit] bridge finalized on Lisk; depositing into Morpho', {
+        token: destTokenLabel, minOut: minOut.toString(),
+      })
+
+      setStep('depositing')
+      await switchOrAddChainStrict(walletClient) // <- single, verified hop to Lisk
+      await depositMorphoOnLiskAfterBridge(snap, minOut > 0n ? minOut : inputAmt, walletClient)
+
+      console.info('[deposit] success')
+      setStep('success')
+    } catch (e: any) {
+      console.error('[deposit] error', e)
+      setError(e?.message ?? String(e))
+      setStep('error')
+    }
+  }
+
+  const approveState: 'idle' | 'working' | 'done' | 'error' =
+    step === 'idle' ? 'idle' : step === 'error' ? 'error' : 'done'
+  const bridgeState: 'idle' | 'working' | 'done' | 'error' =
+    step === 'bridging' ? 'working'
+      : step === 'depositing' || step === 'success' ? 'done'
+      : step === 'error' ? 'error'
+      : 'idle'
+  const depositState: 'idle' | 'working' | 'done' | 'error' =
+    step === 'depositing' ? 'working'
+      : step === 'success' ? 'done'
+      : step === 'error' && bridgeState === 'done' ? 'error'
+      : 'idle'
+
+  const primaryCta =
+    step === 'error' ? 'Try again'
+      : step === 'idle' ? 'Deposit'
+      : step === 'bridging' ? 'Sign bridge transaction…'
+      : step === 'depositing' ? 'Depositing…'
+      : step === 'success' ? 'Done'
+      : 'Working…'
+
+  const onPrimary = () => {
+    if (step === 'error') { setStep('idle'); setError(null); return }
+    if (step === 'success') { onClose(); return }
+    if (step === 'idle') { void handleConfirm(); return }
+  }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !confirming && !v ? onClose() : null}>
-      <DialogContent className="w-[min(92vw,520px)] overflow-hidden rounded-2xl p-0">
-        <div className="flex items-center justify-between px-5 py-4">
-          <DialogHeader className="p-0">
-            <DialogTitle className="text-xl font-semibold">Review deposit</DialogTitle>
-          </DialogHeader>
-          <button
-            onClick={onClose}
-            className="rounded-full p-2 hover:bg-muted"
-            disabled={confirming}
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="px-5 pb-5">
-          <div className="text-sm text-muted-foreground mb-3">You’re depositing</div>
-
-          {/* Row 1: Source */}
-          <div className="flex items-center gap-3 py-3">
-            <div className="relative h-10 w-10 overflow-hidden rounded-full border bg-white">
-              <Image src={srcIcon} alt={sourceToken} width={40} height={40} className="object-contain" />
-              <div className="absolute -bottom-1 -right-1 rounded-full border bg-white p-0.5">
-                <Image src="/networks/op-icon.png" alt="OP" width={16} height={16} />
-              </div>
-            </div>
-            <div className="flex-1">
-              <div className="text-lg font-semibold leading-5">
-                {Number.isFinite(Number(amountInput)) ? Number(amountInput).toString() : amountInput}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                ${Number(amountInput || "0").toFixed(2)} • {sourceToken} on {sourceChainLabel}
-              </div>
-            </div>
+    <div className={`fixed inset-0 z-[100] ${open ? '' : 'pointer-events-none'}`}>
+      <div className={`absolute inset-0 bg-black/50 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} />
+      <div className="absolute inset-0 flex items-start justify-center p-3 sm:p-4">
+        <div className={`w-full max-w-lg rounded-2xl bg-background border border-border shadow-xl overflow-hidden transform transition-all ${open ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+            <h3 className="text-xl font-semibold">{step === 'error' ? 'Review deposit – Error' : 'Review deposit'}</h3>
+            <button onClick={onClose} className="p-2 hover:bg-muted rounded-full"><X size={20} /></button>
           </div>
 
-          {/* Row 2: Bridge */}
-          <div className="relative ml-[20px] border-l border-dashed border-border pl-6">
-            <div className="flex items-center gap-3 py-3">
-              <div className="relative h-10 w-10 overflow-hidden rounded-full border bg-white">
-                <Image src="/protocols/lifi.png" alt="LI.FI" width={40} height={40} className="object-contain" />
+          <div className="px-5 py-4 space-y-5">
+            <p className="text-sm text-muted-foreground">You&apos;re depositing</p>
+
+            {/* row: source */}
+            <div className="flex items-start gap-3">
+              <div className="relative mt-0.5">
+                <Image
+                  src={sourceSymbol === 'USDT' ? '/tokens/usdt-icon.png' : '/tokens/usdc-icon.png'}
+                  alt={sourceSymbol}
+                  width={28}
+                  height={28}
+                  className="rounded-full"
+                />
               </div>
               <div className="flex-1">
-                <div className="text-base font-semibold leading-5">Bridging via LI.FI</div>
+                <div className="text-2xl font-bold">{Number(amountNumber).toString()}</div>
                 <div className="text-xs text-muted-foreground">
-                  Bridge Fee: {bridgeFeeTokenAmount.toFixed(4)} {sourceToken}
+                  ${amountNumber.toFixed(2)} • {sourceSymbol} on OP/Base
                 </div>
               </div>
+              {approveState === 'done' && <Check className="text-green-600" size={18} />}
+              {approveState === 'error' && <AlertCircle className="text-red-600" size={18} />}
             </div>
 
-            {/* Row 3: Destination preview */}
-            <div className="flex items-center gap-3 py-3">
-              <div className="relative h-10 w-10 overflow-hidden rounded-full border bg-white">
-                <Image src={dstIcon} alt={destToken} width={40} height={40} className="object-contain" />
-                <div className="absolute -bottom-1 -right-1 rounded-full border bg-white p-0.5">
-                  <Image src="/networks/lisk.png" alt="Lisk" width={16} height={16} />
-                </div>
+            {/* row: bridging */}
+            <div className="flex items-start gap-3">
+              <div className="relative mt-0.5">
+                <Image src="/protocols/bridge-icon.png" alt="bridge" width={28} height={28} className="rounded-full" />
               </div>
               <div className="flex-1">
-                <div className="text-lg font-semibold leading-5">{destAmount.toFixed(6)}</div>
+                <div className="text-lg font-semibold">Bridging via LI.FI</div>
                 <div className="text-xs text-muted-foreground">
-                  ${Number(amountInput || "0").toFixed(2)} •{" "}
-                  {estDeltaPct < 0 ? `${estDeltaPct.toFixed(2)}%` : `+${estDeltaPct.toFixed(2)}%`} • {destToken} on Lisk
+                  Bridge Fee: {feeDisplay.toFixed(4)} {sourceSymbol}
+                </div>
+                <div className="text-xs text-muted-foreground">{routeLabel}</div>
+              </div>
+              {bridgeState === 'done' && (
+                <a href="#" className="text-muted-foreground hover:text-foreground" onClick={(e) => e.preventDefault()}>
+                  <ExternalLink size={16} />
+                </a>
+              )}
+              {bridgeState === 'error' && <AlertCircle className="text-red-600" size={18} />}
+            </div>
+
+            {/* row: dest */}
+            <div className="flex items-start gap-3">
+              <div className="relative mt-0.5">
+                <Image
+                  src={
+                    destTokenLabel === 'USDT0'
+                      ? '/tokens/usdt0-icon.png'
+                      : destTokenLabel === 'USDCe'
+                        ? '/tokens/usdc-icon.png'
+                        : '/tokens/weth.png'
+                  }
+                  alt={destTokenLabel}
+                  width={28}
+                  height={28}
+                  className="rounded-full"
+                />
+              </div>
+              <div className="flex-1">
+                <div className="text-2xl font-bold">{(receiveDisplay ?? 0).toFixed(4)}</div>
+                <div className="text-xs text-muted-foreground">
+                  ≈ ${amountNumber.toFixed(2)} • {destTokenLabel} on Lisk
                 </div>
               </div>
+              {depositState === 'done' && <Check className="text-green-600" size={18} />}
+              {depositState === 'error' && <AlertCircle className="text-red-600" size={18} />}
             </div>
+
+            {/* row: vault */}
+            <div className="flex items-start gap-3">
+              <div className="relative mt-0.5">
+                <Image src="/protocols/morpho-icon.png" alt="Morpho" width={28} height={28} className="rounded-lg" />
+              </div>
+              <div className="flex-1">
+                <div className="text-lg font-semibold">Depositing in Vault</div>
+                <div className="text-xs text-muted-foreground">Re7 {snap.token} Vault (Morpho Blue)</div>
+              </div>
+            </div>
+
+            {error && <div className="rounded-lg bg-red-50 text-red-700 text-xs p-3">{error}</div>}
           </div>
 
-          {/* Row 4: Vault */}
-          <div className="mt-2 flex items-center gap-3 rounded-xl bg-muted/60 p-3">
-            <div className="relative h-10 w-10 overflow-hidden rounded-xl border bg-white">
-              <Image src="/protocols/morpho-icon.png" alt="Vault" width={40} height={40} className="object-contain" />
-            </div>
-            <div className="flex-1">
-              <div className="text-base font-semibold leading-5">Depositing in Vault</div>
-              <div className="text-xs text-muted-foreground">{vaultLabel}</div>
-            </div>
-          </div>
-
-          {/* Error (if any) */}
-          {!!errorText && (
-            <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              {errorText}
-            </div>
-          )}
-
-          {/* CTA */}
-          <div className="mt-5">
+          <div className="px-5 pb-5">
             <Button
-              onClick={onConfirm}
-              disabled={confirming}
-              className="h-11 w-full text-base bg-blue-600 font-semibold"
+              onClick={onPrimary}
+              className="w-full h-12 text-base"
+              disabled={!canStart || step === 'bridging' || step === 'depositing'}
             >
-              {confirming ? "Confirming…" : "Confirm deposit"}
+              {primaryCta}
             </Button>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   )
 }

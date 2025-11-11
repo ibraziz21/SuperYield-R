@@ -91,7 +91,7 @@ export async function ensureAllowanceForRouterOnLisk(
     address: token,
     abi: erc20Abi,
     functionName: 'approve',
-    args: [router, maxUint256],
+    args: [router, amount],
     chain: liskChain,
     account: owner,
   })

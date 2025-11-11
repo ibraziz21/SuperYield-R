@@ -8,6 +8,9 @@ import { Card, CardContent } from '@/components/ui/Card'
 import { DepositWithdraw } from '@/components/deposit/deposit-withdraw'
 import { useMemo } from 'react'
 import { useYields, type YieldSnapshot } from '@/hooks/useYields'
+import { usePositions } from '@/hooks/usePositions'
+import { formatUnits } from 'viem'
+
 
 // Token icon mapping
 const tokenIcons: Record<string, string> = {
@@ -35,6 +38,8 @@ const DISPLAY_TOKEN: Record<string, string> = {
   USDT: 'USDT',
   WETH: 'WETH',
 };
+
+
 
 // Only Lisk + Morpho Blue + (USDC/USDT)
 const HARD_FILTER = (y: Pick<YieldSnapshot, 'chain' | 'protocolKey' | 'token'>) =>
@@ -64,6 +69,29 @@ export default function VaultDetailPage() {
       tvl: Number.isFinite(s.tvlUSD) ? Math.round(s.tvlUSD).toLocaleString() : '0',
     }))
   }, [yields, vaultName])
+
+  const { data: positionsRaw } = usePositions()
+
+const userShares = useMemo(() => {
+  const positions = (positionsRaw ?? []) as any[]
+  const morphoToken =
+    vaultName === 'USDC' ? 'USDCe' :
+    vaultName === 'USDT' ? 'USDT0' :
+    vaultName
+  const pos = positions.find(
+    (p) =>
+      p?.protocol === 'Morpho Blue' &&
+      String(p?.chain).toLowerCase() === 'lisk' &&
+      String(p?.token) === morphoToken
+  )
+  return (pos?.amount ?? 0n) as bigint
+}, [positionsRaw, vaultName])
+
+const userSharesHuman = useMemo(() => {
+  const num = Number(formatUnits(userShares, 18))
+  return Number.isFinite(num) ? num : 0
+}, [userShares])
+
 
   if (isLoading) {
     return (
@@ -175,7 +203,15 @@ export default function VaultDetailPage() {
           <div className="bg-white rounded-xl p-6">
             <h2 className="text-xl font-semibold mb-4">My Positions</h2>
             <div className="text-center py-8 text-muted-foreground text-sm">
-              No positions yet. Deposit to start earning.
+            <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
+  <CardContent className="space-y-1 p-4">
+
+    <p className="text-2xl font-semibold">
+      {userSharesHuman.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares
+    </p>
+  </CardContent>
+</Card>
+
             </div>
           </div>
 

@@ -202,6 +202,7 @@ export async function bridgeTokens(
   const inputToken  = tokenAddress(opts?.sourceToken ?? token, from)
   const outputToken = tokenAddress(token, to)
 
+  console.log('Bridging tokens with LI.FI:', {originChainId, destinationChainId, inputToken, outputToken, amount: amount.toString()})
   const quote = await getQuote({
     fromChain: originChainId,
     toChain: destinationChainId,
@@ -215,6 +216,8 @@ export async function bridgeTokens(
   })
 
   const route = convertQuoteToRoute(quote)
+
+ console.log('LI.FI route:', JSON.stringify(route, null, 2))
 
   const executed = await executeRoute(route, {
     updateRouteHook: (updated) => opts?.onUpdate?.(updated),
