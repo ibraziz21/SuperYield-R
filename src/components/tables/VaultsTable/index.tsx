@@ -53,7 +53,7 @@ export default function VaultsTable<TData , TValue>({
 
   const handleRowClick = (row: any) => {
     const vaultName = row.original.vault;
-    router.push(`/markets/${vaultName}`);
+    router.push(`/vaults/${vaultName}`);
   };
 
   return (

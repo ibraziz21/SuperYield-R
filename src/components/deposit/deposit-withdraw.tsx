@@ -8,8 +8,7 @@ import { Card } from '../ui/Card';
 import { usePositions } from '@/hooks/usePositions';
 import { SelectTokenModal } from './select-token-modal';
 import { DepositModal } from './DepositModal/review-deposit-modal';
-import { ReviewWithdrawModal } from '../WithdrawModal/review-withdraw-modal'
-
+import { ReviewWithdrawModal } from '../WithdrawModal/review-withdraw-modal';
 
 import { useWalletClient } from 'wagmi';
 import { parseUnits } from 'viem';
@@ -18,7 +17,6 @@ import type { YieldSnapshot } from '@/hooks/useYields';
 
 // parity helpers
 import { getBridgeQuote, quoteUsdceOnLisk } from '@/lib/quotes';
-import { publicLisk } from '@/lib/clients';
 import { TokenAddresses, getDualBalances } from '@/lib/constants';
 import {
   readWalletBalance,
@@ -43,7 +41,7 @@ interface DepositWithdrawProps {
   snap?: YieldSnapshot;
 }
 
-// NEW: minimal humanizer (same spirit as MyPositions)
+// minimal humanizer
 function formatAmountBigint(n: bigint, decimals: number): string {
   const neg = n < 0n;
   const abs = neg ? -n : n;
@@ -84,12 +82,15 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
   const [showTokenModal, setShowTokenModal] = useState(false);
   const [showReview, setShowReview] = useState(false);
 
+  // withdraw review modal + destination (you can expose a picker later)
+  const [showWithdrawReview, setShowWithdrawReview] = useState(false);
+  const [withdrawDest, setWithdrawDest] = useState<'lisk' | 'optimism' | 'base'>('optimism');
+
   // balances (for quotes and modal decisions)
-  // NEW: balances for the selector (sum of OP + Base for each token)
   const [availableTokenBalances, setAvailableTokenBalances] = useState<{ USDC: number; USDT: number }>({
     USDC: 0,
     USDT: 0,
-  })
+  });
 
   const [opBal, setOpBal] = useState<bigint | null>(null);
   const [baBal, setBaBal] = useState<bigint | null>(null);
@@ -99,12 +100,8 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
   const [baUsdcBal, setBaUsdcBal] = useState<bigint | null>(null);
   const [opUsdtBal, setOpUsdtBal] = useState<bigint | null>(null);
   const [baUsdtBal, setBaUsdtBal] = useState<bigint | null>(null);
-  // withdraw review modal + destination (you can expose a picker later)
-  const [showWithdrawReview, setShowWithdrawReview] = useState(false)
-  const [withdrawDest, setWithdrawDest] = useState<'lisk' | 'optimism' | 'base'>('optimism')
 
-
-  // quote state
+  // quote state (deposit side)
   const [route, setRoute] = useState<string | null>(null);
   const [fee, setFee] = useState<bigint>(0n);
   const [received, setReceived] = useState<bigint>(0n);
@@ -116,8 +113,7 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
   const destTokenLabel = toLiskDestLabel(vaultToken);
   const isUsdtFamily = vaultToken === 'USDT' || destTokenLabel === 'USDT0';
 
-
-  // NEW: positions for withdraw tab balance
+  // positions for withdraw tab balance
   const { data: positionsRaw } = usePositions();
   const positions = (positionsRaw ?? []) as Array<{
     protocol: string;
@@ -144,10 +140,9 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
     [withdrawPosition]
   );
 
-  // NEW: deposit-available wallet balance (pick the richer source chain)
+  // deposit-available wallet balance (pick the richer source chain)
   const depositWalletBalance = useMemo(() => {
-    const toNum = (x: bigint | null | undefined, dec = 6) =>
-      Number(x ?? 0n) / 10 ** dec;
+    const toNum = (x: bigint | null | undefined, dec = 6) => Number(x ?? 0n) / 10 ** dec;
 
     if (selectedToken.symbol === 'USDC') {
       const op = toNum(opUsdcBal, 6);
@@ -160,47 +155,44 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
     }
   }, [selectedToken.symbol, opUsdcBal, baUsdcBal, opUsdtBal, baUsdtBal]);
 
-
-  // NEW: compute available balances for the token selector using OP+Base
+  // compute available balances for the token selector using OP+Base
   useEffect(() => {
     if (!walletClient) {
-      setAvailableTokenBalances({ USDC: 0, USDT: 0 })
-      return
+      setAvailableTokenBalances({ USDC: 0, USDT: 0 });
+      return;
     }
-    const user = walletClient.account?.address as `0x${string}`
+    const user = walletClient.account?.address as `0x${string}`;
 
-      ; (async () => {
-        try {
-          const [{ opBal: usdcOp, baBal: usdcBa }, { opBal: usdtOp, baBal: usdtBa }] = await Promise.all([
-            getDualBalances(
-              {
-                optimism: TokenAddresses.USDC.optimism as `0x${string}`,
-                base: TokenAddresses.USDC.base as `0x${string}`,
-              },
-              user
-            ),
-            getDualBalances(
-              {
-                optimism: TokenAddresses.USDT.optimism as `0x${string}`,
-                base: TokenAddresses.USDT.base as `0x${string}`,
-              },
-              user
-            ),
-          ])
+    (async () => {
+      try {
+        const [{ opBal: usdcOp, baBal: usdcBa }, { opBal: usdtOp, baBal: usdtBa }] = await Promise.all([
+          getDualBalances(
+            {
+              optimism: TokenAddresses.USDC.optimism as `0x${string}`,
+              base: TokenAddresses.USDC.base as `0x${string}`,
+            },
+            user
+          ),
+          getDualBalances(
+            {
+              optimism: TokenAddresses.USDT.optimism as `0x${string}`,
+              base: TokenAddresses.USDT.base as `0x${string}`,
+            },
+            user
+          ),
+        ]);
 
-          // both USDC & USDT use 6 decimals on OP/Base
-          const toNum = (x: bigint) => Number(x) / 1e6
+        const toNum = (x: bigint) => Number(x) / 1e6;
 
-          setAvailableTokenBalances({
-            USDC: toNum(usdcOp) + toNum(usdcBa),
-            USDT: toNum(usdtOp) + toNum(usdtBa),
-          })
-        } catch {
-          setAvailableTokenBalances({ USDC: 0, USDT: 0 })
-        }
-      })()
-  }, [walletClient])
-
+        setAvailableTokenBalances({
+          USDC: toNum(usdcOp) + toNum(usdcBa),
+          USDT: toNum(usdtOp) + toNum(usdtBa),
+        });
+      } catch {
+        setAvailableTokenBalances({ USDC: 0, USDT: 0 });
+      }
+    })();
+  }, [walletClient]);
 
   // sync the selector with the vault once we have the snapshot
   useEffect(() => {
@@ -225,7 +217,11 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
     const liSym = symbolForWalletDisplay(snap.token, 'lisk');
 
     const addrOrNull = (sym: YieldSnapshot['token'], ch: EvmChain) => {
-      try { return tokenAddrFor(sym, ch); } catch { return null; }
+      try {
+        return tokenAddrFor(sym, ch);
+      } catch {
+        return null;
+      }
     };
 
     const opAddr = addrOrNull(opSym, 'optimism');
@@ -270,21 +266,28 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
     });
   }, [walletClient, snap, isUsdtFamily]);
 
-  /* -------- Quote (Lisk-only) -------- */
+  /* -------- Quote (Lisk-only, Deposit side) -------- */
   useEffect(() => {
     if (!walletClient || !amount || !snap) {
-      setRoute(null); setFee(0n); setReceived(0n); setQuoteError(null);
+      setRoute(null);
+      setFee(0n);
+      setReceived(0n);
+      setQuoteError(null);
       return;
     }
     if (snap.chain !== 'lisk') {
-      setRoute(null); setFee(0n); setReceived(0n); setQuoteError('Only Lisk deposits are supported');
+      setRoute(null);
+      setFee(0n);
+      setReceived(0n);
+      setQuoteError('Only Lisk deposits are supported');
       return;
     }
 
     const amt = parseUnits(amount, tokenDecimals);
 
     const pickSrcBy = (o?: bigint | null, b?: bigint | null): 'optimism' | 'base' => {
-      const op = o ?? 0n, ba = b ?? 0n;
+      const op = o ?? 0n,
+        ba = b ?? 0n;
       if (op >= amt) return 'optimism';
       if (ba >= amt) return 'base';
       return op >= ba ? 'optimism' : 'base';
@@ -308,27 +311,63 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
           setReceived(minOut);
           setQuoteError(null);
         })
-        .catch(() => { setRoute(null); setFee(0n); setReceived(0n); setQuoteError('Could not fetch bridge quote'); });
+        .catch(() => {
+          setRoute(null);
+          setFee(0n);
+          setReceived(0n);
+          setQuoteError('Could not fetch bridge quote');
+        });
       return;
     }
 
     if (destTokenLabel === 'USDCe') {
-      if ((liBal ?? 0n) >= amt) { setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null); return; }
+      if ((liBal ?? 0n) >= amt) {
+        setRoute('On-chain');
+        setFee(0n);
+        setReceived(amt);
+        setQuoteError(null);
+        return;
+      }
       quoteUsdceOnLisk({
         amountIn: amt,
-        opBal, baBal,
+        opBal,
+        baBal,
         fromAddress: walletClient.account!.address as `0x${string}`,
       })
-        .then((q) => { setRoute(q.route ?? 'Bridge → USDCe'); setFee(q.bridgeFee ?? 0n); setReceived(q.bridgeOutUSDCe ?? 0n); setQuoteError(null); })
-        .catch(() => { setRoute(null); setFee(0n); setReceived(0n); setQuoteError('Could not fetch bridge quote'); });
+        .then((q) => {
+          setRoute(q.route ?? 'Bridge → USDCe');
+          setFee(q.bridgeFee ?? 0n);
+          setReceived(q.bridgeOutUSDCe ?? 0n);
+          setQuoteError(null);
+        })
+        .catch(() => {
+          setRoute(null);
+          setFee(0n);
+          setReceived(0n);
+          setQuoteError('Could not fetch bridge quote');
+        });
       return;
     }
 
-    setRoute('On-chain'); setFee(0n); setReceived(amt); setQuoteError(null);
+    setRoute('On-chain');
+    setFee(0n);
+    setReceived(amt);
+    setQuoteError(null);
   }, [
-    amount, walletClient, tokenDecimals, snap, destTokenLabel,
-    opBal, baBal, liBal, liBalUSDT0,
-    selectedToken.symbol, opUsdcBal, baUsdcBal, opUsdtBal, baUsdtBal,
+    amount,
+    walletClient,
+    tokenDecimals,
+    snap,
+    destTokenLabel,
+    opBal,
+    baBal,
+    liBal,
+    liBalUSDT0,
+    selectedToken.symbol,
+    opUsdcBal,
+    baUsdcBal,
+    opUsdtBal,
+    baUsdtBal,
   ]);
 
   // display numbers
@@ -345,17 +384,18 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
     return Number(received) / 10 ** tokenDecimals;
   }, [amount, amountNum, received, tokenDecimals]);
 
-  // simple placeholders for the review modal visuals (matches your mocks)
-  const withdrawBridgeFeeDisplay = 0.0025
-  const withdrawReceiveDisplay = Math.max(amountNum - withdrawBridgeFeeDisplay, 0)
-  const withdrawSharesBigint = useMemo(
-    () => {
-      try { return parseUnits(amount || '0', 18) } catch { return 0n }
-    },
-    [amount]
-  )
+  // simple placeholders for the withdraw review modal visuals (you can swap to live values later)
+  const withdrawBridgeFeeDisplay = 0.0025;
+  const withdrawReceiveDisplay = Math.max(amountNum - withdrawBridgeFeeDisplay, 0);
+  const withdrawSharesBigint = useMemo(() => {
+    try {
+      return parseUnits(amount || '0', 18);
+    } catch {
+      return 0n;
+    }
+  }, [amount]);
+
   // token picker list
-  // REPLACE this block
   const availableTokens: Token[] = [
     {
       id: 'usdc',
@@ -373,21 +413,19 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
       balance: availableTokenBalances.USDT,
       address: TokenAddresses.USDT.optimism as `0x${string}`,
     },
-  ]
-
+  ];
 
   const confirmDisabled = !(amountNum > 0) || Boolean(quoteError) || !snap;
 
-  // open review modal instead of executing here
+  // open review modals instead of executing here
   const onDepositClick = () => {
-    if (confirmDisabled || activeTab !== 'deposit') return
-    setShowReview(true)
-  }
+    if (confirmDisabled || activeTab !== 'deposit') return;
+    setShowReview(true);
+  };
   const onWithdrawClick = () => {
-    if (!(amountNum > 0) || !snap) return
-    setShowWithdrawReview(true)
-  }
-
+    if (!(amountNum > 0) || !snap) return;
+    setShowWithdrawReview(true);
+  };
 
   if (!snap) {
     return (
@@ -408,14 +446,18 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
         <div className="flex items-center gap-8 mb-8 border-b">
           <button
             onClick={() => setActiveTab('deposit')}
-            className={`pb-3 font-semibold transition-colors relative ${activeTab === 'deposit' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`pb-3 font-semibold transition-colors relative ${
+              activeTab === 'deposit' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
             Deposit
             {activeTab === 'deposit' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-t" />}
           </button>
           <button
             onClick={() => setActiveTab('withdraw')}
-            className={`pb-3 font-semibold transition-colors relative ${activeTab === 'withdraw' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`pb-3 font-semibold transition-colors relative ${
+              activeTab === 'withdraw' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
             Withdraw
             {activeTab === 'withdraw' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-t" />}
@@ -439,7 +481,6 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
                 onClick={() =>
                   setAmount(
                     activeTab === 'withdraw'
-                      // best-effort numeric parse for convenience (shares → number). UI-only.
                       ? (Number(withdrawBalanceHuman.replace(/,/g, '')) || 0).toString()
                       : depositWalletBalance.toFixed(2)
                   )
@@ -448,7 +489,6 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
               >
                 MAX
               </button>
-
             </div>
           </div>
 
@@ -463,7 +503,9 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
                   placeholder="0.00"
                   className="text-3xl font-semibold bg-transparent outline-none w-full placeholder:text-muted-foreground"
                 />
-                <div className="text-muted-foreground mt-2">${(Number.parseFloat(amount || '0') * 1).toFixed(2)}</div>
+                <div className="text-muted-foreground mt-2">
+                  ${(Number.parseFloat(amount || '0') * 1).toFixed(2)}
+                </div>
               </div>
 
               {/* Token Selector */}
@@ -498,71 +540,124 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
 
               {/* Route & Fees (keep under BOTH tabs) */}
               <div className="border border-border rounded-lg">
-                <button
-                  // keep expandable if you had the toggle previously; always expanded works too
-                  className="w-full px-4 py-4 flex items-center justify-between"
-                >
+                <button className="w-full px-4 py-4 flex items-center justify-between">
                   <span className="font-semibold text-foreground">Route & fees</span>
                 </button>
 
-                <div className="border-t border-border px-4 py-4 space-y-4 bg-muted">
-                  {/* Route Display */}
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="bg-background rounded-lg p-3 flex items-center gap-2 justify-center">
-                        <div className="w-4 h-4 relative">
-                          <Image src="/networks/op-icon.png" alt="OP Mainnet" width={16} height={16} className="rounded-full" />
-                        </div>
-                        <span className="text-sm">OP Mainnet</span>
-                        <span className="text-sm font-semibold">{selectedToken.symbol}</span>
-                      </div>
-                    </div>
-                    <span className="text-xl text-muted-foreground">→</span>
-                    <div className="flex-1">
-                      <div className="bg-background rounded-lg p-3 flex items-center gap-2 justify-center">
-                        <div className="w-4 h-4 relative">
-                          <Image src="/networks/lisk.png" alt="Lisk" width={16} height={16} className="rounded-full" />
-                        </div>
-                        <span className="text-sm">Lisk</span>
-                        <span className="text-sm font-semibold">{destTokenLabel}</span>
-                      </div>
-                    </div>
-                  </div>
+                {(() => {
+                  const isDeposit = activeTab === 'deposit';
 
-                  {/* Fee Details */}
-                  <div className="bg-background rounded-lg p-4 space-y-3">
-                    <div className="flex items-start gap-2">
-                      <div className="w-6 h-6 relative flex-shrink-0">
-                        <Image
-                          src="/protocols/bridge-icon.png"
-                          alt="Bridge"
-                          width={24}
-                          height={24}
-                          className="rounded-full"
-                          onError={(e) => { (e.target as HTMLImageElement).src = '/protocols/morpho-icon.png'; }}
-                        />
+                  // Deposit: OP/Base {selectedToken} → Lisk {destTokenLabel}
+                  const depSrcChainName = 'OP Mainnet';
+                  const depSrcIcon = '/networks/op-icon.png';
+                  const depSrcToken = selectedToken.symbol;
+                  const depDstChainName = 'Lisk';
+                  const depDstIcon = '/networks/lisk.png';
+                  const depDstToken = destTokenLabel; // 'USDCe' | 'USDT0' | 'WETH'
+
+                  // Withdraw: Lisk {USDCe|USDT0} → OP/Base {USDC|USDT}
+                  const wSrcChainName = 'Lisk';
+                  const wSrcIcon = '/networks/lisk.png';
+                  const wSrcToken = destTokenLabel; // 'USDCe' | 'USDT0'
+                  const wDstChainName = withdrawDest === 'base' ? 'Base' : withdrawDest === 'optimism' ? 'OP Mainnet' : 'Lisk';
+                  const wDstIcon =
+                    withdrawDest === 'base' ? '/networks/base.png' :
+                    withdrawDest === 'optimism' ? '/networks/op-icon.png' :
+                    '/networks/lisk.png';
+                  const wDstToken =
+                    destTokenLabel === 'USDT0' ? 'USDT' :
+                    destTokenLabel === 'USDCe' ? 'USDC' :
+                    'WETH';
+
+                  // fee/receive token labels
+                  const feeToken = isDeposit ? selectedToken.symbol : wDstToken;
+                  const receiveToken = isDeposit ? destTokenLabel : wDstToken;
+
+                  return (
+                    <div className="border-t border-border px-4 py-4 space-y-4 bg-muted">
+                      {/* Route Display */}
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="bg-background rounded-lg p-3 flex items-center gap-2 justify-center">
+                            <div className="w-4 h-4 relative">
+                              <Image
+                                src={isDeposit ? depSrcIcon : wSrcIcon}
+                                alt={isDeposit ? depSrcChainName : wSrcChainName}
+                                width={16}
+                                height={16}
+                                className="rounded-full"
+                              />
+                            </div>
+                            <span className="text-sm">{isDeposit ? depSrcChainName : wSrcChainName}</span>
+                            <span className="text-sm font-semibold">
+                              {isDeposit ? depSrcToken : wSrcToken}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="text-xl text-muted-foreground">→</span>
+
+                        <div className="flex-1">
+                          <div className="bg-background rounded-lg p-3 flex items-center gap-2 justify-center">
+                            <div className="w-4 h-4 relative">
+                              <Image
+                                src={isDeposit ? depDstIcon : wDstIcon}
+                                alt={isDeposit ? depDstChainName : wDstChainName}
+                                width={16}
+                                height={16}
+                                className="rounded-full"
+                              />
+                            </div>
+                            <span className="text-sm">{isDeposit ? depDstChainName : wDstChainName}</span>
+                            <span className="text-sm font-semibold">
+                              {isDeposit ? depDstToken : wDstToken}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <p className="text-muted-foreground text-sm">{route ?? 'Routing via LI.FI bridge'}</p>
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-muted-foreground text-sm">Bridge fee (estimated):</span>
-                          <span className="font-semibold text-foreground">
-                            {bridgeFeeDisplay.toFixed(6)} {selectedToken.symbol}
-                          </span>
+
+                      {/* Fee Details */}
+                      <div className="bg-background rounded-lg p-4 space-y-3">
+                        <div className="flex items-start gap-2">
+                          <div className="w-6 h-6 relative flex-shrink-0">
+                            <Image
+                              src="/protocols/bridge-icon.png"
+                              alt="Bridge"
+                              width={24}
+                              height={24}
+                              className="rounded-full"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = '/protocols/morpho-icon.png';
+                              }}
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-muted-foreground text-sm">
+                              {route ?? 'Routing via LI.FI bridge'}
+                            </p>
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="text-muted-foreground text-sm">Bridge fee (estimated):</span>
+                              <span className="font-semibold text-foreground">
+                                {bridgeFeeDisplay.toFixed(6)} {feeToken}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="text-muted-foreground text-sm">
+                                You&apos;ll {isDeposit ? 'deposit' : 'receive'}:
+                              </span>
+                              <span className="font-semibold text-foreground">
+                                {receiveAmountDisplay.toFixed(6)} {receiveToken}
+                              </span>
+                            </div>
+                            {quoteError && (
+                              <div className="mt-2 text-xs text-red-600">Quote error: {quoteError}</div>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-muted-foreground text-sm">
-                            You&apos;ll {activeTab === 'deposit' ? 'deposit' : 'receive'}:
-                          </span>
-                          <span className="font-semibold text-foreground">
-                            {receiveAmountDisplay.toFixed(6)} {destTokenLabel}
-                          </span>
-                        </div>
-                        {quoteError && <div className="mt-2 text-xs text-red-600">Quote error: {quoteError}</div>}
                       </div>
                     </div>
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
             </>
           )}
@@ -582,7 +677,7 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
         />
       )}
 
-      {/* Review modal */}
+      {/* Deposit review modal */}
       {showReview && activeTab === 'deposit' && snap && (
         <DepositModal
           open={showReview}
@@ -610,29 +705,20 @@ export function DepositWithdraw({ initialTab = 'deposit', snap }: DepositWithdra
         <ReviewWithdrawModal
           open={showWithdrawReview}
           onClose={() => setShowWithdrawReview(false)}
-
           // vault snapshot (expects token 'USDC' | 'USDT', chain 'lisk', and poolAddress)
           snap={{ token: snap.token as 'USDC' | 'USDT', chain: 'lisk', poolAddress: (snap as any).poolAddress }}
-
           // shares to redeem (18 decimals)
           shares={withdrawSharesBigint}
-
-          // numbers for the review UI (these power the rows you mocked)
-          amountOnLiskDisplay={amountNum}                 // show "10" like your screenshot
-          bridgeFeeDisplay={withdrawBridgeFeeDisplay}     // 0.0025
-          receiveOnDestDisplay={withdrawReceiveDisplay}   // 9.9975
-
+          // numbers for the review UI
+          amountOnLiskDisplay={amountNum}
+          bridgeFeeDisplay={withdrawBridgeFeeDisplay}
+          receiveOnDestDisplay={withdrawReceiveDisplay}
           // where to send final assets after withdrawing on Lisk
           dest={withdrawDest}
-
           // user address
           user={walletClient.account!.address as `0x${string}`}
         />
       )}
-
-
     </>
-
-
   );
 }

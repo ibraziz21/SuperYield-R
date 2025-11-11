@@ -109,7 +109,7 @@ const userSharesHuman = useMemo(() => {
           <p className="text-muted-foreground mb-6">
             The vault &quot;{vaultName}&quot; does not exist.
           </p>
-          <Button onClick={() => router.push('/markets')}>
+          <Button onClick={() => router.push('/vaults')}>
             Back to Markets
           </Button>
         </div>
@@ -129,7 +129,7 @@ const userSharesHuman = useMemo(() => {
       <div className="max-w-7xl mx-auto mb-6">
         <Button
           variant="ghost"
-          onClick={() => router.push('/markets')}
+          onClick={() => router.push('/vaults')}
           className="mb-4"
         >
           <ArrowLeftIcon className="mr-2 h-4 w-4" />

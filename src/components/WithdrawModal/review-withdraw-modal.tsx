@@ -6,7 +6,6 @@ import Image from 'next/image'
 import { X, Check, ExternalLink, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWalletClient } from 'wagmi'
-import { lisk as liskChain } from 'viem/chains'
 import type { Address } from 'viem'
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { TokenAddresses } from '@/lib/constants'
@@ -15,12 +14,14 @@ import { bridgeWithdrawal } from '@/lib/bridge'
 import { publicLisk } from '@/lib/clients'
 import { erc20Abi } from 'viem'
 import { CHAINS } from '@/lib/wallet'
-import { switchOrAddChainStrict } from '@/lib/switch' // from earlier answer
+import { switchOrAddChainStrict } from '@/lib/switch'
+import lifi from '@/public/logo_lifi_light_vertical.png'
+// add import
+import { WithdrawSuccessModal } from './withdraw-success-modal'
 
 type ChainSel = 'lisk' | 'optimism' | 'base'
 type Visual =
   | 'idle'
-  | 'needs-approval'   // step 1 UI state (bridge allowance)
   | 'withdrawing'      // trigger 1
   | 'sign-bridge'      // trigger 2
   | 'bridging'         // trigger 3
@@ -30,35 +31,27 @@ type Visual =
 interface Props {
   open: boolean
   onClose: () => void
-
-  // vault context (USDC/USDT vault on Lisk → Morpho)
   snap: Pick<YieldSnapshot, 'token' | 'chain'> & { poolAddress: `0x${string}` } // token: 'USDC' | 'USDT', chain: 'lisk'
   shares: bigint
-
-  // review numbers from parent UI
-  amountOnLiskDisplay: number   // e.g. 10.0000 (USDCe/USDT0)
-  bridgeFeeDisplay: number      // e.g. 0.0025 (USDC/USDT)
-  receiveOnDestDisplay: number  // e.g. 9.9975 (USDC/USDT)
-
-  // destination (chosen in parent)
+  amountOnLiskDisplay: number
+  bridgeFeeDisplay: number
+  receiveOnDestDisplay: number
   dest: ChainSel
-
-  // wallet/account
   user: `0x${string}`
 }
 
 function tokenLabelOnLisk(src: 'USDC' | 'USDT'): 'USDCe' | 'USDT0' {
   return src === 'USDC' ? 'USDCe' : 'USDT0'
 }
+
 const ICON = {
   mor: '/protocols/morpho-icon.png',
-  bridge: '/protocols/bridge-icon.png',
+  bridge: lifi,
   USDC: '/tokens/usdc-icon.png',
   USDT: '/tokens/usdt-icon.png',
   USDCe: '/tokens/usdc-icon.png',
   USDT0: '/tokens/usdt0-icon.png',
-}
-const DEC = { USDC: 6, USDT: 6, USDCe: 6, USDT0: 6 }
+} as const
 
 async function readLiskBalance(token: `0x${string}`, user: `0x${string}`): Promise<bigint> {
   try {
@@ -79,110 +72,178 @@ export const ReviewWithdrawModal: FC<Props> = ({
   dest, user,
 }) => {
   const { data: walletClient } = useWalletClient()
+
   const [state, setState] = useState<Visual>('idle')
   const [err, setErr] = useState<string | null>(null)
+  const [showSuccess, setShowSuccess] = useState(false)
+
+
+  // NEW: remember whether withdraw succeeded, and how much to bridge
+  const [withdrawOk, setWithdrawOk] = useState(false)
+  const [bridgableAmount, setBridgableAmount] = useState<bigint | null>(null)
 
   const liskToken: 'USDCe' | 'USDT0' = tokenLabelOnLisk(snap.token as 'USDC' | 'USDT')
   const destSymbol: 'USDC' | 'USDT' = liskToken === 'USDT0' ? 'USDT' : 'USDC'
 
   const liskTokenAddr = useMemo(() => (
     liskToken === 'USDCe' ? (TokenAddresses.USDCe.lisk as Address)
-    : (TokenAddresses.USDT0.lisk as Address)
+                          : (TokenAddresses.USDT0.lisk as Address)
   ), [liskToken])
 
-  // ---- visual helpers (exactly like mocks) ----
-  const trigger1Done = state === 'sign-bridge' || state === 'bridging' || state === 'success'
+  // Visual helpers
+  const trigger1Done = withdrawOk || state === 'sign-bridge' || state === 'bridging' || state === 'success'
   const trigger2InError = state === 'error' && err?.toLowerCase().includes('signature')
-  const trigger3InError = state === 'error' && !trigger2InError
+  const trigger3InError = state === 'error' && !trigger2InError && withdrawOk
 
   const primaryLabel =
-    state === 'idle'          ? 'Approve USDC spending…'
-  : state === 'needs-approval'? 'Approve USDC spending…'
-  : state === 'withdrawing'   ? 'Withdrawing…'
-  : state === 'sign-bridge'   ? 'Sign bridge transaction…'
-  : state === 'bridging'      ? 'Withdrawing…'
-  : state === 'success'       ? 'Done'
-  :                            'Try again'
+    state === 'success' ? 'Done'
+  : state === 'withdrawing' ? 'Withdrawing…'
+  : state === 'sign-bridge' ? 'Sign bridge transaction…'
+  : state === 'bridging' ? 'Bridging…'
+  : state === 'error' && withdrawOk ? 'Try bridge again'
+  : state === 'error' ? 'Try again'
+  : 'Withdraw now'
 
-  async function startFlow() {
+  // --- Flow pieces -----------------------------------------------------------
+
+  async function doWithdraw(): Promise<bigint> {
+    if (!walletClient) throw new Error('Wallet not connected')
+    await switchOrAddChainStrict(walletClient, CHAINS.lisk)
+    setState('withdrawing')
+
+    // measure delta received from the withdraw
+    const pre = await readLiskBalance(liskTokenAddr as `0x${string}`, user)
+
+    await withdrawMorphoOnLisk({
+      token: liskToken,                   // 'USDCe' | 'USDT0'
+      shares,                             // bigint shares
+      shareToken: snap.poolAddress,       // pool/shares token
+      underlying: liskTokenAddr as `0x${string}`,
+      to: user,
+      wallet: walletClient,
+    })
+
+    // wait landing
+    let tries = 0
+    while (tries++ < 40) {
+      const cur = await readLiskBalance(liskTokenAddr as `0x${string}`, user)
+      if (cur > pre) {
+        const delta = cur - pre
+        return delta
+      }
+      await new Promise(r => setTimeout(r, 1500))
+    }
+
+    // fallback: read once more and compute delta
+    const cur = await readLiskBalance(liskTokenAddr as `0x${string}`, user)
+    if (cur <= pre) throw new Error('Withdrawal did not arrive on Lisk')
+    return cur - pre
+  }
+
+  async function doBridge(amount: bigint) {
+    if (!walletClient) throw new Error('Wallet not connected')
+    if (dest === 'lisk') {
+      // nothing to do
+      setState('success')
+      setShowSuccess(true)
+      return
+    }
+
+    setState('sign-bridge')
+    // then execute bridge
+    setState('bridging')
+
+    const toChain: 'optimism' | 'base' = dest === 'optimism' ? 'optimism' : 'base'
+
+    await bridgeWithdrawal({
+      srcVaultToken: liskToken,   // 'USDCe' | 'USDT0'
+      destToken: destSymbol,      // 'USDC' | 'USDT'
+      amount,
+      to: toChain,
+      walletClient,
+      // onUpdate: (u) => console.info('[bridge/update]', u),
+    })
+
+    setState('success')
+    setShowSuccess(true) 
+  }
+
+  // Full flow
+  async function startFullFlow() {
     if (!walletClient) return
     setErr(null)
 
     try {
-      // TRIGGER 1 — withdraw on Lisk (redeem shares → underlying)
-      console.info('[withdraw] switch to Lisk')
-      await switchOrAddChainStrict(walletClient, CHAINS.lisk)
-      setState('withdrawing')
-
-      const pre = await readLiskBalance(liskTokenAddr as `0x${string}`, user)
-      console.info('[withdraw] balance pre', pre.toString())
-
-      await withdrawMorphoOnLisk({
-        token: liskToken,                   // 'USDCe' | 'USDT0'
-        shares,                             // bigint shares
-        shareToken: snap.poolAddress,       // pool/shares token
-        underlying: liskTokenAddr as `0x${string}`,
-        to: user,
-        wallet: walletClient,
-      })
-
-      // wait landing
-      let tries = 0
-      while (tries++ < 40) {
-        const cur = await readLiskBalance(liskTokenAddr as `0x${string}`, user)
-        if (cur > pre) break
-        await new Promise(r => setTimeout(r, 1500))
-      }
+      // 1) Withdraw
+      const delta = await doWithdraw()
+      setWithdrawOk(true)
+      setBridgableAmount(delta)
 
       if (dest === 'lisk') {
         setState('success')
         return
       }
 
-      // TRIGGER 2 — user signature for bridge
-      setState('sign-bridge')
-
-      // TRIGGER 3 — bridge execution (LI.FI)
-      setState('bridging')
-      const toChain: 'optimism' | 'base' = dest === 'optimism' ? 'optimism' : 'base'
-
-      // bridge all of the delta (fresh read)
-      const after = await readLiskBalance(liskTokenAddr as `0x${string}`, user)
-      const delta = after // if wallet held balance before, consider after - pre
-      if (delta <= 0n) throw new Error('Withdrawal produced no underlying')
-
-      console.info('[withdraw] bridging', {
-        from: 'lisk', to: toChain, amount: delta.toString(),
-        src: liskToken, out: destSymbol,
-      })
-
-      await bridgeWithdrawal({
-        srcVaultToken: liskToken,                             // 'USDCe' | 'USDT0'
-        destToken: destSymbol,                                // 'USDC' | 'USDT'
-        amount: delta,
-        to: toChain,
-        walletClient,
-        // Uncomment this if `onUpdate` is supported in the `bridgeWithdrawal` function's type
-        // onUpdate: (u) => {
-        //   try { console.info('[bridge/update]', JSON.stringify(u)) }
-        //   catch { console.info('[bridge/update]', u) }
-        // },
-      })
-
-      setState('success')
+      // 2) Bridge
+      await doBridge(delta)
+    
     } catch (e: any) {
-      console.error('[withdraw] error', e)
+      const code = e?.code ?? e?.error?.code
+      // user cancelled a signature during bridging → keep withdrawOk so we can resume bridge only
+      if (code === 4001) {
+        setErr('Signature was cancelled. You can try again.')
+        // If the cancel happened after withdraw, we’ll be in sign-bridge/bridging
+        if (withdrawOk) {
+          setState('error') // shows “Try bridge again”
+          return
+        }
+        // cancel happened before any action — just stay idle
+        setState('idle')
+        return
+      }
+
+      setErr(e?.message ?? String(e))
+      setState('error')
+    }
+  }
+
+  // Bridge-only resume
+  async function resumeBridgeOnly() {
+    if (!walletClient) return
+    setErr(null)
+
+    try {
+      // If we lost the cached amount (unlikely), re-read current Lisk balance as best-effort
+      let amount = bridgableAmount
+      if (!amount || amount <= 0n) {
+        amount = await readLiskBalance(liskTokenAddr as `0x${string}`, user)
+      }
+      if (!amount || amount <= 0n) throw new Error('No funds available on Lisk to bridge')
+
+      await doBridge(amount)
+    } catch (e: any) {
+      const code = e?.code ?? e?.error?.code
+      if (code === 4001) {
+        setErr('Signature was cancelled. You can try again.')
+        setState('error')
+        return
+      }
       setErr(e?.message ?? String(e))
       setState('error')
     }
   }
 
   function onPrimary() {
-    if (state === 'success') { onClose(); return }
-    if (state === 'error') { setState('idle'); setErr(null); return }
-    if (state === 'idle' || state === 'needs-approval') { void startFlow(); return }
+    if (state === 'success') { setShowSuccess(true); return }
+    if (state === 'error') {
+      if (withdrawOk) { void resumeBridgeOnly() } else { setState('idle'); void startFullFlow() }
+      return
+    }
+    if (state === 'idle') { void startFullFlow(); return }
   }
+  
 
+  // Disable only while actively working
   const disabled = !walletClient || state === 'withdrawing' || state === 'sign-bridge' || state === 'bridging'
 
   return (
@@ -229,7 +290,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
             {/* row 3: bridging via LI.FI (or none if Lisk dest) */}
             <div className="flex items-start gap-3">
               <div className="relative mt-0.5">
-                <Image src={ICON.bridge} alt="Bridge" width={28} height={28} className="rounded-full" />
+                <Image src={ICON.bridge} alt="LI.FI" width={28} height={28} className="rounded-full" />
               </div>
               <div className="flex-1">
                 <div className="text-lg font-semibold">{dest === 'lisk' ? 'No bridge needed' : 'Bridging via LI.FI'}</div>
@@ -237,7 +298,6 @@ export const ReviewWithdrawModal: FC<Props> = ({
                   <div className="text-xs text-muted-foreground">Bridge Fee: {bridgeFeeDisplay.toFixed(4)} {destSymbol}</div>
                 )}
 
-                {/* triggers display (exact like mocks) */}
                 {dest !== 'lisk' && (
                   <div className="mt-2 space-y-2 text-xs">
                     <div className="flex items-center gap-2">
@@ -302,6 +362,19 @@ export const ReviewWithdrawModal: FC<Props> = ({
           </div>
         </div>
       </div>
+
+      {showSuccess && (
+  <WithdrawSuccessModal
+    liskAmount={amountOnLiskDisplay}
+    liskToken={liskToken}
+    destAmount={dest === 'lisk' ? undefined : receiveOnDestDisplay}
+    destToken={dest === 'lisk' ? undefined : destSymbol}
+    destChain={dest}
+    vault={`Re7 ${snap.token} Vault (Morpho Blue)`}
+    onClose={() => { setShowSuccess(false); onClose() }}
+  />
+)}
+
     </div>
   )
 }

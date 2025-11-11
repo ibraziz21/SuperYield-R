@@ -144,8 +144,7 @@ export function Navbar() {
             {/* Desktop nav */}
             <nav className="ml-2 hidden items-center gap-1 md:flex">
               <ActiveLink href="/">Dashboard</ActiveLink>
-              <ActiveLink href="/markets">Markets</ActiveLink>
-              <ActiveLink href="/docs">Docs</ActiveLink>
+              <ActiveLink href="/vaults">Vaults</ActiveLink>
             </nav>
           </div>
 
@@ -344,7 +343,7 @@ export function Navbar() {
               {/* nav links */}
               <nav className="mt-3 grid gap-1">
                 <ActiveLink href="/">Dashboard</ActiveLink>
-                <ActiveLink href="/markets">Markets</ActiveLink>
+                <ActiveLink href="/vaults">Vaults</ActiveLink>
                 <ActiveLink href="/docs">Docs</ActiveLink>
               </nav>
 
@@ -399,7 +398,7 @@ function MobileTabbar() {
       )
     },
     {
-      href: '/markets', label: 'Markets', icon: (
+      href: '/vaults', label: 'Markets', icon: (
         <svg width="20" height="20" viewBox="0 0 24 24"><path d="M4 4h4v16H4zM10 10h4v10h-4zM16 7h4v13h-4z" fill="currentColor" /></svg>
       )
     },

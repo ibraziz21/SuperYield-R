@@ -7,10 +7,10 @@ import { X, Check, ExternalLink, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppKit } from '@reown/appkit/react'
 import { useWalletClient } from 'wagmi'
-import { keccak256, parseUnits, formatUnits } from 'viem'
+import { parseUnits } from 'viem'
 import { lisk as liskChain } from 'viem/chains'
 import type { YieldSnapshot } from '@/hooks/useYields'
-
+import lifilogo from '@/public/logo_lifi_light.png'
 import { getBridgeQuote } from '@/lib/quotes'
 import { switchOrAddChain, CHAINS } from '@/lib/wallet'
 import { bridgeTokens } from '@/lib/bridge'
@@ -18,18 +18,16 @@ import { TokenAddresses } from '@/lib/constants'
 import { readWalletBalance } from '../helpers'
 import { depositMorphoOnLiskAfterBridge } from '@/lib/depositor'
 import { switchOrAddChainStrict } from '@/lib/switch'
+import { DepositSuccessModal } from './deposit-success-modal'
 
-type EvmChain = 'optimism' | 'base' | 'lisk'
 type FlowStep = 'idle' | 'bridging' | 'depositing' | 'success' | 'error'
 
 interface ReviewDepositModalProps {
   open: boolean
   onClose: () => void
-
-  // vault snapshot (USDC or USDT on Lisk/Morpho)
   snap: YieldSnapshot
 
-  // from parent (already typed in your caller)
+  // from parent
   amount: string
   sourceSymbol: 'USDC' | 'USDT'
   destTokenLabel: 'USDCe' | 'USDT0' | 'WETH'
@@ -57,7 +55,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     open, onClose, snap,
     amount, sourceSymbol, destTokenLabel,
     routeLabel, bridgeFeeDisplay, receiveAmountDisplay,
-    opBal, baBal, liBal, liBalUSDT0,
+    liBal, liBalUSDT0,
     opUsdcBal, baUsdcBal, opUsdtBal, baUsdtBal,
   } = props
 
@@ -72,7 +70,16 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   const [step, setStep] = useState<FlowStep>('idle')
   const [error, setError] = useState<string | null>(null)
 
-  const canStart = open && !!walletClient && Number(amount) > 0 && !error
+  // recovery-aware caches for retry behavior
+  const [bridgeOk, setBridgeOk] = useState(false)
+  const [cachedInputAmt, setCachedInputAmt] = useState<bigint | null>(null)
+  const [cachedMinOut, setCachedMinOut] = useState<bigint | null>(null)
+  const [cachedDestAddr, setCachedDestAddr] = useState<`0x${string}` | null>(null)
+
+  // success modal
+  const [showSuccess, setShowSuccess] = useState(false)
+
+  const canStart = open && !!walletClient && Number(amount) > 0
 
   const feeDisplay = useMemo(() => bridgeFeeDisplay ?? 0, [bridgeFeeDisplay])
   const receiveDisplay = useMemo(() => receiveAmountDisplay ?? 0, [receiveAmountDisplay])
@@ -119,9 +126,30 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     }
   }
 
+  // deposit-only retry path (when bridge already succeeded)
+  async function depositOnlyRetry() {
+    if (!walletClient) return
+    if (!cachedDestAddr) throw new Error('Missing cached destination token')
+    const amt = (cachedMinOut && cachedMinOut > 0n) ? cachedMinOut : (cachedInputAmt ?? 0n)
+    if (amt <= 0n) throw new Error('Nothing to deposit')
+
+    try {
+      setError(null)
+      setStep('depositing')
+      await switchOrAddChainStrict(walletClient) // verified hop to Lisk
+      await depositMorphoOnLiskAfterBridge(snap, amt, walletClient)
+      setStep('success')
+      setShowSuccess(true)
+    } catch (e: any) {
+      setError(e?.message ?? String(e))
+      setStep('error')
+    }
+  }
+
   async function handleConfirm() {
     if (!walletClient) { openConnect(); return }
     setError(null)
+    setBridgeOk(false) // reset per run
 
     try {
       const inputAmt = parseUnits(amount || '0', snap.token === 'WETH' ? 18 : 6)
@@ -135,19 +163,23 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         destTokenLabel === 'USDT0' ? (TokenAddresses.USDT0.lisk as `0x${string}`) :
         (TokenAddresses.WETH.lisk as `0x${string}`)
 
-      // short-circuit: already on Lisk with enough balance
+      // cache for recovery
+      setCachedInputAmt(inputAmt)
+      setCachedDestAddr(destAddr)
+
+      // short-circuit: already on Lisk with enough balance (counts as "bridge ok")
       const haveOnLisk =
         destTokenLabel === 'USDCe' ? (liBal ?? 0n) :
         destTokenLabel === 'USDT0' ? (liBalUSDT0 ?? 0n) : 0n
 
       if (haveOnLisk >= inputAmt) {
-        console.info('[deposit] already on Lisk with enough balance → depositing', {
-          token: destTokenLabel, haveOnLisk: haveOnLisk.toString(), need: inputAmt.toString(),
-        })
+        setBridgeOk(true)
+        setCachedMinOut(inputAmt)
         setStep('depositing')
         await ensureWalletChain(liskChain.id)
         await depositMorphoOnLiskAfterBridge(snap, inputAmt, walletClient)
         setStep('success')
+        setShowSuccess(true)
         return
       }
 
@@ -158,16 +190,11 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
           ? pickSrcBy(inputAmt, opUsdcBal, baUsdcBal)
           : pickSrcBy(inputAmt, opUsdtBal, baUsdtBal)
 
-      console.info('[deposit] starting bridge', {
-        srcToken, srcChain, destTokenLabel, amount: inputAmt.toString(),
-        routeHint: routeLabel,
-      })
-
       setStep('bridging')
 
       const preBal = (await readWalletBalance('lisk', destAddr, user).catch(() => 0n)) as bigint
 
-      // conservative minOut via fresh quote (even though UI already showed numbers)
+      // conservative minOut via fresh quote
       const q = await getBridgeQuote({
         token: destTokenLabel,
         amount: inputAmt,
@@ -177,23 +204,16 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         fromTokenSym: srcToken,
       })
       const minOut = BigInt(q.estimate?.toAmountMin ?? '0')
-      console.info('[deposit] quote', {
-        srcChain, dest: 'lisk', toAmountMin: minOut.toString(), bridge: q.route,
-      })
+      setCachedMinOut(minOut)
 
       // switch to src chain & execute bridge
       const srcViem = srcChain === 'optimism' ? CHAINS.optimism : CHAINS.base
       await switchOrAddChain(walletClient, srcViem)
-      console.log('[Bridge params]', srcChain, srcToken, destTokenLabel, inputAmt.toString())
       await bridgeTokens(destTokenLabel, inputAmt, srcChain, 'lisk', walletClient, {
         sourceToken: srcToken,
         onUpdate: (u) => {
-          // real-time log of LI.FI executor updates
-          try {
-            console.info('[bridge/update]', JSON.stringify(u))
-          } catch {
-            console.info('[bridge/update]', u)
-          }
+          try { console.info('[bridge/update]', JSON.stringify(u)) }
+          catch { console.info('[bridge/update]', u) }
         },
       })
 
@@ -207,16 +227,15 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         timeoutMs: 15 * 60_000,
       })
 
-      console.info('[deposit] bridge finalized on Lisk; depositing into Morpho', {
-        token: destTokenLabel, minOut: minOut.toString(),
-      })
+      // mark bridge success for recovery and proceed to deposit
+      setBridgeOk(true)
 
       setStep('depositing')
-      await switchOrAddChainStrict(walletClient) // <- single, verified hop to Lisk
+      await switchOrAddChainStrict(walletClient)
       await depositMorphoOnLiskAfterBridge(snap, minOut > 0n ? minOut : inputAmt, walletClient)
 
-      console.info('[deposit] success')
       setStep('success')
+      setShowSuccess(true)
     } catch (e: any) {
       console.error('[deposit] error', e)
       setError(e?.message ?? String(e))
@@ -224,11 +243,12 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     }
   }
 
+  // ---------- UI state mapping ----------
   const approveState: 'idle' | 'working' | 'done' | 'error' =
     step === 'idle' ? 'idle' : step === 'error' ? 'error' : 'done'
   const bridgeState: 'idle' | 'working' | 'done' | 'error' =
     step === 'bridging' ? 'working'
-      : step === 'depositing' || step === 'success' ? 'done'
+      : step === 'depositing' || step === 'success' || (step === 'error' && bridgeOk) ? 'done'
       : step === 'error' ? 'error'
       : 'idle'
   const depositState: 'idle' | 'working' | 'done' | 'error' =
@@ -237,8 +257,11 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       : step === 'error' && bridgeState === 'done' ? 'error'
       : 'idle'
 
+  // ---------- Retry semantics ----------
+  // If the flow fails BEFORE successful bridging → restart entire flow.
+  // If bridging succeeded but deposit failed → retry deposit only.
   const primaryCta =
-    step === 'error' ? 'Try again'
+    step === 'error' ? (bridgeOk ? 'Retry deposit' : 'Try again')
       : step === 'idle' ? 'Deposit'
       : step === 'bridging' ? 'Sign bridge transaction…'
       : step === 'depositing' ? 'Depositing…'
@@ -246,8 +269,15 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       : 'Working…'
 
   const onPrimary = () => {
-    if (step === 'error') { setStep('idle'); setError(null); return }
-    if (step === 'success') { onClose(); return }
+    if (step === 'error') {
+      if (bridgeOk) { void depositOnlyRetry(); return }
+      // restart full flow
+      setError(null)
+      setStep('idle')
+      void handleConfirm()
+      return
+    }
+    if (step === 'success') { setShowSuccess(true); return }
     if (step === 'idle') { void handleConfirm(); return }
   }
 
@@ -288,7 +318,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
             {/* row: bridging */}
             <div className="flex items-start gap-3">
               <div className="relative mt-0.5">
-                <Image src="/protocols/bridge-icon.png" alt="bridge" width={28} height={28} className="rounded-full" />
+                <Image src={lifilogo.src} alt="bridge" width={28} height={28} className="rounded-full" />
               </div>
               <div className="flex-1">
                 <div className="text-lg font-semibold">Bridging via LI.FI</div>
@@ -350,13 +380,24 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
             <Button
               onClick={onPrimary}
               className="w-full h-12 text-base"
-              disabled={!canStart || step === 'bridging' || step === 'depositing'}
+              disabled={step === 'bridging' || step === 'depositing' || !canStart}
             >
               {primaryCta}
             </Button>
           </div>
         </div>
       </div>
+
+      {showSuccess && (
+        <DepositSuccessModal
+          amount={Number(amount || 0)}
+          sourceToken={sourceSymbol}
+          destinationAmount={Number(receiveDisplay ?? 0)}
+          destinationToken={destTokenLabel}
+          vault={`Re7 ${snap.token} Vault (Morpho Blue)`}
+          onClose={() => { setShowSuccess(false); onClose() }}
+        />
+      )}
     </div>
   )
 }
