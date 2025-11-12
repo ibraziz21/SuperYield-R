@@ -15,7 +15,7 @@ import { formatUnits } from 'viem'
 const CANONICAL: Record<string, 'USDC' | 'USDT'> = {
   USDC: 'USDC',
   USDCE: 'USDC',
-  'USDC.E': 'USDC', // just in case someone types dots
+  'USDC.E': 'USDC',
   USDT: 'USDT',
   USDT0: 'USDT',
 }
@@ -74,13 +74,15 @@ export default function VaultDetailPage() {
       (s) => (DISPLAY_TOKEN[s.token] ?? s.token) === vaultCanonical
     )
     return forThisVault.map((s) => ({
-      vault: DISPLAY_TOKEN[s.token] ?? s.token,
+      vault: DISPLAY_TOKEN[s.token] ?? s.token, // canonical view (USDC/USDT)
       network: 'Lisk',
       protocol: 'Morpho Blue',
       apy: (Number(s.apy) || 0).toFixed(2),
       tvl: Number.isFinite(s.tvlUSD) ? Math.round(s.tvlUSD).toLocaleString() : '0',
     }))
   }, [yields, vaultCanonical])
+
+  const primaryVariant = vaultVariants[0] // we only have Lisk/Morpho for now
 
   const { data: positionsRaw } = usePositions()
 
@@ -177,8 +179,36 @@ export default function VaultDetailPage() {
           <div className="bg-white rounded-xl p-6">
             <h2 className="text-xl font-semibold mb-4">Overview</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Network card mirrors "Available Networks" styling and data */}
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                 <CardContent className="space-y-1 p-4">
+                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Network</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 relative">
+                      <Image
+                        src={networkIcons[primaryVariant.network] || '/networks/default.svg'}
+                        alt={primaryVariant.network}
+                        width={32}
+                        height={32}
+                        className="rounded-full"
+                      />
+                    </div>
+                    <div>
+                      <p className="font-semibold">{primaryVariant.network}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
+                <CardContent className="space-y-1 p-4">
+                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Protocol</p>
+                  <p className="font-semibold">{primaryVariant.protocol}</p>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
+              <CardContent className="space-y-1 p-4">
                   <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Total TVL</p>
                   <p className="text-2xl font-semibold">
                     $
@@ -187,27 +217,17 @@ export default function VaultDetailPage() {
                       .toLocaleString()}
                   </p>
                 </CardContent>
+
               </Card>
+
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
-                <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Average APY</p>
+              <CardContent className="space-y-1 p-4">
+                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground">APY</p>
                   <p className="text-2xl font-semibold">
                     {(
                       vaultVariants.reduce((sum, v) => sum + Number(v.apy || 0), 0) / vaultVariants.length
                     ).toFixed(2)}%
                   </p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
-                <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Networks</p>
-                  <p className="text-2xl font-semibold">{vaultVariants.length}</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
-                <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Your Balance</p>
-                  <p className="text-2xl font-semibold">$0.00</p>
                 </CardContent>
               </Card>
             </div>
@@ -216,49 +236,18 @@ export default function VaultDetailPage() {
           {/* My Positions */}
           <div className="bg-white rounded-xl p-6">
             <h2 className="text-xl font-semibold mb-4">My Positions</h2>
-            <div className="text-center py-8 text-muted-foreground text-sm">
+            <div className="text-center py-8 text-sm">
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                 <CardContent className="space-y-1 p-4">
-                  <p className="text-2xl font-semibold">
-                    {userSharesHuman.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares
+                  <p className="text-2xl font-semibold ">
+                   $ {userSharesHuman.toLocaleString(undefined, { maximumFractionDigits: 2 })} 
                   </p>
                 </CardContent>
               </Card>
             </div>
           </div>
 
-          {/* Network Variants */}
-          <div className="bg-white rounded-xl p-6">
-            <h2 className="text-xl font-semibold mb-4">Available Networks</h2>
-            <div className="space-y-3">
-              {vaultVariants.map((vault, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 relative">
-                      <Image
-                        src={networkIcons[vault.network] || '/networks/default.svg'}
-                        alt={vault.network}
-                        width={32}
-                        height={32}
-                        className="rounded-full"
-                      />
-                    </div>
-                    <div>
-                      <p className="font-semibold">{vault.network}</p>
-                      <p className="text-xs text-muted-foreground">{vault.protocol}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-blue-600">{vault.apy}% APY</p>
-                    <p className="text-xs text-muted-foreground">${vault.tvl} TVL</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+         
         </div>
 
         {/* Right Column - Deposit/Withdraw */}

@@ -45,7 +45,6 @@ async function morphoSharesLisk(
   user:  `0x${string}`,
 ): Promise<bigint> {
   const vault = MORPHO_VAULT_BY_TOKEN[token]
-  dbg('morphoSharesLisk()', { token, user, vault })
 
   try {
     const shares = await publicLisk.readContract({
@@ -55,7 +54,6 @@ async function morphoSharesLisk(
       args: [user],
     }) as bigint
 
-    dbg('morphoSharesLisk.shares', { shares: shares.toString() })
     return shares ?? 0n
   } catch (e) {
     err('morphoSharesLisk.error', e)
@@ -78,7 +76,6 @@ async function fetchReceiptBalance(
       ? (TokenAddresses.sVault.optimismUSDC as `0x${string}`)
       : (TokenAddresses.sVault.optimismUSDT as `0x${string}`)
 
-  dbg('fetchReceiptBalance()', { which, addr, user })
   if (!addr || addr === '0x0000000000000000000000000000000000000000') return 0n
 
   try {
@@ -88,7 +85,6 @@ async function fetchReceiptBalance(
       functionName: 'balanceOf',
       args: [user],
     }) as bigint
-    dbg('fetchReceiptBalance.bal', { which, bal: bal.toString() })
     return bal ?? 0n
   } catch (e) {
     err('fetchReceiptBalance.error', { which, e })
@@ -101,7 +97,6 @@ async function fetchReceiptBalance(
  * This keeps your “pending deposit” logic intact but now everything is in shares.
  */
 async function morphoUSDCeSharesViaReceiptOrLisk(user: `0x${string}`): Promise<bigint> {
-  dbg('morphoUSDCeSharesViaReceiptOrLisk()', { user })
   const [receiptShares, liskShares] = await Promise.all([
     fetchReceiptBalance(user, 'USDC'),
     morphoSharesLisk('USDCe', user),
@@ -113,7 +108,6 @@ async function morphoUSDCeSharesViaReceiptOrLisk(user: `0x${string}`): Promise<b
  * For USDT0: return the greater of OP receipt **shares** and Lisk vault **shares**.
  */
 async function morphoUSDT0SharesViaReceiptOrLisk(user: `0x${string}`): Promise<bigint> {
-  dbg('morphoUSDT0SharesViaReceiptOrLisk()', { user })
   const [receiptShares, liskShares] = await Promise.all([
     fetchReceiptBalance(user, 'USDT'),
     morphoSharesLisk('USDT0', user),
@@ -126,7 +120,6 @@ async function morphoUSDT0SharesViaReceiptOrLisk(user: `0x${string}`): Promise<b
 /* ──────────────────────────────────────────────────────────────── */
 
 export async function fetchPositions(user: `0x${string}`): Promise<Position[]> {
-  dbg('fetchPositions.start', { user })
 
   const tasks: Promise<Position>[] = []
 
