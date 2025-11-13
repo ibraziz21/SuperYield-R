@@ -47,7 +47,7 @@ export const PortfolioHeader: FC = () => {
         <Kpi title="Est. Weekly Yield" value={
           loading || kpis.weekly == null ? '—' : `≈ $${kpis.weekly.toLocaleString(undefined,{maximumFractionDigits:2})}`
         } sub="at current APY" />
-        <Kpi title="Ecovaults TVL" value={
+        <Kpi title="Est. Annual Yield" value={
           loading || kpis.yearly == null ? '—' : `≈ $${kpis.yearly.toLocaleString(undefined,{maximumFractionDigits:2})}`
         } sub={`${kpis.count} position${kpis.count===1?'':'s'}`} />
       </div>
