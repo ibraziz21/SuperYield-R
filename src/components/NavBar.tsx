@@ -370,64 +370,12 @@ export function Navbar() {
                 {isSwitching && <div className="mt-2 text-[11px] text-muted-foreground">Switching…</div>}
               </div>
             </div>
-
-            {/* safe‑area bottom padding + tabbar */}
-            <div className="pb-[max(12px,env(safe-area-inset-bottom))]">
-              <MobileTabbar />
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Mobile Bottom Tabbar (always visible on mobile, optional) */}
-      <div className="md:hidden fixed bottom-0 inset-x-0 z-40">
-        <MobileTabbar />
-      </div>
+  
     </>
   )
 }
 
-/* ──────────────────────────────────────────────────────────────── */
-
-function MobileTabbar() {
-  const pathname = usePathname()
-  const tabs = [
-    {
-      href: '/', label: 'Dashboard', icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" fill="currentColor" /></svg>
-      )
-    },
-    {
-      href: '/vaults', label: 'Markets', icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M4 4h4v16H4zM10 10h4v10h-4zM16 7h4v13h-4z" fill="currentColor" /></svg>
-      )
-    },
-    {
-      href: '/docs', label: 'Docs', icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm8 0v4h4" stroke="currentColor" strokeWidth="1.7" fill="none" /></svg>
-      )
-    },
-  ]
-
-  return (
-    <nav className="mx-auto mb-1 w-full max-w-6xl px-2">
-      <div className="grid grid-cols-3 gap-2 rounded-2xl border border-border/60 bg-background/95 p-1 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/70">
-        {tabs.map((t) => {
-          const active = pathname === t.href || (t.href !== '/' && pathname.startsWith(t.href))
-          return (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl py-2 text-[11px] font-medium ${active ? 'bg-teal-600 text-white' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-                }`}
-              aria-current={active ? 'page' : undefined}
-            >
-              <span className="opacity-90">{t.icon}</span>
-              <span className="leading-none">{t.label}</span>
-            </Link>
-          )
-        })}
-      </div>
-    </nav>
-  )
-}

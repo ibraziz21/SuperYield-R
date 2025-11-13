@@ -65,14 +65,10 @@ function formatPercent(n: number): string {
 }
 
 function normalizeDisplayVault(token: string): string {
-  // Keep USDT0 literal (to disambiguate), map USDCe → USDC for display nicety
-  const t = token.toUpperCase();
-  if (t === "USDCe".toUpperCase()) return "USDC";
-  if (t === "USDT0") return "USDT0";
-  if (t === "USDT") return "USDT";
-  if (t === "WETH") return "WETH";
+  // Keep Lisk pool symbols literal so users see USDCe / USDT0 distinctly
   return token;
 }
+
 
 /* ────────────────────────────────────────────────────────── */
 /* Snapshot resolver (same spirit as PositionsDashboardInner) */

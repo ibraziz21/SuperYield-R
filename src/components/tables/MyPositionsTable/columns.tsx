@@ -13,13 +13,16 @@ export type Position = {
 import { DataTableColumnHeader } from "../data-table-header";
 
 // Token icon mapping (reusing from ClaimRewards)
+// Token icon mapping (reusing from ClaimRewards)
 const tokenIcons: Record<string, string> = {
   USDC: "/tokens/usdc-icon.png",
+  USDCe: "/tokens/usdc-icon.png",   // ⬅️ add this
   USDT: "/tokens/usdt-icon.png",
   USDT0: "/tokens/usdt0-icon.png",
   WETH: "/tokens/weth.png",
   DAI: "/tokens/dai.png",
 };
+
 
 // Network icon mapping
 const networkIcons: Record<string, string> = {
