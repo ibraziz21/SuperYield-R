@@ -21,7 +21,6 @@ import { depositMorphoOnLiskAfterBridge } from '@/lib/depositor'
 import { switchOrAddChainStrict } from '@/lib/switch'
 import { DepositSuccessModal } from './deposit-success-modal'
 
-
 type FlowStep = 'idle' | 'bridging' | 'depositing' | 'success' | 'error'
 
 interface ReviewDepositModalProps {
@@ -90,6 +89,13 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   const receiveDisplay = useMemo(() => receiveAmountDisplay ?? 0, [receiveAmountDisplay])
   const amountNumber = Number(amount || 0)
 
+  // if we are depositing using Lisk-native balance (USDCe / USDT0), the parent
+  // sets routeLabel="On-chain" and fee=0. In that case, we **hide** the bridge row.
+  const isOnChainDeposit = useMemo(
+    () => routeLabel === 'On-chain' || bridgeFeeDisplay === 0,
+    [routeLabel, bridgeFeeDisplay]
+  )
+
   function pickSrcBy(target: bigint, o?: bigint | null, b?: bigint | null): 'optimism' | 'base' {
     const amt = target
     const op = o ?? 0n
@@ -109,7 +115,6 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     console.info(TAG, 'ensureLiskWalletClient', { before, after })
     return refreshed
   }
-
 
   // ---------- Focus recovery (tab hidden during bridging) ----------
   useEffect(() => {
@@ -171,26 +176,26 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     if (!walletClient) { openConnect(); return }
     setError(null)
     setBridgeOk(false)
-  
+
     try {
       const inputAmt = parseUnits(amount || '0', snap.token === 'WETH' ? 18 : 6)
       const user = walletClient.account!.address as `0x${string}`
-  
+
       if (snap.chain !== 'lisk') throw new Error('Only Lisk deposits are supported in this build')
-  
+
       const _destAddr =
         destTokenLabel === 'USDCe' ? (TokenAddresses.USDCe.lisk as `0x${string}`) :
         destTokenLabel === 'USDT0' ? (TokenAddresses.USDT0.lisk as `0x${string}`) :
         (TokenAddresses.WETH.lisk as `0x${string}`)
-  
+
       setDestAddr(_destAddr)
       setCachedInputAmt(inputAmt)
-  
+
       // If already have enough on Lisk, skip bridging
       const haveOnLisk =
         destTokenLabel === 'USDCe' ? (liBal ?? 0n) :
         destTokenLabel === 'USDT0' ? (liBalUSDT0 ?? 0n) : 0n
-  
+
       if (haveOnLisk >= inputAmt) {
         setBridgeOk(true)
         setCachedMinOut(inputAmt)
@@ -201,20 +206,20 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         setShowSuccess(true)
         return
       }
-  
+
       // Choose source chain with sufficient balance
       const srcToken: 'USDC' | 'USDT' = sourceSymbol
       const srcChain: 'optimism' | 'base' =
         srcToken === 'USDC'
           ? pickSrcBy(inputAmt, opUsdcBal, baUsdcBal)
           : pickSrcBy(inputAmt, opUsdtBal, baUsdtBal)
-  
+
       // Baseline Lisk balance for landing detection
       const pre = (await readWalletBalance('lisk', _destAddr, user).catch(() => 0n)) as bigint
       setPreBal(pre)
-  
+
       setStep('bridging')
-  
+
       // Quote (for minOut display; we still accept any positive landing)
       const q = await getBridgeQuote({
         token: destTokenLabel,
@@ -226,7 +231,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       })
       const minOut = BigInt(q.estimate?.toAmountMin ?? '0')
       setCachedMinOut(minOut)
-  
+
       // Execute bridge on source chain
       const srcViem = srcChain === 'optimism' ? CHAINS.optimism : CHAINS.base
       await switchOrAddChain(walletClient, srcViem)
@@ -234,15 +239,15 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         sourceToken: srcToken,
         onUpdate: () => {},
       })
-  
+
       // ---- Grace wait (≈60s), then poll until landing or timeout ----
       const sleep = (ms: number) => new Promise(res => setTimeout(res, ms))
       await sleep(60_000)
-  
+
       const endAt = Date.now() + 15 * 60_000 // 15 minutes
       let landed: bigint | null = null
       let last = pre
-  
+
       while (Date.now() < endAt) {
         const bal = await readWalletBalance('lisk', _destAddr, user).catch(() => null)
         if (bal !== null) {
@@ -252,24 +257,24 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         }
         await sleep(6_000)
       }
-  
+
       if (!landed || landed <= 0n) {
         throw new Error(`Bridging not finalized on Lisk in time. Last balance ${last.toString()}, start ${pre.toString()}.`)
       }
-  
+
       // ---- Deposit what landed (cap to current balance), on Lisk ----
       setBridgeOk(true)
       setCachedMinOut(landed)
       setStep('depositing')
-  
+
       await switchOrAddChainStrict(walletClient, CHAINS.lisk)
-  
+
       const balNow = await readWalletBalance('lisk', _destAddr, user).catch(() => 0n)
       const toDeposit = landed <= balNow ? landed : balNow
       if (toDeposit <= 0n) throw new Error('Nothing to deposit on Lisk')
-  
+
       await depositMorphoOnLiskAfterBridge(snap, toDeposit, walletClient)
-  
+
       setStep('success')
       setShowSuccess(true)
     } catch (e: any) {
@@ -277,13 +282,14 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       setStep('error')
     }
   }
-  
 
   // ---------- UI state mapping ----------
   const approveState: 'idle' | 'working' | 'done' | 'error' =
     step === 'idle' ? 'idle' : step === 'error' ? 'error' : 'done'
   const bridgeState: 'idle' | 'working' | 'done' | 'error' =
-    step === 'bridging' ? 'working'
+    isOnChainDeposit
+      ? 'done'
+      : step === 'bridging' ? 'working'
       : step === 'depositing' || step === 'success' || (step === 'error' && bridgeOk) ? 'done'
       : step === 'error' ? 'error'
       : 'idle'
@@ -314,6 +320,20 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     if (step === 'idle') { void handleConfirm(); return }
   }
 
+  // ---------- Source row visuals ----------
+  const sourceIcon = isOnChainDeposit
+    ? destTokenLabel === 'USDT0'
+      ? '/tokens/usdt0-icon.png'
+      : destTokenLabel === 'USDCe'
+        ? '/tokens/usdc-icon.png'
+        : '/tokens/weth.png'
+    : sourceSymbol === 'USDT'
+      ? '/tokens/usdt-icon.png'
+      : '/tokens/usdc-icon.png'
+
+  const sourceTokenLabel = isOnChainDeposit ? destTokenLabel : sourceSymbol
+  const sourceChainLabel = isOnChainDeposit ? 'Lisk' : 'OP/Base'
+
   return (
     <div className={`fixed inset-0 z-[100] ${open ? '' : 'pointer-events-none'}`}>
       <div className={`absolute inset-0 bg-black/50 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} />
@@ -331,8 +351,8 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
             <div className="flex items-start gap-3">
               <div className="relative mt-0.5">
                 <Image
-                  src={sourceSymbol === 'USDT' ? '/tokens/usdt-icon.png' : '/tokens/usdc-icon.png'}
-                  alt={sourceSymbol}
+                  src={sourceIcon}
+                  alt={sourceTokenLabel}
                   width={28}
                   height={28}
                   className="rounded-full"
@@ -341,32 +361,34 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
               <div className="flex-1">
                 <div className="text-2xl font-bold">{Number(amountNumber).toString()}</div>
                 <div className="text-xs text-muted-foreground">
-                  ${amountNumber.toFixed(2)} • {sourceSymbol} on OP/Base
+                  ${amountNumber.toFixed(2)} • {sourceTokenLabel} on {sourceChainLabel}
                 </div>
               </div>
               {approveState === 'done' && <Check className="text-green-600" size={18} />}
               {approveState === 'error' && <AlertCircle className="text-red-600" size={18} />}
             </div>
 
-            {/* bridge */}
-            <div className="flex items-start gap-3">
-              <div className="relative mt-0.5">
-                <Image src={lifilogo.src} alt="bridge" width={28} height={28} className="rounded-full" />
-              </div>
-              <div className="flex-1">
-                <div className="text-lg font-semibold">Bridging via LI.FI</div>
-                <div className="text-xs text-muted-foreground">
-                  Bridge Fee: {feeDisplay.toFixed(4)} {sourceSymbol}
+            {/* bridge – hidden for pure Lisk deposits */}
+            {!isOnChainDeposit && (
+              <div className="flex items-start gap-3">
+                <div className="relative mt-0.5">
+                  <Image src={lifilogo.src} alt="bridge" width={28} height={28} className="rounded-full" />
                 </div>
-                <div className="text-xs text-muted-foreground">{routeLabel}</div>
+                <div className="flex-1">
+                  <div className="text-lg font-semibold">Bridging via LI.FI</div>
+                  <div className="text-xs text-muted-foreground">
+                    Bridge Fee: {feeDisplay.toFixed(4)} {sourceSymbol}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{routeLabel}</div>
+                </div>
+                {bridgeState === 'done' && (
+                  <a href="#" className="text-muted-foreground hover:text-foreground" onClick={(e) => e.preventDefault()}>
+                    <ExternalLink size={16} />
+                  </a>
+                )}
+                {bridgeState === 'error' && <AlertCircle className="text-red-600" size={18} />}
               </div>
-              {bridgeState === 'done' && (
-                <a href="#" className="text-muted-foreground hover:text-foreground" onClick={(e) => e.preventDefault()}>
-                  <ExternalLink size={16} />
-                </a>
-              )}
-              {bridgeState === 'error' && <AlertCircle className="text-red-600" size={18} />}
-            </div>
+            )}
 
             {/* destination */}
             <div className="flex items-start gap-3">
@@ -424,7 +446,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       {showSuccess && (
         <DepositSuccessModal
           amount={Number(amount || 0)}
-          sourceToken={sourceSymbol}
+          sourceToken={sourceTokenLabel as 'USDC' | 'USDT' | 'USDCe' | 'USDT0'}
           destinationAmount={Number(receiveDisplay ?? 0)}
           destinationToken={destTokenLabel}
           vault={`Re7 ${snap.token} Vault (Morpho Blue)`}

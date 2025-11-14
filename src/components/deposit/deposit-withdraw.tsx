@@ -549,7 +549,7 @@ export function DepositWithdraw({
   const availableTokens: Token[] = [
     {
       id: 'usdc',
-      name: 'USD Coin (best source)',
+      name: 'USD Coin (OP Mainnet)',
       symbol: 'USDC',
       icon: '/tokens/usdc-icon.png',
       balance: Math.max(
@@ -568,7 +568,7 @@ export function DepositWithdraw({
     },
     {
       id: 'usdt',
-      name: 'Tether USD (best source)',
+      name: 'Tether USD (OP Mainnet)',
       symbol: 'USDT',
       icon: '/tokens/usdt-icon.png',
       balance: Math.max(
