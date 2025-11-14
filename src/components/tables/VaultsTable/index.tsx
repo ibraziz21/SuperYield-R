@@ -26,7 +26,7 @@ interface TblProps<TData, TValue> {
 }
 
 /** Fallback mapper from display label -> route slug */
-function normalizeVaultRoute(label: string): string {
+export function normalizeVaultRoute(label: string): string {
   const clean = (label || "").trim();
 
   // Explicit cases first

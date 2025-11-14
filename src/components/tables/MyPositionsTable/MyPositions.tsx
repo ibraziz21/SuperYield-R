@@ -23,7 +23,7 @@ type PositionLike =
       protocol: "Morpho Blue";
       chain: Extract<EvmChain, "lisk">;
       token: MorphoToken;
-      amount: bigint; // receipt shares (or 0n for fallback rows)
+      amount: bigint; // receipt shares (18 decimals, or 0n)
     };
 
 const CHAIN_LABEL: Record<EvmChain, string> = { lisk: "Lisk" };
@@ -34,14 +34,18 @@ const MORPHO_VAULT_BY_TOKEN: Record<MorphoToken, `0x${string}`> = {
   WETH: MORPHO_POOLS["weth-supply"] as `0x${string}`,
 };
 
+// underlying token decimals (for reference)
 const TOKEN_DECIMALS: Record<MorphoToken, number> = {
   USDCe: 6,
   USDT0: 6,
   WETH: 18,
 };
 
+// treat tiny share balances as dust; shares are 18-decimals,
+// so this is ~1e-6 units (0.000001)
+const DUST_SHARES = 10n ** 12n;
+
 export function formatAmountBigint(amount: bigint, decimals: number): string {
-  // humanize: 1) convert to decimal string 2) add thousand separators 3) trim trailing zeros
   const neg = amount < 0n;
   const abs = neg ? -amount : amount;
 
@@ -53,14 +57,12 @@ export function formatAmountBigint(amount: bigint, decimals: number): string {
   if (frac === 0n) return `${neg ? "-" : ""}${wholeStr}`;
 
   let fracStr = frac.toString().padStart(decimals, "0");
-  // show up to 6 decimals by default for readability
   fracStr = fracStr.slice(0, Math.min(6, fracStr.length));
   fracStr = fracStr.replace(/0+$/, "");
   return `${neg ? "-" : ""}${wholeStr}${fracStr ? "." + fracStr : ""}`;
 }
 
 function formatPercent(n: number): string {
-  // e.g. 4.8532 -> "4.85"
   return (Number.isFinite(n) ? n : 0).toFixed(2);
 }
 
@@ -68,7 +70,6 @@ function normalizeDisplayVault(token: string): string {
   // Keep Lisk pool symbols literal so users see USDCe / USDT0 distinctly
   return token;
 }
-
 
 /* ────────────────────────────────────────────────────────── */
 /* Snapshot resolver (same spirit as PositionsDashboardInner) */
@@ -106,7 +107,7 @@ function findSnapshotForPosition(
     if (byVault) return byVault;
   }
 
-  // 3) fallback snapshot (0 APY/TVL but keeps UI stable)
+  // 3) fallback snapshot (0 APY/TVL but keeps UI stable if something slips through)
   const underlyingAddr: `0x${string}` =
     p.token === "USDCe"
       ? (TokenAddresses.USDCe as any).lisk
@@ -139,35 +140,22 @@ const MyPositions: React.FC = () => {
 
   const positions = (positionsRaw ?? []) as unknown as PositionLike[];
 
-  // Only Morpho (Lisk). If none, show fallback zeroed rows for USDCe & USDT0.
+  // Only Morpho (Lisk) positions with non-dust balances.
+  // If user has only USDCe, you get one row; if only USDT0, one row; both → two rows.
   const positionsForMorpho: PositionLike[] = useMemo(() => {
-    const morpho = positions.filter((p) => p.protocol === "Morpho Blue") as PositionLike[];
-    if (morpho.length > 0) return morpho;
-    return [
-      { protocol: "Morpho Blue", chain: "lisk", token: "USDCe", amount: 0n },
-      { protocol: "Morpho Blue", chain: "lisk", token: "USDT0", amount: 0n },
-    ];
+    return positions.filter((p) => {
+      if (p.protocol !== "Morpho Blue") return false;
+      if (p.chain !== "lisk") return false;
+
+      const amt = (p as any).amount as bigint | undefined;
+      if (typeof amt !== "bigint") return false;
+
+      // hide dust
+      return amt > DUST_SHARES;
+    });
   }, [positions]);
 
-  // Build table rows
-  const tableData: TableRow[] = useMemo(() => {
-    return positionsForMorpho.map((p) => {
-      const snap = findSnapshotForPosition(p, snapshots);
-      const decimals = 18;
-      const depositsHuman = formatAmountBigint(p.amount ?? 0n, decimals);
-
-      const row: TableRow = {
-        vault: normalizeDisplayVault(String(p.token)),
-        network: CHAIN_LABEL[p.chain],
-        deposits: depositsHuman, // token-denominated amount (shares proxied)
-        protocol: "Morpho Blue",
-        apy: formatPercent(snap.apy),
-      };
-      return row;
-    });
-  }, [positionsForMorpho, snapshots]);
-
-  // Optional: a minimal loading skeleton line (kept simple)
+  // Loading state
   if (positionsLoading || yieldsLoading) {
     return (
       <div className="rounded-xl border border-border/60 p-4 text-sm text-muted-foreground">
@@ -175,6 +163,33 @@ const MyPositions: React.FC = () => {
       </div>
     );
   }
+
+  // Empty state: no active positions after dust-filter
+  if (positionsForMorpho.length === 0) {
+    return (
+      <div className="rounded-xl border border-border/60 p-6 text-sm text-muted-foreground text-center">
+        No active positions yet.
+      </div>
+    );
+  }
+
+  // Build table rows
+  const tableData: TableRow[] = useMemo(() => {
+    return positionsForMorpho.map((p) => {
+      const snap = findSnapshotForPosition(p, snapshots);
+      // Morpho shares are 18 decimals in our app
+      const depositsHuman = formatAmountBigint(p.amount ?? 0n, 18);
+
+      const row: TableRow = {
+        vault: normalizeDisplayVault(String(p.token)),
+        network: CHAIN_LABEL[p.chain],
+        deposits: depositsHuman,
+        protocol: "Morpho Blue",
+        apy: formatPercent(snap.apy),
+      };
+      return row;
+    });
+  }, [positionsForMorpho, snapshots]);
 
   return <MyPositionsTable columns={MyPositionsColumns} data={tableData} />;
 };
