@@ -12,6 +12,7 @@ import { ReviewWithdrawModal } from '../WithdrawModal/review-withdraw-modal';
 import logolifi from '@/public/logo_lifi_light.png';
 import { useWalletClient } from 'wagmi';
 import { parseUnits } from 'viem';
+import base_square from '@/public/base_square_blue.svg'
 
 import type { YieldSnapshot } from '@/hooks/useYields';
 
@@ -627,7 +628,7 @@ export function DepositWithdraw({
           id: 'base' as const,
           chainLabel: 'Base',
           symbol: stableSymbol,
-          icon: '',
+          icon: base_square.src,
           description: `Bridge to Base ${stableSymbol}`,
         },
       ];

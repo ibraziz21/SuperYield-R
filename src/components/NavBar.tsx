@@ -10,14 +10,47 @@ import { useAccount, useDisconnect, useChainId, useSwitchChain } from 'wagmi'
 import { Button } from '@/components/ui/button'
 import socialImg from '@/public/logo_horizontal.svg'
 import ecovaults from "@/public/eco-vaults.svg"
+import baseImg from '@/public/base_square_blue.svg'
 
 /* ──────────────────────────────────────────────────────────────── */
 
-const CHAIN_META: Record<number, { key: 'optimism' | 'base' | 'lisk'; label: string; badge: string; bg: string; ring: string }> = {
-  10: { key: 'optimism', label: 'Optimism', badge: 'OP', bg: 'bg-rose-600', ring: 'ring-rose-500/30' },
-  8453: { key: 'base', label: 'Base', badge: 'BASE', bg: 'bg-blue-600', ring: 'ring-blue-500/30' },
-  1135: { key: 'lisk', label: 'Lisk', badge: 'LSK', bg: 'bg-indigo-600', ring: 'ring-indigo-500/30' },
+const CHAIN_META: Record<
+  number,
+  {
+    key: 'optimism' | 'base' | 'lisk'
+    label: string
+    badge: string
+    icon: string
+    bg: string
+    ring: string
+  }
+> = {
+  10: {
+    key: 'optimism',
+    label: 'OP Mainnet',
+    badge: 'OP',
+    icon: '/networks/op-icon.png',
+    bg: 'bg-rose-600',
+    ring: 'ring-rose-500/30',
+  },
+  8453: {
+    key: 'base',
+    label: 'Base',
+    badge: 'BASE',
+    icon: baseImg,
+    bg: 'bg-blue-600',
+    ring: 'ring-blue-500/30',
+  },
+  1135: {
+    key: 'lisk',
+    label: 'Lisk',
+    badge: 'LSK',
+    icon: '/networks/lisk.png',
+    bg: 'bg-indigo-600',
+    ring: 'ring-indigo-500/30',
+  },
 }
+
 
 function shortAddr(a?: string) {
   return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : ''
@@ -26,12 +59,23 @@ function shortAddr(a?: string) {
 function NetworkBadge({ chainId }: { chainId?: number }) {
   if (!chainId || !CHAIN_META[chainId]) return null
   const m = CHAIN_META[chainId]
+
   return (
-    <div className={`min-h-full  gap-1 rounded-md px-1 py-0.5 text-[10px] font-semibold border border-gray-200 text-black`}>
-      {m.badge}
+    <div className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold">
+      <span className="relative inline-flex h-4 w-4 items-center justify-center rounded-full overflow-hidden">
+        <Image
+          src={m.icon}
+          alt={m.label}
+          width={16}
+          height={16}
+          className="h-4 w-4 rounded-full"
+        />
+      </span>
+      <span>{m.badge}</span>
     </div>
   )
 }
+
 
 function ActiveLink({ href, children }: { href: string; children: React.ReactNode }) {
   const pathname = usePathname()
