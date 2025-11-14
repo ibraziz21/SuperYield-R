@@ -72,7 +72,7 @@ function normalizeDisplayVault(token: string): string {
 }
 
 /* ────────────────────────────────────────────────────────── */
-/* Snapshot resolver (same spirit as PositionsDashboardInner) */
+/* Snapshot resolver                                          */
 /* ────────────────────────────────────────────────────────── */
 
 function findSnapshotForPosition(
@@ -140,8 +140,7 @@ const MyPositions: React.FC = () => {
 
   const positions = (positionsRaw ?? []) as unknown as PositionLike[];
 
-  // Only Morpho (Lisk) positions with non-dust balances.
-  // If user has only USDCe, you get one row; if only USDT0, one row; both → two rows.
+  // Filter to Morpho (Lisk) with non-dust balances
   const positionsForMorpho: PositionLike[] = useMemo(() => {
     return positions.filter((p) => {
       if (p.protocol !== "Morpho Blue") return false;
@@ -154,6 +153,23 @@ const MyPositions: React.FC = () => {
       return amt > DUST_SHARES;
     });
   }, [positions]);
+
+  // Build table rows (even if loading; UI gates below)
+  const tableData: TableRow[] = useMemo(() => {
+    return positionsForMorpho.map((p) => {
+      const snap = findSnapshotForPosition(p, snapshots);
+      // Morpho shares are 18 decimals in our app
+      const depositsHuman = formatAmountBigint(p.amount ?? 0n, 18);
+
+      return {
+        vault: normalizeDisplayVault(String(p.token)),
+        network: CHAIN_LABEL[p.chain],
+        deposits: depositsHuman,
+        protocol: "Morpho Blue",
+        apy: formatPercent(snap.apy),
+      };
+    });
+  }, [positionsForMorpho, snapshots]);
 
   // Loading state
   if (positionsLoading || yieldsLoading) {
@@ -172,24 +188,6 @@ const MyPositions: React.FC = () => {
       </div>
     );
   }
-
-  // Build table rows
-  const tableData: TableRow[] = useMemo(() => {
-    return positionsForMorpho.map((p) => {
-      const snap = findSnapshotForPosition(p, snapshots);
-      // Morpho shares are 18 decimals in our app
-      const depositsHuman = formatAmountBigint(p.amount ?? 0n, 18);
-
-      const row: TableRow = {
-        vault: normalizeDisplayVault(String(p.token)),
-        network: CHAIN_LABEL[p.chain],
-        deposits: depositsHuman,
-        protocol: "Morpho Blue",
-        apy: formatPercent(snap.apy),
-      };
-      return row;
-    });
-  }, [positionsForMorpho, snapshots]);
 
   return <MyPositionsTable columns={MyPositionsColumns} data={tableData} />;
 };
