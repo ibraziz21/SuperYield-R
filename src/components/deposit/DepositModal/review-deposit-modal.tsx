@@ -1,11 +1,10 @@
-// src/components/DepositModal/review-deposit-modal.tsx
 'use client'
 
 /* eslint-disable no-console */
 
 import { FC, useMemo, useState, useEffect } from 'react'
 import Image from 'next/image'
-import { X, Check, ExternalLink, AlertCircle } from 'lucide-react'
+import { X, Check, ExternalLink, AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppKit } from '@reown/appkit/react'
 import { useWalletClient } from 'wagmi'
@@ -334,6 +333,27 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   const sourceTokenLabel = isOnChainDeposit ? destTokenLabel : sourceSymbol
   const sourceChainLabel = isOnChainDeposit ? 'Lisk' : 'OP/Base'
 
+  // ---------- Step hint (intermediate status copy) ----------
+  const stepHint = (() => {
+    if (step === 'bridging') {
+      return isOnChainDeposit
+        ? 'Depositing directly on Lisk – no bridge needed.'
+        : 'Bridge in progress. This can take a few minutes depending on network congestion.'
+    }
+    if (step === 'depositing') {
+      return 'Your funds have arrived on Lisk. Depositing into the vault…'
+    }
+    if (step === 'success') {
+      return 'Deposit complete. Your position will refresh shortly.'
+    }
+    if (step === 'error') {
+      return 'Something went wrong. Check the error below and try again.'
+    }
+    return 'Review the details and confirm your deposit.'
+  })()
+
+  const isWorking = step === 'bridging' || step === 'depositing'
+
   return (
     <div className={`fixed inset-0 z-[100] ${open ? '' : 'pointer-events-none'}`}>
       <div className={`absolute inset-0 bg-black/50 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} />
@@ -345,8 +365,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
           </div>
 
           <div className="px-5 py-4 space-y-5">
-            <p className="text-sm text-muted-foreground">You&apos;re depositing</p>
-
+    
             {/* source */}
             <div className="flex items-start gap-3">
               <div className="relative mt-0.5">
@@ -434,10 +453,11 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
           <div className="px-5 pb-5">
             <Button
               onClick={onPrimary}
-              className="w-full h-12 text-white bg-blue-600 hover:bg-blue-700 font-semibold disabled:opacity-60"
-              disabled={step === 'bridging' || step === 'depositing' || !canStart}
+              className="w-full h-12 text-white bg-blue-600 hover:bg-blue-700 font-semibold disabled:opacity-60 inline-flex items-center justify-center gap-2"
+              disabled={isWorking || !canStart}
             >
-              {primaryCta}
+              {isWorking && <Loader2 className="h-4 w-4 animate-spin" />}
+              <span>{primaryCta}</span>
             </Button>
           </div>
         </div>

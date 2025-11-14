@@ -1,9 +1,8 @@
-// src/components/WithdrawModal/review-withdraw-modal.tsx
 'use client'
 
 import { FC, useMemo, useState } from 'react'
 import Image from 'next/image'
-import { X, Check, ExternalLink, AlertCircle } from 'lucide-react'
+import { X, Check, ExternalLink, AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWalletClient } from 'wagmi'
 import type { Address } from 'viem'
@@ -266,11 +265,12 @@ export const ReviewWithdrawModal: FC<Props> = ({
   }
 
   // Disable only while actively working
-  const disabled =
-    !walletClient ||
+  const isWorking =
     state === 'withdrawing' ||
     state === 'sign-bridge' ||
     state === 'bridging'
+
+  const disabled = !walletClient || isWorking
 
   // Convenience for display
   const destChainLabel =
@@ -278,6 +278,26 @@ export const ReviewWithdrawModal: FC<Props> = ({
 
   const finalTokenOnDest = dest === 'lisk' ? liskToken : destSymbol
   const finalNetAmount = dest === 'lisk' ? netOnLisk : netOnDest
+
+  // Step hint (intermediate copy)
+  const stepHint = (() => {
+    if (state === 'withdrawing') {
+      return 'Withdrawing from the vault on Lisk. This usually takes under a minute.'
+    }
+    if (state === 'sign-bridge') {
+      return 'Please confirm the bridge transaction in your wallet.'
+    }
+    if (state === 'bridging') {
+      return 'Bridge in progress. Final arrival time depends on network congestion.'
+    }
+    if (state === 'success') {
+      return 'Withdrawal complete. Your balances should update shortly.'
+    }
+    if (state === 'error') {
+      return 'Something went wrong. Check the error below and retry.'
+    }
+    return 'Review the details and confirm your withdrawal.'
+  })()
 
   return (
     <div className={`fixed inset-0 z-[100] ${open ? '' : 'pointer-events-none'}`}>
@@ -296,8 +316,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
 
           {/* body */}
           <div className="px-5 py-4 space-y-5">
-            <p className="text-sm text-muted-foreground">You&apos;re withdrawing</p>
-
+      
             {/* row 1: withdrawing from vault */}
             <div className="flex items-start gap-3">
               <div className="relative mt-0.5">
@@ -437,10 +456,11 @@ export const ReviewWithdrawModal: FC<Props> = ({
           <div className="px-5 pb-5">
             <Button
               onClick={onPrimary}
-              className="w-full h-12 text-base bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-60"
+              className="w-full h-12 text-base bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-60 inline-flex items-center justify-center gap-2"
               disabled={disabled}
             >
-              {primaryLabel}
+              {isWorking && <Loader2 className="h-4 w-4 animate-spin" />}
+              <span>{primaryLabel}</span>
             </Button>
           </div>
         </div>
