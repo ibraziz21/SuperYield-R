@@ -1,3 +1,4 @@
+// src/components/deposit/deposit-withdraw.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -12,7 +13,7 @@ import { ReviewWithdrawModal } from '../WithdrawModal/review-withdraw-modal';
 import logolifi from '@/public/logo_lifi_light.png';
 import { useWalletClient } from 'wagmi';
 import { parseUnits } from 'viem';
-import base_square from '@/public/base_square_blue.svg'
+import base_square from '@/public/base_square_blue.svg';
 
 import type { YieldSnapshot } from '@/hooks/useYields';
 
@@ -913,7 +914,7 @@ export function DepositWithdraw({
                       : selectedToken.id === 'usdc_base' || selectedToken.id === 'usdt_base'
                         ? '/networks/base.png'
                         : '/networks/op-icon.png';
-                  const depSrcToken = isDeposit ? selectedToken.symbol : destTokenLabel;
+                  const depSrcToken = selectedToken.symbol;
                   const depDstChainName = 'Lisk';
                   const depDstIcon = '/networks/lisk.png';
                   const depDstToken = destTokenLabel; // 'USDCe' | 'USDT0' | 'WETH'
@@ -956,13 +957,9 @@ export function DepositWithdraw({
                   const bridgingOnWithdraw = !isDeposit && withdrawDest !== 'lisk';
 
                   // --- Fee math ---
-                  // Protocol fee: 0.5% on withdraws (our own withdraw function).
                   const protocolFee =
                     !isDeposit && amountNum > 0 ? amountNum * 0.005 : 0; // 0.5%
 
-                  // Bridge fee:
-                  //  - Deposit: use bridgeFeeDisplay when bridging.
-                  //  - Withdraw: use withdrawBridgeFeeDisplay when bridging off Lisk.
                   const bridgeFee =
                     isDeposit
                       ? (bridgingOnDeposit ? bridgeFeeDisplay : 0)
@@ -970,12 +967,28 @@ export function DepositWithdraw({
 
                   const totalFee = protocolFee + bridgeFee;
 
-                  // Receive amount, including 0.5% withdraw fee on withdraws.
                   const receiveDisplay = (() => {
                     if (isDeposit) return receiveAmountDisplay;
                     const gross = amountNum;
-                    const net = Math.max(gross - protocolFee - (bridgingOnWithdraw ? withdrawBridgeFeeDisplay : 0), 0);
+                    const net = Math.max(
+                      gross - protocolFee - (bridgingOnWithdraw ? withdrawBridgeFeeDisplay : 0),
+                      0,
+                    );
                     return net;
+                  })();
+
+                  // ---- Route label text (this is where we fix Lisk ↔ OP/Base) ----
+                  const routeLabel = (() => {
+                    if (isDeposit) {
+                      if (route && route !== 'On-chain') return route;
+                      if (bridgingOnDeposit) {
+                        return `${depSrcChainName.toUpperCase()} → ${depDstChainName.toUpperCase()}`;
+                      }
+                      return 'On-chain';
+                    }
+                    // withdraw
+                    if (!bridgingOnWithdraw) return 'On-chain';
+                    return `${wSrcChainName.toUpperCase()} → ${wDstChainName.toUpperCase()}`;
                   })();
 
                   return (
@@ -1042,10 +1055,7 @@ export function DepositWithdraw({
                           </div>
                           <div className="flex-1">
                             <p className="text-muted-foreground text-sm">
-                              {route ??
-                                (bridgingOnDeposit || bridgingOnWithdraw
-                                  ? 'Routing via LI.FI bridge'
-                                  : 'On-chain')}
+                              {routeLabel}
                             </p>
 
                             {/* Total fee */}
@@ -1078,7 +1088,7 @@ export function DepositWithdraw({
                               </span>
                             </div>
 
-                            {quoteError && (
+                            {quoteError && isDeposit && (
                               <div className="mt-2 text-xs text-red-600">
                                 Quote error: {quoteError}
                               </div>
@@ -1140,7 +1150,7 @@ export function DepositWithdraw({
         />
       )}
 
-      {/* Withdraw review modal (supports USDCe/USDT0 on Lisk -> OP/Base/Lisk) */}
+      {/* Withdraw review modal */}
       {showWithdrawReview &&
         activeTab === 'withdraw' &&
         snap &&
@@ -1148,15 +1158,12 @@ export function DepositWithdraw({
           <ReviewWithdrawModal
             open={showWithdrawReview}
             onClose={() => setShowWithdrawReview(false)}
-            // vault snapshot (expects token 'USDC' | 'USDT', chain 'lisk', and poolAddress)
             snap={{
               token: snap.token as 'USDC' | 'USDT',
               chain: 'lisk',
               poolAddress: (snap as any).poolAddress,
             }}
-            // shares to redeem (18 decimals)
             shares={withdrawSharesBigint}
-            // numbers for the review UI
             amountOnLiskDisplay={amountNum}
             bridgeFeeDisplay={
               withdrawDest === 'lisk' ? 0 : withdrawBridgeFeeDisplay
@@ -1164,9 +1171,7 @@ export function DepositWithdraw({
             receiveOnDestDisplay={
               withdrawDest === 'lisk' ? amountNum : withdrawReceiveDisplay
             }
-            // where to send final assets after withdrawing on Lisk
             dest={withdrawDest}
-            // user address
             user={walletClient.account!.address as `0x${string}`}
           />
         )}
