@@ -105,16 +105,12 @@ export function DepositWithdraw({
   // balances (for quotes and modal decisions)
   const [availableTokenBalances, setAvailableTokenBalances] = useState<{
     USDC_Op: number;
-    USDC_Base: number;
     USDT_Op: number;
-    USDT_Base: number;
     USDCe_Lisk: number;
     USDT0_Lisk: number;
   }>({
     USDC_Op: 0,
-    USDC_Base: 0,
     USDT_Op: 0,
-    USDT_Base: 0,
     USDCe_Lisk: 0,
     USDT0_Lisk: 0,
   });
@@ -176,10 +172,7 @@ export function DepositWithdraw({
         return availableTokenBalances.USDCe_Lisk;
       case 'usdt0_lisk':
         return availableTokenBalances.USDT0_Lisk;
-      case 'usdc_base':
-        return availableTokenBalances.USDC_Base;
-      case 'usdt_base':
-        return availableTokenBalances.USDT_Base;
+  
       case 'usdc': {
         const op = toNum6(opUsdcBal);
         const ba = toNum6(baUsdcBal);
@@ -207,9 +200,7 @@ export function DepositWithdraw({
     if (!walletClient) {
       setAvailableTokenBalances({
         USDC_Op: 0,
-        USDC_Base: 0,
         USDT_Op: 0,
-        USDT_Base: 0,
         USDCe_Lisk: 0,
         USDT0_Lisk: 0,
       });
@@ -250,24 +241,20 @@ export function DepositWithdraw({
         const toNum6 = (x: bigint) => Number(x) / 1e6;
 
         const usdcOpNum = toNum6(usdcOp);
-        const usdcBaNum = toNum6(usdcBa);
         const usdtOpNum = toNum6(usdtOp);
         const usdtBaNum = toNum6(usdtBa);
 
         setAvailableTokenBalances({
           USDC_Op: usdcOpNum,
-          USDC_Base: usdcBaNum,
+       
           USDT_Op: usdtOpNum,
-          USDT_Base: usdtBaNum,
           USDCe_Lisk: toNum6(usdceLi),
           USDT0_Lisk: toNum6(usdt0Li),
         });
       } catch {
         setAvailableTokenBalances({
           USDC_Op: 0,
-          USDC_Base: 0,
           USDT_Op: 0,
-          USDT_Base: 0,
           USDCe_Lisk: 0,
           USDT0_Lisk: 0,
         });
@@ -553,38 +540,17 @@ export function DepositWithdraw({
       name: 'USD Coin (OP Mainnet)',
       symbol: 'USDC',
       icon: '/tokens/usdc-icon.png',
-      balance: Math.max(
-        availableTokenBalances.USDC_Op,
-        availableTokenBalances.USDC_Base,
-      ),
+      balance: availableTokenBalances.USDC_Op,
+        
       address: TokenAddresses.USDC.optimism as `0x${string}`, // generic OP route
-    },
-    {
-      id: 'usdc_base',
-      name: 'USD Coin (Base)',
-      symbol: 'USDC',
-      icon: '/tokens/usdc-icon.png',
-      balance: availableTokenBalances.USDC_Base,
-      address: TokenAddresses.USDC.base as `0x${string}`,
     },
     {
       id: 'usdt',
       name: 'Tether USD (OP Mainnet)',
       symbol: 'USDT',
       icon: '/tokens/usdt-icon.png',
-      balance: Math.max(
-        availableTokenBalances.USDT_Op,
-        availableTokenBalances.USDT_Base,
-      ),
+      balance: availableTokenBalances.USDT_Op,
       address: TokenAddresses.USDT.optimism as `0x${string}`,
-    },
-    {
-      id: 'usdt_base',
-      name: 'Tether USD (Base)',
-      symbol: 'USDT',
-      icon: '/tokens/usdt-icon.png',
-      balance: availableTokenBalances.USDT_Base,
-      address: TokenAddresses.USDT.base as `0x${string}`,
     },
     // Lisk native sources to bypass bridge
     {
