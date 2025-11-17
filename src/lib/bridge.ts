@@ -186,23 +186,50 @@ export async function bridgeTokens(
     allowExchanges?: string[]
     onUpdate?: (route: any) => void
     onRateChange?: (nextToAmount: string) => Promise<boolean> | boolean
-    /** Force the source-side token (e.g. 'USDC') even if dest wants 'USDT0' */
-    sourceToken?: Extract<TokenSymbol, 'USDC' | 'USDT'>
+    /** Force the source-side token (e.g. 'USDC', 'USDT', 'USDT0', 'USDCe') */
+    sourceToken?: Extract<TokenSymbol, 'USDC' | 'USDT' | 'USDT0' | 'USDCe'>
   }
 ) {
   const account = walletClient.account?.address as `0x${string}` | undefined
-  if (!account) throw new Error('No account found on WalletClient – connect a wallet first')
+  if (!account) {
+    throw new Error('No account found on WalletClient – connect a wallet first')
+  }
 
   configureLifiWith(walletClient)
 
   const originChainId      = CHAIN_ID[from]
   const destinationChainId = CHAIN_ID[to]
 
-  // if sourceToken is provided, use it for fromToken; else keep mapping logic
-  const inputToken  = tokenAddress(opts?.sourceToken ?? token, from)
+  // ---- Resolve source symbol, then map to a concrete address ----
+  const sourceSymbol = opts?.sourceToken ?? token
+
+  let inputToken: `0x${string}`
+
+  // Hard-enforce OP USDT0 when requested
+  if (sourceSymbol === 'USDT0' && from === 'optimism') {
+    inputToken = TokenAddresses.USDT0.optimism as `0x${string}`
+  } else if (sourceSymbol === 'USDCe' && from === 'lisk') {
+    // example of explicit mapping if ever needed; otherwise falls back
+    inputToken = TokenAddresses.USDCe.lisk as `0x${string}`
+  } else {
+    // fallback to your generic resolver for all other cases
+    inputToken = tokenAddress(sourceSymbol, from)
+  }
+
   const outputToken = tokenAddress(token, to)
 
-  console.log('Bridging tokens with LI.FI:', {originChainId, destinationChainId, inputToken, outputToken, amount: amount.toString()})
+  console.log('Bridging tokens with LI.FI:', {
+    originChainId,
+    destinationChainId,
+    sourceSymbol,
+    destSymbol: token,
+    from,
+    to,
+    inputToken,
+    outputToken,
+    amount: amount.toString(),
+  })
+
   const quote = await getQuote({
     fromChain: originChainId,
     toChain: destinationChainId,
@@ -217,7 +244,7 @@ export async function bridgeTokens(
 
   const route = convertQuoteToRoute(quote)
 
- console.log('LI.FI route:', JSON.stringify(route, null, 2))
+  console.log('LI.FI route:', JSON.stringify(route, null, 2))
 
   const executed = await executeRoute(route, {
     updateRouteHook: (updated) => opts?.onUpdate?.(updated),
