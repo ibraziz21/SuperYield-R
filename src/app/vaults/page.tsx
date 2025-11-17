@@ -1,38 +1,37 @@
 // src/app/positions/page.tsx
 'use client'
 
-import { ProtocolTabs } from '@/components/ProtocolTabs'
-import { YieldTable } from '@/components/YieldTable'
-import { ResumeDepositsBanner } from '@/components/ResumeDepositsBanner'
-import { useAccount } from 'wagmi'
+import { useAppKitAccount } from '@reown/appkit/react'
 import Vaults from '@/components/tables/VaultsTable/Vaults'
+import MyPositions from '@/components/tables/MyPositionsTable/MyPositions'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { ConnectWalletPrompt } from '@/components/ConnectWalletPrompt'
 
 export default function PositionsPage() {
-  const { address } = useAccount() // wallet address (undefined if not connected)
+  const { address, isConnected } = useAppKitAccount()
+
+  if (!isConnected || !address) {
+    return <ConnectWalletPrompt />
+  }
 
   return (
-    // <div className="space-y-12">
-    //   <ProtocolTabs />
-
-    //   {/* Recovery banner nudges unfinished deposits */}
-    //   <ResumeDepositsBanner user={address as `0x${string}` | undefined} />
-
-    //   {/* 3 ▸ full markets table (filters, sorting, etc.) */}
-    //   <section className="mx-auto w-full max-w-6xl">
-    //     <h2 className="mb-3 text-base font-semibold tracking-tight">All markets</h2>
-    //     <YieldTable />
-    //   </section>
-    // </div>
-
     <div>
-
       {/* Vaults */}
       <section className="bg-[#F9FAFB] m-4 p-4 rounded-xl">
-        <div className="mb-3">
-          <h2 className="text-base font-semibold tracking-tight">Vaults</h2>
-        </div>
-        <Vaults />
+        <Tabs defaultValue="vaults" className="w-full">
+          <TabsList className="mb-4">
+            <TabsTrigger value="positions">Your Positions</TabsTrigger>
+            <TabsTrigger value="vaults">All Vaults</TabsTrigger>
+          </TabsList>
 
+          <TabsContent value="vaults">
+            <Vaults />
+          </TabsContent>
+
+          <TabsContent value="positions">
+            <MyPositions />
+          </TabsContent>
+        </Tabs>
       </section>
     </div>
   )
