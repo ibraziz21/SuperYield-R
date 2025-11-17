@@ -11,6 +11,9 @@ import {
 } from "@tanstack/react-table";
 import React from "react";
 import { DataTable } from "../data-table";
+import { normalizeVaultRoute } from "../VaultsTable";
+import { useRouter } from "next/navigation";
+
 
 interface TblProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -25,6 +28,7 @@ export default function MyPositionsTable<TData , TValue>({
     []
   );
   const [sorting, setSorting] = React.useState<SortingState>([]);
+  const router = useRouter();
 
   const table = useReactTable({
     data,
@@ -41,7 +45,19 @@ export default function MyPositionsTable<TData , TValue>({
     },
   });
 
+  const handleRowClick = (row: any) => {
+    // Prefer a canonical key if your data rows provide it (recommended):
+    // e.g. in Vaults.tsx, set `routeKey: 'USDCe' | 'USDT0'`
+    const routeKey = row.original?.routeKey as string | undefined;
+
+    // Otherwise, normalize from display label (USDC.e -> USDCe, USDT0 -> USDT0, etc.)
+    const display = (row.original?.vault as string) ?? "";
+    const vaultParam = routeKey ?? normalizeVaultRoute(display);
+
+    router.push(`/vaults/${encodeURIComponent(vaultParam)}`);
+  };
+
   return (
-    <DataTable table={table} columns={columns} data={data} />
+    <DataTable table={table} columns={columns} data={data}   onRowClick={handleRowClick}/>
   );
 }

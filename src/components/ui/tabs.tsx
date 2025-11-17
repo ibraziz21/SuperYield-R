@@ -6,14 +6,14 @@ import { cn } from '@/lib/utils'
 
 /* ------ styles ------ */
 const triggerVariants = cva(
-  'inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ' +
+  'inline-flex items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm font-medium ' +
     'ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 ' +
     'disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
         default:
-          'border-b-2 border-transparent text-muted-foreground hover:text-foreground data-[state=active]:border-primary data-[state=active]:text-foreground',
+          'border-0 border-white text-muted-foreground hover:text-foreground data-[state=active]:border-primary data-[state=active]:text-foreground  data-[state=active]:border-b-2',
         outline:
           'border border-input bg-background hover:bg-accent hover:text-accent-foreground data-[state=active]:bg-accent data-[state=active]:text-accent-foreground',
       },

@@ -10,6 +10,8 @@ import { useMemo } from 'react'
 import { useYields, type YieldSnapshot } from '@/hooks/useYields'
 import { usePositions } from '@/hooks/usePositions'
 import { formatUnits } from 'viem'
+import { useAppKitAccount } from '@reown/appkit/react'
+import { ConnectWalletPrompt } from '@/components/ConnectWalletPrompt'
 
 // Accept both canonical and alias slugs, normalize for lookups
 const CANONICAL: Record<string, 'USDC' | 'USDT'> = {
@@ -57,6 +59,7 @@ const HARD_FILTER = (y: Pick<YieldSnapshot, 'chain' | 'protocolKey' | 'token'>) 
 export default function VaultDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const { address, isConnected } = useAppKitAccount()
 
   // Raw slug from URL (preserve for header/icon); also build a canonical token for queries
   const vaultSlugRaw = ((params.vault as string) || '').toUpperCase()
@@ -65,6 +68,11 @@ export default function VaultDetailPage() {
   const headerLabel = vaultSlugKey || 'Vault'
 
   const { yields, isLoading, error } = useYields()
+
+  // Show wallet prompt if not connected
+  if (!isConnected || !address) {
+    return <ConnectWalletPrompt />
+  }
 
   // Derive variants using the canonical token (so USDT0/USDCe work)
   const vaultVariants = useMemo(() => {

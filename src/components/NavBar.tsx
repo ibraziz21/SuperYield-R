@@ -10,14 +10,47 @@ import { useAccount, useDisconnect, useChainId, useSwitchChain } from 'wagmi'
 import { Button } from '@/components/ui/button'
 import socialImg from '@/public/logo_horizontal.svg'
 import ecovaults from "@/public/eco-vaults.svg"
+import baseImg from '@/public/base_square_blue.svg'
 
 /* ──────────────────────────────────────────────────────────────── */
 
-const CHAIN_META: Record<number, { key: 'optimism' | 'base' | 'lisk'; label: string; badge: string; bg: string; ring: string }> = {
-  10: { key: 'optimism', label: 'Optimism', badge: 'OP', bg: 'bg-rose-600', ring: 'ring-rose-500/30' },
-  8453: { key: 'base', label: 'Base', badge: 'BASE', bg: 'bg-blue-600', ring: 'ring-blue-500/30' },
-  1135: { key: 'lisk', label: 'Lisk', badge: 'LSK', bg: 'bg-indigo-600', ring: 'ring-indigo-500/30' },
+const CHAIN_META: Record<
+  number,
+  {
+    key: 'optimism' | 'base' | 'lisk'
+    label: string
+    badge: string
+    icon: string
+    bg: string
+    ring: string
+  }
+> = {
+  10: {
+    key: 'optimism',
+    label: 'OP Mainnet',
+    badge: 'OP',
+    icon: '/networks/op-icon.png',
+    bg: 'bg-rose-600',
+    ring: 'ring-rose-500/30',
+  },
+  8453: {
+    key: 'base',
+    label: 'Base',
+    badge: 'BASE',
+    icon: baseImg,
+    bg: 'bg-blue-600',
+    ring: 'ring-blue-500/30',
+  },
+  1135: {
+    key: 'lisk',
+    label: 'Lisk',
+    badge: 'LSK',
+    icon: '/networks/lisk.png',
+    bg: 'bg-indigo-600',
+    ring: 'ring-indigo-500/30',
+  },
 }
+
 
 function shortAddr(a?: string) {
   return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : ''
@@ -26,12 +59,23 @@ function shortAddr(a?: string) {
 function NetworkBadge({ chainId }: { chainId?: number }) {
   if (!chainId || !CHAIN_META[chainId]) return null
   const m = CHAIN_META[chainId]
+
   return (
-    <div className={`min-h-full  gap-1 rounded-md px-1 py-0.5 text-[10px] font-semibold border border-gray-200 text-black`}>
-      {m.badge}
+    <div className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold">
+      <span className="relative inline-flex h-4 w-4 items-center justify-center rounded-full overflow-hidden">
+        <Image
+          src={m.icon}
+          alt={m.label}
+          width={16}
+          height={16}
+          className="h-4 w-4 rounded-full"
+        />
+      </span>
+      <span>{m.badge}</span>
     </div>
   )
 }
+
 
 function ActiveLink({ href, children }: { href: string; children: React.ReactNode }) {
   const pathname = usePathname()
@@ -369,64 +413,12 @@ export function Navbar() {
                 {isSwitching && <div className="mt-2 text-[11px] text-muted-foreground">Switching…</div>}
               </div>
             </div>
-
-            {/* safe‑area bottom padding + tabbar */}
-            <div className="pb-[max(12px,env(safe-area-inset-bottom))]">
-              <MobileTabbar />
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Mobile Bottom Tabbar (always visible on mobile, optional) */}
-      <div className="md:hidden fixed bottom-0 inset-x-0 z-40">
-        <MobileTabbar />
-      </div>
+  
     </>
   )
 }
 
-/* ──────────────────────────────────────────────────────────────── */
-
-function MobileTabbar() {
-  const pathname = usePathname()
-  const tabs = [
-    {
-      href: '/', label: 'Dashboard', icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" fill="currentColor" /></svg>
-      )
-    },
-    {
-      href: '/vaults', label: 'Markets', icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M4 4h4v16H4zM10 10h4v10h-4zM16 7h4v13h-4z" fill="currentColor" /></svg>
-      )
-    },
-    {
-      href: '/docs', label: 'Docs', icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm8 0v4h4" stroke="currentColor" strokeWidth="1.7" fill="none" /></svg>
-      )
-    },
-  ]
-
-  return (
-    <nav className="mx-auto mb-1 w-full max-w-6xl px-2">
-      <div className="grid grid-cols-3 gap-2 rounded-2xl border border-border/60 bg-background/95 p-1 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/70">
-        {tabs.map((t) => {
-          const active = pathname === t.href || (t.href !== '/' && pathname.startsWith(t.href))
-          return (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl py-2 text-[11px] font-medium ${active ? 'bg-[#376FFF] text-white' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-                }`}
-              aria-current={active ? 'page' : undefined}
-            >
-              <span className="opacity-90">{t.icon}</span>
-              <span className="leading-none">{t.label}</span>
-            </Link>
-          )
-        })}
-      </div>
-    </nav>
-  )
-}

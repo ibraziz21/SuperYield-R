@@ -1,19 +1,15 @@
 'use client'
 
-import Link from 'next/link'
 import { useState } from 'react'
 import { PortfolioHeader } from '@/components/dashboard/PortfolioHeader'
-import { TopYields } from '@/components/TopYields'
 import { DepositModal } from '@/components/deposit/DepositModal'
 import type { YieldSnapshot } from '@/hooks/useYields'
 import { TokenAddresses } from '@/lib/constants'
 import { MORPHO_VAULTS } from '@/lib/tvl'
 import ClaimRewards from '@/components/tables/ClaimRewardTable/ClaimReward'
 import MyPositions from '@/components/tables/MyPositionsTable/MyPositions'
-import { useAppKit, useAppKitAccount } from '@reown/appkit/react'
-import { Button } from '@/components/ui/button'
-import Image from 'next/image'
-import EcoVaultHeroImg from "@/public/landing-page.svg"
+import { useAppKitAccount } from '@reown/appkit/react'
+import { ConnectWalletPrompt } from '@/components/ConnectWalletPrompt'
 
 /** Morpho-only helper: Lisk positions → YieldSnapshot */
 function toSnapshotFromPosition(p: {
@@ -53,9 +49,7 @@ function toSnapshotFromPosition(p: {
 export default function Dashboard() {
   const [depositSnap, setDepositSnap] = useState<YieldSnapshot | null>(null)
   const [withdrawSnap, setWithdrawSnap] = useState<YieldSnapshot | null>(null)
-  const { open } = useAppKit()
-  const { address, isConnected, caipAddress, status, embeddedWalletInfo } =
-    useAppKitAccount();
+  const { address, isConnected } = useAppKitAccount()
 
   return (
     <div className="font-poppins">
@@ -89,22 +83,9 @@ export default function Dashboard() {
               <MyPositions />
             </section>
           </>
-        ) :
-          <div className='flex justify-between items-center ecovaults-background h-screen bg-contain bg-center bg-no-repeat'>
-            <div className='h-[250px] flex flex-col justify-between p-2 lg:p-5 max-w-6xl  '>
-              <h2 className='text-3xl md:text-5xl'>Your gateway to smarter on-chain yields</h2>
-              <h4 className='text-[#4B5563]'>Please connect your wallet to get started</h4>
-              <div>
-                <Button
-                  onClick={() => open({ view: 'Connect' })}
-                  className="flex bg-[#376FFF] p-5 rounded-lg"
-                  title="Connect Wallet"
-                >
-                  Connect Wallet
-                </Button>
-              </div>
-            </div>
-          </div>
+        ) : (
+          <ConnectWalletPrompt />
+        )
       }
 
       {/* Keep withdraw open for Morpho (the modal guards unsupported flows itself)
