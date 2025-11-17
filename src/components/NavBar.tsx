@@ -168,11 +168,10 @@ export function Navbar() {
             {!address ? (
               <Button
                 onClick={() => open({ view: 'Connect' })}
-                className="hidden md:inline-flex gap-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white hover:from-teal-500 hover:to-cyan-500"
+                className="hidden md:flex bg-[#376FFF] p-5 rounded-lg"
                 title="Connect Wallet"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M21 7H5a2 2 0 0 0-2 2v6a3 3 0 0 0 3 3h15V7Zm-4 6a2 2 0 1 1 0-4h2v4h-2Z" /><path fill="currentColor" d="M19 9h-2a4 4 0 0 0 0 8h2v-2h-2a2 2 0 1 1 0-4h2V9Z" /></svg>
-                Connect
+                Connect Wallet
               </Button>
             ) : (
               <div className="relative" ref={accountMenuRef}>
@@ -309,7 +308,7 @@ export function Navbar() {
                     <div className="mb-2 text-sm">You&rsquo;re not connected</div>
                     <Button
                       onClick={() => open({ view: 'Connect' })}
-                      className="w-full bg-gradient-to-r from-teal-600 to-cyan-600 text-white hover:from-teal-500 hover:to-cyan-500" title={''}                    >
+                      className="w-full bg-[#376FFF] text-white rounded-lg" title={''}                    >
                       Connect Wallet
                     </Button>
                     <div className="mt-2 text-[11px] text-muted-foreground">
@@ -418,7 +417,7 @@ function MobileTabbar() {
             <Link
               key={t.href}
               href={t.href}
-              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl py-2 text-[11px] font-medium ${active ? 'bg-teal-600 text-white' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl py-2 text-[11px] font-medium ${active ? 'bg-[#376FFF] text-white' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
                 }`}
               aria-current={active ? 'page' : undefined}
             >

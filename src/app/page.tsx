@@ -58,10 +58,7 @@ export default function Dashboard() {
     useAppKitAccount();
 
   return (
-    <div className="space-y-6 font-poppins">
-
-
-
+    <div className="font-poppins">
       {
         isConnected && address ? (
           <>
@@ -92,22 +89,22 @@ export default function Dashboard() {
               <MyPositions />
             </section>
           </>
-        ) : 
-        <div className='flex justify-between items-center ecovaults-background h-screen bg-cover bg-center bg-no-repeat'>
-          <div className='h-[250px] flex flex-col justify-between p-2 lg:p-5'>
-            <h2 className='text-3xl md:text-5xl'>Your gateway to smarter on-chain yields</h2>
-            <h4 className='text-[#4B5563]'>Please connect your wallet to get started</h4>
-            <div>
-              <Button
-              onClick={() => open({ view: 'Connect' })}
-              className="flex bg-[#376FFF] p-4"
-              title="Connect Wallet"
-            >
-              Connect Wallet
-            </Button>
+        ) :
+          <div className='flex justify-between items-center ecovaults-background h-screen bg-contain bg-center bg-no-repeat'>
+            <div className='h-[250px] flex flex-col justify-between p-2 lg:p-5 max-w-6xl  '>
+              <h2 className='text-3xl md:text-5xl'>Your gateway to smarter on-chain yields</h2>
+              <h4 className='text-[#4B5563]'>Please connect your wallet to get started</h4>
+              <div>
+                <Button
+                  onClick={() => open({ view: 'Connect' })}
+                  className="flex bg-[#376FFF] p-5 rounded-lg"
+                  title="Connect Wallet"
+                >
+                  Connect Wallet
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
       }
 
       {/* Keep withdraw open for Morpho (the modal guards unsupported flows itself)
