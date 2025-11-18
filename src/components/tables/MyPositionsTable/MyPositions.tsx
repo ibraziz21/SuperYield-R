@@ -67,9 +67,15 @@ function formatPercent(n: number): string {
 }
 
 function normalizeDisplayVault(token: string): string {
-  // Keep Lisk pool symbols literal so users see USDCe / USDT0 distinctly
+  // Official naming for the Re7 Morpho vaults on Lisk
+  if (token === "USDCe") return "Re7 USDC.e";
+  if (token === "USDT0") return "Re7 USDT0";
+  if (token === "WETH") return "Re7 WETH";
+
+  // Fallback for anything unexpected
   return token;
 }
+
 
 /* ────────────────────────────────────────────────────────── */
 /* Snapshot resolver                                          */

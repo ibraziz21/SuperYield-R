@@ -159,11 +159,7 @@ export default function VaultDetailPage() {
     <div className="min-h-screen bg-[#F9FAFB] p-4 md:p-6">
       {/* Header with back button */}
       <div className="max-w-7xl mx-auto mb-6">
-        <Button variant="ghost" onClick={() => router.push('/vaults')} className="mb-4">
-          <ArrowLeftIcon className="mr-2 h-4 w-4" />
-          Back to Vaults
-        </Button>
-
+      
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 md:w-16 md:h-16 relative">
             <Image
@@ -176,11 +172,8 @@ export default function VaultDetailPage() {
           </div>
           <div>
             <h1 className="text-2xl md:text-4xl font-bold">
-              {headerLabel} Vault
+              Re7 {headerLabel} Vault
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Available across {vaultVariants.length} network{vaultVariants.length !== 1 ? 's' : ''}
-            </p>
           </div>
         </div>
       </div>

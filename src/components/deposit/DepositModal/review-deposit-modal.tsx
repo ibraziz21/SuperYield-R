@@ -222,24 +222,39 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       setDestAddr(_destAddr)
       setCachedInputAmt(inputAmt)
 
-      // If already have enough on Lisk, skip bridging
-      const haveOnLisk =
-        destTokenLabel === 'USDCe'
-          ? (liBal ?? 0n)
-          : destTokenLabel === 'USDT0'
-          ? (liBalUSDT0 ?? 0n)
-          : 0n
+      // ── NEW: only skip bridge when user explicitly chose Lisk-native asset ──
+      const isLiskSource =
+        sourceSymbol === 'USDCe' ||
+        sourceSymbol === 'USDT0'
 
-      if (haveOnLisk >= inputAmt) {
+
+      if (isLiskSource) {
+        // Pure on-chain deposit from Lisk balance
+        const wc = await ensureLiskWalletClient()
+        const liskUser = wc.account!.address as `0x${string}`
+
+        const balOnLisk = await readWalletBalance(
+          'lisk',
+          _destAddr,
+          liskUser,
+        ).catch(() => 0n)
+
+        if (balOnLisk < inputAmt) {
+          throw new Error('Insufficient balance on Lisk for this deposit')
+        }
+
         setBridgeOk(true)
         setCachedMinOut(inputAmt)
         setStep('depositing')
-        await switchOrAddChainStrict(walletClient, CHAINS.lisk)
-        await depositMorphoOnLiskAfterBridge(snap, inputAmt, walletClient)
+
+        await depositMorphoOnLiskAfterBridge(snap, inputAmt, wc)
+
         setStep('success')
         setShowSuccess(true)
         return
       }
+
+      // ── From here on we ALWAYS bridge from OP (no auto-using random Lisk balance) ──
 
       // We ONLY support Optimism as the source now (no Base)
       const srcToken: 'USDC' | 'USDT' | 'USDT0' | 'USDCe' = sourceSymbol
