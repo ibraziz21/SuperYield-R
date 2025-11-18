@@ -61,17 +61,16 @@ function NetworkBadge({ chainId }: { chainId?: number }) {
   const m = CHAIN_META[chainId]
 
   return (
-    <div className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold">
-      <span className="relative inline-flex h-4 w-4 items-center justify-center rounded-full overflow-hidden">
+    <div className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white p-1" title={m.label}>
+      <span className="relative inline-flex h-5 w-5 items-center justify-center rounded-xl overflow-hidden">
         <Image
           src={m.icon}
           alt={m.label}
-          width={16}
-          height={16}
-          className="h-4 w-4 rounded-full"
+          width={20}
+          height={20}
+          className="h-5 w-5 rounded-xl"
         />
       </span>
-      <span>{m.badge}</span>
     </div>
   )
 }
@@ -83,7 +82,7 @@ function ActiveLink({ href, children }: { href: string; children: React.ReactNod
   return (
     <Link
       href={href}
-      className={`rounded-md px-3 py-2 text-sm transition ${active ? 'bg-gray-200 text-black' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+      className={`rounded-xl px-3 py-2 text-sm transition ${active ? 'bg-[#F3F4F6] text-black font-semibold' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
         }`}
     >
       {children}
@@ -169,8 +168,7 @@ export function Navbar() {
     <>
       {/* Top App Bar */}
       <header
-        className={`sticky top-0 z-50 w-full border-b border-border/60 backdrop-blur-md supports-[backdrop-filter]:bg-white/55 dark:supports-[backdrop-filter]:bg-background/60 ${elevated ? 'shadow-[0_1px_0_0_rgba(0,0,0,0.02)]' : ''
-          }`}
+        className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 `}
       >
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-3 sm:px-4">
           {/* Brand */}

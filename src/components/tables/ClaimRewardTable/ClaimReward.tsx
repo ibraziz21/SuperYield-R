@@ -119,24 +119,20 @@ const ClaimRewards: React.FC = () => {
           </Button>
         </div>
 
-        {tableData.length === 0 ? (
-          <div className="flex min-h-[120px] flex-col items-center justify-center rounded-xl border border-dashed border-border/50 text-sm text-muted-foreground">
-            No claimable rewards found.
-          </div>
-        ) : (
-          <ClaimRewardTable
-            columns={ClaimableRewardColumns}
-            data={tableData as ClaimableReward[]}
-            meta={{
-              onClaim: onClaimClick,
-              isClaiming: (r: any) => {
-                const raw = (r as any).__raw as FlatReward | undefined;
-                if (!raw) return false;
-                return claimingKey === `${raw.chainId}-${raw.token.address.toLowerCase()}`;
-              },
-            }}
-          />
-        )}
+        <ClaimRewardTable
+          columns={ClaimableRewardColumns}
+          data={tableData as ClaimableReward[]}
+          meta={{
+            onClaim: onClaimClick,
+            isClaiming: (r: any) => {
+              const raw = (r as any).__raw as FlatReward | undefined;
+              if (!raw) return false;
+              return claimingKey === `${raw.chainId}-${raw.token.address.toLowerCase()}`;
+            },
+          }}
+          emptyMessage="No rewards to claim yet."
+          emptySubMessage="Keep your vaults active to start earning."
+        />
       </div>
 
       {/* Claim Rewards Modal */}

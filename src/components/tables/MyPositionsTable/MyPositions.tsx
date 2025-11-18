@@ -134,7 +134,13 @@ function findSnapshotForPosition(
 /* Component                                                  */
 /* ────────────────────────────────────────────────────────── */
 
-const MyPositions: React.FC = () => {
+interface MyPositionsProps {
+  networkFilter?: string;
+  protocolFilter?: string;
+  filterUI?: React.ReactNode;
+}
+
+const MyPositions: React.FC<MyPositionsProps> = ({ networkFilter, protocolFilter, filterUI }) => {
   const { data: positionsRaw, isLoading: positionsLoading } = usePositions();
   const { yields: snapshots, isLoading: yieldsLoading } = useYields();
 
@@ -156,7 +162,7 @@ const MyPositions: React.FC = () => {
 
   // Build table rows (even if loading; UI gates below)
   const tableData: TableRow[] = useMemo(() => {
-    return positionsForMorpho.map((p) => {
+    let filtered = positionsForMorpho.map((p) => {
       const snap = findSnapshotForPosition(p, snapshots);
       // Morpho shares are 18 decimals in our app
       const depositsHuman = formatAmountBigint(p.amount ?? 0n, 18);
@@ -169,7 +175,19 @@ const MyPositions: React.FC = () => {
         apy: formatPercent(snap.apy),
       };
     });
-  }, [positionsForMorpho, snapshots]);
+
+    // Apply network filter
+    if (networkFilter && networkFilter !== "all") {
+      filtered = filtered.filter((row) => row.network === networkFilter);
+    }
+
+    // Apply protocol filter
+    if (protocolFilter && protocolFilter !== "all") {
+      filtered = filtered.filter((row) => row.protocol === protocolFilter);
+    }
+
+    return filtered;
+  }, [positionsForMorpho, snapshots, networkFilter, protocolFilter]);
 
   // Loading state
   if (positionsLoading || yieldsLoading) {
@@ -180,16 +198,15 @@ const MyPositions: React.FC = () => {
     );
   }
 
-  // Empty state: no active positions after dust-filter
-  if (positionsForMorpho.length === 0) {
-    return (
-      <div className="rounded-xl border border-border/60 p-6 text-sm text-muted-foreground text-center">
-        No active positions yet.
-      </div>
-    );
-  }
-
-  return <MyPositionsTable columns={MyPositionsColumns} data={tableData} />;
+  return (
+    <MyPositionsTable
+      columns={MyPositionsColumns}
+      data={tableData}
+      emptyMessage="No active positions yet."
+      emptySubMessage="Explore vaults to start earning."
+      filterUI={filterUI}
+    />
+  );
 };
 
 export default MyPositions;

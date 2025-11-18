@@ -18,11 +18,17 @@ import { useRouter } from "next/navigation";
 interface TblProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
+  emptyMessage?: string;
+  emptySubMessage?: string;
+  filterUI?: React.ReactNode;
 }
 
 export default function MyPositionsTable<TData , TValue>({
   columns,
   data,
+  emptyMessage,
+  emptySubMessage,
+  filterUI,
 }: TblProps<TData, TValue>) {
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
@@ -58,6 +64,8 @@ export default function MyPositionsTable<TData , TValue>({
   };
 
   return (
-    <DataTable table={table} columns={columns} data={data}   onRowClick={handleRowClick}/>
+    <DataTable table={table} columns={columns} data={data} onRowClick={handleRowClick} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage}>
+      {filterUI}
+    </DataTable>
   );
 }

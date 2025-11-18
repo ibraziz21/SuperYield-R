@@ -18,12 +18,16 @@ interface TblProps<TData, TValue> {
   data: TData[];
   meta?: any;               // NEW: forward table meta (for onClaim, isClaiming)
   isLoading?: boolean;      // optional passthrough
+  emptyMessage?: string;
+  emptySubMessage?: string;
 }
 
 export default function ClaimRewardTable<TData, TValue>({
   columns,
   data,
   meta,
+  emptyMessage,
+  emptySubMessage,
 }: TblProps<TData, TValue>) {
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -41,5 +45,5 @@ export default function ClaimRewardTable<TData, TValue>({
     state: { columnFilters, sorting },
   });
 
-  return <DataTable table={table} columns={columns} data={data} />;
+  return <DataTable table={table} columns={columns} data={data} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage} />;
 }
