@@ -2,11 +2,20 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
-
 *{
   /* border: 1px solid red; */
 }
+
+@font-face {
+  font-family: "Open Sauce One";
+  font-style: normal;
+  font-display: swap;
+  src: url("/open-sauce-one/OpenSauceOne-Regular.ttf") format("truetype");
+}
+
+
+@custom-variant dark (&:is(.dark *));
+
 
 @theme inline {
   --color-background: var(--background);
@@ -47,7 +56,7 @@
 }
 
 @theme {
-  --font-poppins: var(--font-poppins);
+  --font-opensauce: var(--font-opensauce);
 }
 
 /* @media (prefers-color-scheme: dark) {

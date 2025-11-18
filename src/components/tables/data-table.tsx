@@ -28,6 +28,8 @@ interface DataTableProps<TData, TValue> {
   children?: React.ReactNode;
   table: TableTanstack<TData>;
   onRowClick?: (row: any) => void;
+  emptyMessage?: string;
+  emptySubMessage?: string;
 }
 
 export function DataTable<TData, TValue>({
@@ -36,6 +38,8 @@ export function DataTable<TData, TValue>({
   children,
   table,
   onRowClick,
+  emptyMessage = "No results.",
+  emptySubMessage,
 }: DataTableProps<TData, TValue>) {
   // const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
   //   []
@@ -117,9 +121,14 @@ export function DataTable<TData, TValue>({
               <TableRow>
                 <TableCell
                   colSpan={columns.length}
-                  className="h-24 text-center"
+                  className="h-32 text-center"
                 >
-                  No results.
+                  <div className="flex flex-col items-center justify-center py-8">
+                    <p className="text-sm text-muted-foreground font-medium">{emptyMessage}</p>
+                    {emptySubMessage && (
+                      <p className="text-xs text-muted-foreground mt-1">{emptySubMessage}</p>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             )}

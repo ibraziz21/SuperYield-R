@@ -6,6 +6,7 @@ import { usePositions } from '@/hooks/usePositions'
 import { usePortfolioApy } from '@/hooks/usePortfolioApy'
 import { rewardForecast } from '@/lib/rewardForecast'
 import { formatAmountBigint } from '@/components/tables/MyPositionsTable/MyPositions'
+import { WarningCircleIcon } from '@phosphor-icons/react'
 
 export const PortfolioHeader: FC = () => {
   const { data: positions } = usePositions()
@@ -37,9 +38,9 @@ export const PortfolioHeader: FC = () => {
   }, [totalUsd, apy, loading, positions])
 
   return (
-    <div className="sticky top-0 z-20 bg-[#F9FAFB] m-4 rounded-xl">
-      <h3 className='p-4 font-semibold'>Overview</h3>
-      <div className="mx-auto grid w-full max-w-6xl gap-3 p-3 sm:grid-cols-4 sm:p-4">
+    <div className="sticky top-0 z-20 bg-white my-4 rounded-xl max-w-6xl mx-auto">
+      <h3 className='p-4 md:p-6 font-semibold text-base md:text-lg'>Overview</h3>
+      <div className="mx-auto grid w-full gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4 sm:p-4 md:p-6">
         <Kpi title="My Deposits" value={
           kpis.total ? `$${kpis.total.toLocaleString(undefined,{maximumFractionDigits:2})}` : '—'
         } />
@@ -56,10 +57,10 @@ export const PortfolioHeader: FC = () => {
 }
 
 const Kpi = ({ title, value, sub }: { title: string; value: string; sub?: string }) => (
-  <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
-    <CardContent className="space-y-1 p-4">
-      <p className="text-[11px] font-medium tracking-wide text-muted-foreground">{title}</p>
-      <p className="text-2xl font-semibold">{value}</p>
+  <Card className="rounded-2xl border-[1.5px] border-[#E5E7EB] bg-white shadow-none">
+    <CardContent className="space-y-1 p-4 md:p-5">
+      <p className="text-[11px] md:text-xs font-medium text-[#4B5563] flex items-center">{title}<WarningCircleIcon size={16} className='mx-2' /></p>
+      <p className="text-xl md:text-2xl lg:text-3xl font-semibold break-words">{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </CardContent>
   </Card>

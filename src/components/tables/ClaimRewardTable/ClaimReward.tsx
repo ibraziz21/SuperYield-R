@@ -40,21 +40,24 @@ const ClaimRewards: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedReward, setSelectedReward] = useState<(ClaimableReward & { __raw?: FlatReward }) | null>(null);
 
-  // Keep a 1:1 mapping (row -> underlying Merkl item) by attaching __raw
   const tableData: (ClaimableReward & { __raw: FlatReward })[] = useMemo(() => {
-    if (!rewards || rewards.length === 0) return [];
+    if (!rewards || rewards.length === 0) return []
+  
     return rewards.map((r) => {
-      const qty = Number(formatUnits(BigInt(r.amount), r.token.decimals)) || 0;
+      // r.claimable is in wei, as string
+      const qty =
+        Number(formatUnits(BigInt(r.claimable), r.token.decimals)) || 0
+  
       return {
         network: CHAIN_LABEL[r.chainId] ?? `Chain ${r.chainId}`,
-        source: "Merkl",
-        claimable: formatNumber(qty, 6),
+        source: 'Merkl',
+        claimable: qty.toString(), // plain numeric string
         token: r.token.symbol,
         __raw: r,
-      };
-    });
-  }, [rewards]);
-
+      }
+    })
+  }, [rewards])
+  
   function onClaimClick(row: ClaimableReward & { __raw?: FlatReward }) {
     if (!wallet) return openConnect?.();
     setSelectedReward(row);
@@ -119,24 +122,20 @@ const ClaimRewards: React.FC = () => {
           </Button>
         </div>
 
-        {tableData.length === 0 ? (
-          <div className="flex min-h-[120px] flex-col items-center justify-center rounded-xl border border-dashed border-border/50 text-sm text-muted-foreground">
-            No claimable rewards found.
-          </div>
-        ) : (
-          <ClaimRewardTable
-            columns={ClaimableRewardColumns}
-            data={tableData as ClaimableReward[]}
-            meta={{
-              onClaim: onClaimClick,
-              isClaiming: (r: any) => {
-                const raw = (r as any).__raw as FlatReward | undefined;
-                if (!raw) return false;
-                return claimingKey === `${raw.chainId}-${raw.token.address.toLowerCase()}`;
-              },
-            }}
-          />
-        )}
+        <ClaimRewardTable
+          columns={ClaimableRewardColumns}
+          data={tableData as ClaimableReward[]}
+          meta={{
+            onClaim: onClaimClick,
+            isClaiming: (r: any) => {
+              const raw = (r as any).__raw as FlatReward | undefined;
+              if (!raw) return false;
+              return claimingKey === `${raw.chainId}-${raw.token.address.toLowerCase()}`;
+            },
+          }}
+          emptyMessage="No rewards to claim yet."
+          emptySubMessage="Keep your vaults active to start earning."
+        />
       </div>
 
       {/* Claim Rewards Modal */}

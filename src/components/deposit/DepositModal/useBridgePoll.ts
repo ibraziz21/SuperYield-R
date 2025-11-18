@@ -113,7 +113,7 @@ export function useBridgePoll(options: UseBridgePollOpts): UseBridgePollRet {
       cancelled = true
       stopAll()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  
   }, [enabled, user, tokenAddr, startBal, firstDelayMs, intervalMs, maxMinutes, readBalance, onLanded])
 
   return { nextCheckIn }

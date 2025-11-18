@@ -1,7 +1,7 @@
 // src/lib/ensureAllowanceThenDeposit.ts
 import { erc20Abi, type PublicClient, type Address, encodeFunctionData,decodeEventLog } from 'viem'
 import type { PrivateKeyAccount } from 'viem/accounts'
-import type { Chain, Hex } from 'viem'
+import type { Chain } from 'viem'
 import { sendSimulated } from './tx'
 // src/lib/ensureAllowanceThenDeposit.ts
 
@@ -54,7 +54,7 @@ export async function ensureAllowanceThenDeposit(params: {
   // 1) USDT-style approve(0) then approve(N) if needed
   if (allowance < amount) {
     if (allowance > 0n) {
-      const { request } = await pub.simulateContract({
+       await pub.simulateContract({
         address: token,
         abi: erc20Abi,
         functionName: 'approve',
@@ -69,7 +69,7 @@ export async function ensureAllowanceThenDeposit(params: {
       await pub.waitForTransactionReceipt({ hash: tx0 })
     }
 
-    const { request } = await pub.simulateContract({
+    await pub.simulateContract({
       address: token,
       abi: erc20Abi,
       functionName: 'approve',
@@ -107,7 +107,7 @@ export async function ensureAllowanceThenDeposit(params: {
   }
 
   // 2) deposit(uint256 assets, address receiver)
-  const { request: depReq } = await pub.simulateContract({
+ await pub.simulateContract({
     address: vaultAddr,
     abi: morphoAbi,
     functionName: 'deposit',
@@ -124,7 +124,7 @@ export async function ensureAllowanceThenDeposit(params: {
   const depRcpt = await pub.getTransactionReceipt({ hash: depositTx })
 
   // ---- Validate: ERC20 Transfer -> vault ----
-  let transferred: bigint | null = null
+  let transferred: bigint | null
   let transferMatches = false
   for (const lg of depRcpt.logs) {
     if (lg.address.toLowerCase() !== token.toLowerCase()) continue

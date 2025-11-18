@@ -5,14 +5,34 @@ import { cookies, headers } from 'next/headers'
 import  ContextProvider  from '@/config/appkit'
 import AppShell from '@/components/AppShell'
 import { Toaster } from '@/components/ui/sonner'
-import { Geist, Geist_Mono, Poppins } from "next/font/google";
+import localFont from "next/font/local";
 
-
-const poppins = Poppins({
-  variable: "--font-poppins",
-  subsets: ["latin"],
-  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+const openSauce = localFont({
+  src: [
+    {
+      path: "../../public/open-sauce-one/OpenSauceOne-Light.ttf",
+      weight: "300",
+    },
+    {
+      path: "../../public/open-sauce-one/OpenSauceOne-Regular.ttf",
+      weight: "400",
+    },
+    {
+      path: "../../public/open-sauce-one/OpenSauceOne-Medium.ttf",
+      weight: "500",
+    },
+    {
+      path: "../../public/open-sauce-one/OpenSauceOne-SemiBold.ttf",
+      weight: "600",
+    },
+    {
+      path: "../../public/open-sauce-one/OpenSauceOne-Bold.ttf",
+      weight: "700",
+    },
+  ],
+  variable: "--font-opensauce",
 });
+
 
 export default async function RootLayout({
   children,
@@ -23,8 +43,8 @@ export default async function RootLayout({
   const cookies = (await headers()).get('cookie')
 
   return (
-    <html lang="en">
-      <body className={`bg-surface-light font-DM text-secondary-foreground ${poppins.variable} antialiased`}>
+    <html lang="en" className={openSauce.variable}>
+      <body className=" text-secondary-foreground antialiased font-opensauce">
         <ContextProvider cookies={cookies}>
           <AppShell>{children}</AppShell>
           <Toaster />

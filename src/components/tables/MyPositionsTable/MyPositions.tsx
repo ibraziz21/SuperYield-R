@@ -67,9 +67,15 @@ function formatPercent(n: number): string {
 }
 
 function normalizeDisplayVault(token: string): string {
-  // Keep Lisk pool symbols literal so users see USDCe / USDT0 distinctly
+  // Official naming for the Re7 Morpho vaults on Lisk
+  if (token === "USDCe") return "Re7 USDC.e";
+  if (token === "USDT0") return "Re7 USDT0";
+  if (token === "WETH") return "Re7 WETH";
+
+  // Fallback for anything unexpected
   return token;
 }
+
 
 /* ────────────────────────────────────────────────────────── */
 /* Snapshot resolver                                          */
@@ -134,11 +140,21 @@ function findSnapshotForPosition(
 /* Component                                                  */
 /* ────────────────────────────────────────────────────────── */
 
-const MyPositions: React.FC = () => {
-  const { data: positionsRaw, isLoading: positionsLoading } = usePositions();
-  const { yields: snapshots, isLoading: yieldsLoading } = useYields();
+interface MyPositionsProps {
+  networkFilter?: string;
+  protocolFilter?: string;
+  filterUI?: React.ReactNode;
+}
 
-  const positions = (positionsRaw ?? []) as unknown as PositionLike[];
+const MyPositions: React.FC<MyPositionsProps> = ({ networkFilter, protocolFilter, filterUI }) => {
+  const { data: positionsRaw, isLoading: positionsLoading } = usePositions();
+const { yields: snapshots, isLoading: yieldsLoading } = useYields();
+
+const positions = useMemo(
+  () => (positionsRaw ?? []) as unknown as PositionLike[],
+  [positionsRaw],
+);
+
 
   // Filter to Morpho (Lisk) with non-dust balances
   const positionsForMorpho: PositionLike[] = useMemo(() => {
@@ -154,22 +170,40 @@ const MyPositions: React.FC = () => {
     });
   }, [positions]);
 
-  // Build table rows (even if loading; UI gates below)
+
   const tableData: TableRow[] = useMemo(() => {
-    return positionsForMorpho.map((p) => {
+    let filtered = positionsForMorpho.map((p) => {
       const snap = findSnapshotForPosition(p, snapshots);
       // Morpho shares are 18 decimals in our app
       const depositsHuman = formatAmountBigint(p.amount ?? 0n, 18);
-
+  
+      const tokenSymbol = String(p.token); // "USDCe" | "USDT0" | "WETH"
+  
       return {
-        vault: normalizeDisplayVault(String(p.token)),
+        // Display text on the row
+        vault: normalizeDisplayVault(tokenSymbol), // e.g. "Re7 USDC.e"
+        // Canonical route key for URLs
+        routeKey: tokenSymbol, // 👈 used by MyPositionsTable for /vaults/USDCe
         network: CHAIN_LABEL[p.chain],
         deposits: depositsHuman,
         protocol: "Morpho Blue",
         apy: formatPercent(snap.apy),
       };
     });
-  }, [positionsForMorpho, snapshots]);
+  
+    // Apply network filter
+    if (networkFilter && networkFilter !== "all") {
+      filtered = filtered.filter((row) => row.network === networkFilter);
+    }
+  
+    // Apply protocol filter
+    if (protocolFilter && protocolFilter !== "all") {
+      filtered = filtered.filter((row) => row.protocol === protocolFilter);
+    }
+  
+    return filtered;
+  }, [positionsForMorpho, snapshots, networkFilter, protocolFilter]);
+  
 
   // Loading state
   if (positionsLoading || yieldsLoading) {
@@ -180,16 +214,15 @@ const MyPositions: React.FC = () => {
     );
   }
 
-  // Empty state: no active positions after dust-filter
-  if (positionsForMorpho.length === 0) {
-    return (
-      <div className="rounded-xl border border-border/60 p-6 text-sm text-muted-foreground text-center">
-        No active positions yet.
-      </div>
-    );
-  }
-
-  return <MyPositionsTable columns={MyPositionsColumns} data={tableData} />;
+  return (
+    <MyPositionsTable
+      columns={MyPositionsColumns}
+      data={tableData}
+      emptyMessage="No active positions yet."
+      emptySubMessage="Explore vaults to start earning."
+      filterUI={filterUI}
+    />
+  );
 };
 
 export default MyPositions;

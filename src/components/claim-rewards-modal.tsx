@@ -113,6 +113,14 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
     onClose()
   }
 
+  // Get color indicator based on token
+  const getColorIndicator = (reward: Reward) => {
+    if (reward.token === "OP") return "#ef4444" // red
+    if (reward.token === "USDT") return "#06b6d4" // cyan
+    if (reward.token === "USDC") return "#3b82f6" // blue
+    return "#3b82f6" // default blue
+  }
+
   // SUCCESS STATE
   if (state === "success") {
     return (
@@ -120,45 +128,46 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
         <div className="bg-background rounded-2xl w-full max-w-sm mx-4 shadow-lg border border-border overflow-hidden">
           {/* Header with Success Icon */}
           <div className="flex items-center justify-between p-6 border-b border-border">
-            <h2 className="text-2xl font-bold">Rewards claimed</h2>
-            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30">
-              <Check size={24} className="text-emerald-600 dark:text-emerald-400" />
+            <h2 className="text-xl font-semibold">Rewards claimed</h2>
+            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+              <Check size={20} className="text-emerald-600 dark:text-emerald-400" />
             </div>
           </div>
 
           {/* Content */}
-          <div className="p-6 space-y-6">
-            <p className="text-muted-foreground">You can view your claimed tokens in your wallet.</p>
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-muted-foreground">You can view your claimed tokens in your wallet.</p>
 
             {/* Summary Box */}
-            <div className="bg-muted rounded-xl p-4 space-y-4">
-              <div className="flex justify-between items-center pb-4 border-b border-border">
-                <span className="text-foreground font-semibold">Total value claimed</span>
-                <span className="text-lg font-bold text-foreground">${totalUsd.toFixed(2)}</span>
+            <div className="bg-muted rounded-xl p-4 space-y-3">
+              <div className="flex justify-between items-center pb-3 border-b border-border">
+                <span className="text-sm text-foreground font-medium">Total value claimed</span>
+                <span className="text-base font-semibold text-foreground">${totalUsd.toFixed(2)}</span>
               </div>
 
               {/* Claimed Tokens */}
               {selectedRewards.map((reward) => (
-                <div key={reward.token} className="flex justify-between items-center py-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 relative">
+                <div key={reward.token} className="flex justify-between items-center py-1.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-4 h-4 relative">
                       <Image
                         src={reward.icon}
                         alt={reward.token}
-                        width={24}
-                        height={24}
+                        width={16}
+                        height={16}
                         className="rounded-full"
                         onError={(e) => {
                           (e.target as HTMLImageElement).src = "/tokens/default.svg"
                         }}
                       />
                     </div>
-                    <span className="text-foreground font-medium">{reward.token}</span>
-                    <span className="text-xs text-muted-foreground bg-background px-2 py-1 rounded">
-                      {reward.symbol}
-                    </span>
+                    <span className="text-sm text-foreground font-medium">{reward.token}</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getColorIndicator(reward) }} />
+                      <span className="text-sm text-foreground">{reward.symbol}</span>
+                    </div>
                   </div>
-                  <span className="text-foreground font-semibold">${reward.usdValue.toFixed(2)}</span>
+                  <span className="text-sm text-foreground font-semibold">${reward.usdValue.toFixed(2)}</span>
                 </div>
               ))}
             </div>
@@ -166,10 +175,12 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
             {/* Info Box */}
             <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 rounded-xl p-4">
               <div className="flex gap-3">
-                <Sparkles size={20} className="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-1" />
+                <Sparkles size={18} className="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-blue-600 dark:text-blue-400">Earn more with your rewards</p>
-                  <p className="text-sm text-foreground mt-1">
+                  <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                    Earn more with your rewards
+                  </p>
+                  <p className="text-xs text-foreground mt-1">
                     Put your rewards to work in active vaults and keep growing your earnings.
                   </p>
                 </div>
@@ -177,19 +188,19 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
             </div>
 
             {/* Buttons */}
-            <div className="space-y-3">
+            <div className="space-y-2.5 pt-2">
               <Button
                 onClick={handleExploreVaults}
                 size="lg"
-                className="w-full text-white bg-blue-600 hover:bg-blue-700 text-lg font-semibold py-6"
+                className="w-full text-white bg-blue-600 hover:bg-blue-700 text-base font-semibold h-12"
               >
                 Explore vaults
               </Button>
               <Button
                 onClick={handleBackToDashboard}
-                variant="outline"
+                variant="ghost"
                 size="lg"
-                className="w-full text-lg font-semibold py-6 bg-transparent"
+                className="w-full text-base font-medium h-12 hover:bg-muted"
               >
                 Back to dashboard
               </Button>
@@ -206,30 +217,30 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
       <div className="bg-background rounded-2xl w-full max-w-sm mx-4 shadow-lg border border-border overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border">
-          <h2 className="text-2xl font-bold">Claim rewards</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+          <h2 className="text-xl font-semibold">Claim rewards</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors text-xl">
             ✕
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6">
-          <p className="text-muted-foreground">Claim your Merkl rewards on OP Mainnet</p>
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-muted-foreground">Claim your Merkl rewards on OP Mainnet</p>
 
           {/* Rewards List */}
           <div className="bg-muted rounded-xl overflow-hidden divide-y divide-border">
             {/* Select All */}
-            <div className="flex items-center justify-between p-4 hover:bg-background/50 transition-colors cursor-pointer">
+            <div className="flex items-center justify-between px-4 py-3.5 hover:bg-background/50 transition-colors cursor-pointer">
               <label className="flex items-center gap-3 cursor-pointer flex-1">
                 <input
                   type="checkbox"
                   checked={allSelected}
                   onChange={handleSelectAll}
-                  className="w-5 h-5 rounded accent-blue-600"
+                  className="w-4 h-4 rounded accent-blue-600 cursor-pointer"
                 />
-                <span className="font-semibold text-foreground">Select all</span>
+                <span className="text-sm font-semibold text-foreground">Select all</span>
               </label>
-              <span className="text-foreground font-semibold">
+              <span className="text-sm text-foreground font-semibold">
                 ${rewards.reduce((sum, r) => sum + r.usdValue, 0).toFixed(2)}
               </span>
             </div>
@@ -238,45 +249,50 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
             {rewards.map((reward) => (
               <div
                 key={reward.token}
-                className="flex items-center justify-between p-4 hover:bg-background/50 transition-colors cursor-pointer"
+                className="flex items-center justify-between px-4 py-3.5 hover:bg-background/50 transition-colors cursor-pointer"
                 onClick={() => handleToggleReward(reward.token)}
               >
-                <label className="flex items-center gap-3 cursor-pointer flex-1">
+                <label
+                  className="flex items-center gap-3 cursor-pointer flex-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <input
                     type="checkbox"
                     checked={reward.checked}
                     onChange={() => handleToggleReward(reward.token)}
-                    className="w-5 h-5 rounded accent-blue-600"
+                    className="w-4 h-4 rounded accent-blue-600 cursor-pointer"
+                    onClick={(e) => e.stopPropagation()}
                   />
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 relative">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-5 h-5 relative">
                       <Image
                         src={reward.icon}
                         alt={reward.token}
-                        width={24}
-                        height={24}
+                        width={20}
+                        height={20}
                         className="rounded-full"
                         onError={(e) => {
                           (e.target as HTMLImageElement).src = "/tokens/default.svg"
                         }}
                       />
                     </div>
-                    <span className="font-semibold text-foreground">{reward.token}</span>
-                    <span className="text-xs text-muted-foreground bg-background px-2 py-1 rounded">
-                      {reward.symbol}
-                    </span>
+                    <span className="text-sm font-semibold text-foreground">{reward.token}</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getColorIndicator(reward) }} />
+                      <span className="text-sm text-foreground">{reward.symbol}</span>
+                    </div>
                   </div>
                 </label>
-                <span className="text-foreground font-semibold">${reward.usdValue.toFixed(2)}</span>
+                <span className="text-sm text-foreground font-semibold">${reward.usdValue.toFixed(2)}</span>
               </div>
             ))}
           </div>
 
           {/* Error Message */}
           {state === "error" && (
-            <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-lg">
-              <AlertCircle size={18} className="text-red-600 dark:text-red-400 flex-shrink-0" />
-              <span className="text-sm text-red-600 dark:text-red-400">Claim failed. Please try again.</span>
+            <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-lg">
+              <AlertCircle size={16} className="text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+              <span className="text-xs text-red-600 dark:text-red-400">Claim failed. Please try again.</span>
             </div>
           )}
 
@@ -285,17 +301,17 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
             onClick={state === "error" ? handleTryAgain : handleClaim}
             disabled={selectedRewards.length === 0 || state === "claiming" || state === "signing"}
             size="lg"
-            className="w-full text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-lg font-semibold py-6 flex items-center justify-center gap-2"
+            className="w-full text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-base font-semibold h-12 flex items-center justify-center gap-2"
           >
             {state === "signing" && (
               <>
-                <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
+                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
                 Sign wallet transaction...
               </>
             )}
             {state === "claiming" && (
               <>
-                <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
+                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
                 Claiming rewards...
               </>
             )}

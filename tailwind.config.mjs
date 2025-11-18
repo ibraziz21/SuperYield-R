@@ -9,6 +9,7 @@ module.exports = {
         DM: ["DM Sans", "sans-serif"],
         clash: ["Clash Display", "sans-serif"],
         clashDisplay: ['var(--font-clashDisplay)'],
+        opensauce: ['var(--font-opensauce)']
       },
       borderRadius: { lg: 'var(--radius)' },
       colors: {

@@ -1,4 +1,3 @@
-
 import { ColumnDef } from "@tanstack/react-table";
 import Image from "next/image";
 
@@ -16,8 +15,8 @@ import { DataTableColumnHeader } from "../data-table-header";
 const tokenIcons: Record<string, string> = {
   USDC: "/tokens/usdc-icon.png",
   USDT: "/tokens/usdt-icon.png",
-  USDCe: '/tokens/usdc-icon.png',
-  USDCE: '/tokens/usdc-icon.png',
+  USDCe: "/tokens/usdc-icon.png",
+  USDCE: "/tokens/usdc-icon.png",
   USDT0: "/tokens/usdt0-icon.png",
   WETH: "/tokens/weth.png",
   DAI: "/tokens/dai.png",
@@ -49,18 +48,25 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
     ),
     cell: ({ row }) => {
       const vault = String(row.getValue("vault") ?? "");
-      // normalize: remove dots, uppercase, then map families
-      const key = vault.replace(/\./g, "").toUpperCase();
-  
+
+      // Strip "Re7 " prefix and normalize the *token* part
+      const base = vault.replace(/^Re7\s+/i, "").trim(); // e.g. "USDC.e", "USDT0"
+      const key = base.replace(/\./g, "").toUpperCase(); // e.g. "USDCE", "USDT0"
+
       const iconPath =
-        // exact keys first
-        tokenIcons[vault] ||
+        // direct matches
+        tokenIcons[base] ||
         tokenIcons[key] ||
-        // family fallbacks (so USDCE/USDC.e → USDC icon, USDT0 → USDT0 icon)
-        (/^USDC/.test(key) ? tokenIcons.USDCe
-         : /^USDT0/.test(key) ? tokenIcons.USDT0
-         : /^USDT/.test(key) ? tokenIcons.USDT
-         : tokenIcons.WETH) || "/tokens/default.svg";
+        // family fallbacks (so USDCE/USDC.e → USDC icon, USDT0 → USDT0 icon, etc.)
+        (/^USDC/.test(key)
+          ? tokenIcons.USDC
+          : /^USDT0/.test(key)
+          ? tokenIcons.USDT0
+          : /^USDT/.test(key)
+          ? tokenIcons.USDT
+          : /^WETH/.test(key)
+          ? tokenIcons.WETH
+          : tokenIcons.DAI) || "/tokens/default.svg";
 
       return (
         <div className="flex items-center justify-center gap-2">
@@ -72,7 +78,7 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
               height={24}
               className="rounded-full"
               onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).style.display = "none";
               }}
             />
           </div>
@@ -99,9 +105,9 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
               alt={network}
               width={24}
               height={24}
-              className="rounded-full"
+              className="rounded-xl"
               onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).style.display = "none";
               }}
             />
           </div>
@@ -144,9 +150,9 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
               alt={protocol}
               width={24}
               height={24}
-              className="rounded-full"
+              className="rounded-xl"
               onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).style.display = "none";
               }}
             />
           </div>
