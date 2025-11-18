@@ -136,9 +136,13 @@ function findSnapshotForPosition(
 
 const MyPositions: React.FC = () => {
   const { data: positionsRaw, isLoading: positionsLoading } = usePositions();
-  const { yields: snapshots, isLoading: yieldsLoading } = useYields();
+const { yields: snapshots, isLoading: yieldsLoading } = useYields();
 
-  const positions = (positionsRaw ?? []) as unknown as PositionLike[];
+const positions = useMemo(
+  () => (positionsRaw ?? []) as unknown as PositionLike[],
+  [positionsRaw],
+);
+
 
   // Filter to Morpho (Lisk) with non-dust balances
   const positionsForMorpho: PositionLike[] = useMemo(() => {

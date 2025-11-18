@@ -130,12 +130,18 @@ export function DepositWithdraw({
   const isUsdtFamily = vaultToken === 'USDT' || destTokenLabel === 'USDT0';
 
   const { data: positionsRaw } = usePositions();
-  const positions = (positionsRaw ?? []) as Array<{
-    protocol: string;
-    chain: 'lisk' | string;
-    token: 'USDCe' | 'USDT0' | 'WETH' | string;
-    amount: bigint;
-  }>;
+
+  const positions = useMemo(
+    () =>
+      (positionsRaw ?? []) as Array<{
+        protocol: string;
+        chain: 'lisk' | string;
+        token: 'USDCe' | 'USDT0' | 'WETH' | string;
+        amount: bigint;
+      }>,
+    [positionsRaw],
+  );
+  
 
   const morphoTokenOnLisk: 'USDCe' | 'USDT0' | 'WETH' = destTokenLabel;
   const withdrawPosition = useMemo(

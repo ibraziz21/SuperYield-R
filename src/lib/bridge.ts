@@ -13,7 +13,7 @@ import {
 import type { WalletClient } from 'viem'
 import { parseAbi, encodeFunctionData } from 'viem'
 import { optimism, base, lisk } from 'viem/chains'
-import { ADAPTER_KEYS, ROUTERS, TokenAddresses, SAFEVAULT } from './constants'
+import { ADAPTER_KEYS, ROUTERS, TokenAddresses } from './constants'
 import type { ChainId, TokenSymbol } from './constants'
 import {  BigNumberish } from 'ethers'
 import 'dotenv/config'

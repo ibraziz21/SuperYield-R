@@ -7,9 +7,7 @@ import { MORPHO_POOLS, TokenAddresses, type TokenSymbol } from './constants'
 import { erc20Abi } from 'viem'
 
 const DEBUG = process.env.NEXT_PUBLIC_DEBUG_POSITIONS !== 'false'
-const dbg = (...args: any[]) => {
-  if (DEBUG) console.log('[positions]', ...args)
-}
+
 const err = (...args: any[]) => console.error('[positions]', ...args)
 
 /* ──────────────────────────────────────────────────────────────── */

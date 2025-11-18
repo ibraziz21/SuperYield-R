@@ -1,8 +1,6 @@
 'use client'
 
-/* eslint-disable no-console */
-
-import { FC, useMemo, useState, useEffect } from 'react'
+import { FC, useMemo, useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { X, Check, ExternalLink, AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -110,7 +108,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   )
 
   /** Ensure wallet on Lisk and return a **fresh** wallet client after switch */
-  const ensureLiskWalletClient = async () => {
+  const ensureLiskWalletClient = useCallback(async () => {
     if (!walletClient) throw new Error('No wallet client')
     const before = walletClient.chain?.id
     await switchOrAddChainStrict(walletClient, CHAINS.lisk)
@@ -118,7 +116,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     const after = refreshed?.chain?.id
     console.info(TAG, 'ensureLiskWalletClient', { before, after })
     return refreshed
-  }
+  }, [walletClient, refetchWalletClient])
 
   // ---------- Focus recovery (tab hidden during bridging) ----------
   useEffect(() => {
@@ -157,7 +155,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     }
     window.addEventListener('focus', handler)
     return () => window.removeEventListener('focus', handler)
-  }, [step, walletClient, destAddr, preBal, snap, refetchWalletClient])
+  }, [step, walletClient, destAddr, preBal, snap, ensureLiskWalletClient])
 
   // ---------- Deposit-only retry ----------
   async function depositOnlyRetry() {
@@ -245,7 +243,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
 
       // We ONLY support Optimism as the source now (no Base)
       const srcToken: 'USDC' | 'USDT' | 'USDT0' | 'USDCe' = sourceSymbol
-      const srcChain: 'optimism' = 'optimism'
+      const srcChain = 'optimism' as const
 
       // Baseline Lisk balance for landing detection
       const pre = (await readWalletBalance('lisk', _destAddr, user).catch(
