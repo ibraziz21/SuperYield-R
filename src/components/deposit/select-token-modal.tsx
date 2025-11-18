@@ -43,22 +43,23 @@ export function SelectTokenModal({
   onClose,
 }: SelectTokenModalProps) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-background rounded-2xl w-full max-w-sm mx-4 shadow-lg border border-border">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-md shadow-xl border border-gray-200 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <h2 className="text-2xl font-bold">Select a token</h2>
+        <div className="flex items-center justify-between px-4 py-3 md:px-6 md:py-4 border-b border-gray-200">
+          <h2 className="text-lg md:text-xl font-bold text-gray-900">Select a token</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-muted rounded-full transition-colors"
+            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
             aria-label="Close"
+            title="Close"
           >
-            <X size={24} className="text-foreground" />
+            <X size={20} className="text-gray-600" />
           </button>
         </div>
 
         {/* Token List */}
-        <div className="divide-y divide-border">
+        <div className="max-h-[60vh] overflow-y-auto">
           {tokens.map((token) => {
             const balNum = toNumber(token.balance)
             const isSelected = token.id === selectedToken.id
@@ -66,26 +67,42 @@ export function SelectTokenModal({
               <button
                 key={token.id}
                 onClick={() => onSelect(token)}
-                className={`w-full px-6 py-4 transition-colors flex items-center justify-between group text-left ${
-                  isSelected ? "bg-muted/60" : "hover:bg-muted"
+                className={`w-full px-4 py-3 md:px-6 md:py-4 transition-all flex items-center justify-between group text-left border-b border-gray-100 last:border-b-0 ${
+                  isSelected
+                    ? "bg-blue-50 hover:bg-blue-100"
+                    : "bg-[#F9FAFB] hover:bg-gray-100"
                 }`}
               >
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="w-8 h-8 relative">
+                <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
+                  <div className="w-10 h-10 md:w-12 md:h-12 relative shrink-0">
                     <Image
                       src={token.icon}
                       alt={token.symbol}
-                      width={32}
-                      height={32}
+                      width={48}
+                      height={48}
                       className="rounded-full"
                     />
+                    {/* Network badge */}
+                    <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-xl border-2 border-white bg-white">
+                      <Image
+                        src={
+                          token.id.includes('_lisk')
+                            ? '/networks/lisk.png'
+                            : '/networks/op-icon.png'
+                        }
+                        alt="network"
+                        width={20}
+                        height={20}
+                        className="rounded-xl"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-semibold text-lg text-foreground">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-base md:text-lg text-gray-900 truncate">
                       {token.name}
                     </p>
                     <p
-                      className="text-sm text-muted-foreground font-mono"
+                      className="text-xs md:text-sm text-gray-500 font-mono truncate"
                       title={token.address}
                     >
                       {truncateAddress(token.address)}
@@ -93,11 +110,11 @@ export function SelectTokenModal({
                   </div>
                 </div>
 
-                <div className="text-right">
-                  <p className="font-semibold text-foreground text-lg">
+                <div className="text-right shrink-0 ml-3">
+                  <p className="font-semibold text-gray-900 text-base md:text-lg">
                     {balNum.toFixed(2)}
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs md:text-sm text-gray-500">
                     ${balNum.toFixed(2)}
                   </p>
                 </div>

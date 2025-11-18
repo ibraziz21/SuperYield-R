@@ -96,6 +96,9 @@ export function DepositWithdraw({
     useState<'lisk' | 'optimism' | 'base'>('optimism');
   const [showWithdrawMenu, setShowWithdrawMenu] = useState(false);
 
+  // Disclaimer state for deposits over $1000
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
+
   const [availableTokenBalances, setAvailableTokenBalances] = useState<{
     USDC_Op: number;
     USDT_Op: number;
@@ -123,6 +126,9 @@ export function DepositWithdraw({
   const [fee, setFee] = useState<bigint>(0n);
   const [received, setReceived] = useState<bigint>(0n);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+
+  // Route & fees expanded state
+  const [routeExpanded, setRouteExpanded] = useState(false);
 
   const vaultToken: 'USDC' | 'USDT' | 'WETH' = (snap?.token as any) ?? 'USDC';
   const tokenDecimals = vaultToken === 'WETH' ? 18 : 6;
@@ -581,7 +587,7 @@ export function DepositWithdraw({
   const currentWithdrawChoice =
     withdrawChoices.find((c) => c.id === withdrawDest) ?? withdrawChoices[0];
 
-    const sourceSymbolForModal: 'USDC' | 'USDT' | 'USDCe' | 'USDT0' =
+  const sourceSymbolForModal: 'USDC' | 'USDT' | 'USDCe' | 'USDT0' =
     selectedToken.id === 'usdce_lisk'
       ? 'USDCe'
       : selectedToken.id === 'usdt0_lisk' || selectedToken.id === 'usdt0_op'
@@ -590,22 +596,34 @@ export function DepositWithdraw({
       ? 'USDT'
       : 'USDC';
 
+  // Check if deposit requires disclaimer (over $1000)
+  const requiresDisclaimer = activeTab === 'deposit' && amountNum >= 1000;
+  const canProceedWithDeposit = !requiresDisclaimer || disclaimerAccepted;
 
   const confirmDisabled =
     !(amountNum > 0) ||
     Boolean(quoteError) ||
     !snap ||
     (selectedToken.id === 'usdce_lisk' && destTokenLabel !== 'USDCe') ||
-    (selectedToken.id === 'usdt0_lisk' && destTokenLabel !== 'USDT0');
+    (selectedToken.id === 'usdt0_lisk' && destTokenLabel !== 'USDT0') ||
+    (activeTab === 'deposit' && !canProceedWithDeposit);
 
   const onDepositClick = () => {
     if (confirmDisabled || activeTab !== 'deposit') return;
     setShowReview(true);
   };
+  
   const onWithdrawClick = () => {
     if (!(amountNum > 0) || !snap) return;
     setShowWithdrawReview(true);
   };
+
+  // Reset disclaimer when amount changes
+  useEffect(() => {
+    if (amountNum < 1000) {
+      setDisclaimerAccepted(false);
+    }
+  }, [amountNum]);
 
   if (!snap) {
     return (
@@ -621,11 +639,12 @@ export function DepositWithdraw({
 
   return (
     <>
-      <Card className="w-full max-w-2xl mx-auto p-6 shadow-none">
-        <div className="flex items-center gap-8 mb-8 border-b">
+      <Card className="w-full max-w-2xl mx-auto p-6 shadow-none border-0">
+        {/* Tabs */}
+        <div className="flex items-center gap-8 mb-6 border-b">
           <button
             onClick={() => setActiveTab('deposit')}
-            className={`pb-3 font-semibold transition-colors relative ${
+            className={`pb-3 text-xl font-semibold transition-colors relative ${
               activeTab === 'deposit'
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -633,12 +652,12 @@ export function DepositWithdraw({
           >
             Deposit
             {activeTab === 'deposit' && (
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-t" />
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-foreground rounded-t" />
             )}
           </button>
           <button
             onClick={() => setActiveTab('withdraw')}
-            className={`pb-3 font-semibold transition-colors relative ${
+            className={`pb-3 text-xl font-semibold transition-colors relative ${
               activeTab === 'withdraw'
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -646,26 +665,25 @@ export function DepositWithdraw({
           >
             Withdraw
             {activeTab === 'withdraw' && (
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-t" />
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-foreground rounded-t" />
             )}
           </button>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
+          {/* Label and Balance */}
           <div className="flex items-center justify-between">
-            <label className="text-muted-foreground">
+            <label className="text-base text-muted-foreground">
               {activeTab === 'deposit' ? 'Deposit' : 'Withdraw'}{' '}
               {activeTab === 'deposit'
                 ? selectedToken.symbol
                 : destTokenLabel}
             </label>
             <div className="flex items-center gap-2">
-              <span className="text-muted-foreground text-sm">
+              <span className="text-sm text-muted-foreground">
                 {activeTab === 'withdraw'
                   ? `${withdrawBalanceHuman} ${destTokenLabel}`
-                  : `${depositWalletBalance.toFixed(
-                      2,
-                    )} ${selectedToken.symbol}`}
+                  : `${depositWalletBalance.toFixed(2)} ${selectedToken.symbol}`}
               </span>
               <button
                 onClick={() => {
@@ -690,14 +708,15 @@ export function DepositWithdraw({
                     setAmount(floored.toString());
                   }
                 }}
-                className="text-primary text-sm font-semibold hover:underline"
+                className="text-sm font-semibold text-foreground hover:underline"
               >
                 MAX
               </button>
             </div>
           </div>
 
-          <div className="bg-muted rounded-lg p-4">
+          {/* Amount Input */}
+          <div className="bg-muted rounded-xl p-5">
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1">
                 <input
@@ -705,9 +724,9 @@ export function DepositWithdraw({
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
-                  className="text-3xl font-semibold bg-transparent outline-none w-full placeholder:text-muted-foreground"
+                  className="text-4xl font-semibold bg-transparent outline-none w-full placeholder:text-muted-foreground"
                 />
-                <div className="text-muted-foreground mt-2">
+                <div className="text-muted-foreground text-base mt-2">
                   ${(Number.parseFloat(amount || '0') * 1).toFixed(2)}
                 </div>
               </div>
@@ -715,7 +734,7 @@ export function DepositWithdraw({
               {activeTab === 'deposit' ? (
                 <button
                   onClick={() => setShowTokenModal(true)}
-                  className="flex items-center gap-2 bg-background px-4 py-2 rounded-lg hover:bg-muted transition-colors border border-border"
+                  className="flex items-center gap-2.5 bg-background px-4 py-3 rounded-xl hover:bg-muted/50 transition-colors border border-border"
                 >
                   <div className="w-6 h-6 relative">
                     <Image
@@ -725,19 +744,30 @@ export function DepositWithdraw({
                       height={24}
                       className="rounded-full"
                     />
+                    {/* Network badge */}
+                    <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-background">
+                      <Image
+                        src={
+                          selectedToken.id === 'usdce_lisk' || selectedToken.id === 'usdt0_lisk'
+                            ? '/networks/lisk.png'
+                            : '/networks/op-icon.png'
+                        }
+                        alt="network"
+                        width={12}
+                        height={12}
+                        className="rounded-full"
+                      />
+                    </div>
                   </div>
-                  <span className="font-semibold">{selectedToken.symbol}</span>
-                  <ChevronDown
-                    size={20}
-                    className="text-muted-foreground"
-                  />
+                  <span className="font-semibold text-base">{selectedToken.symbol}</span>
+                  <ChevronDown size={18} className="text-muted-foreground" />
                 </button>
               ) : (
                 <div className="relative">
                   <button
                     type="button"
                     onClick={() => setShowWithdrawMenu((v) => !v)}
-                    className="flex items-center gap-2 bg-background px-4 py-2 rounded-lg hover:bg-muted transition-colors border border-border"
+                    className="flex items-center gap-2.5 bg-background px-4 py-3 rounded-xl hover:bg-muted/50 transition-colors border border-border"
                   >
                     <div className="w-6 h-6 relative">
                       <Image
@@ -749,21 +779,18 @@ export function DepositWithdraw({
                       />
                     </div>
                     <div className="flex flex-col items-start">
-                      <span className="font-semibold">
+                      <span className="font-semibold text-base leading-tight">
                         {currentWithdrawChoice.symbol}
                       </span>
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground leading-tight">
                         {currentWithdrawChoice.chainLabel}
                       </span>
                     </div>
-                    <ChevronDown
-                      size={20}
-                      className="text-muted-foreground ml-1"
-                    />
+                    <ChevronDown size={18} className="text-muted-foreground ml-1" />
                   </button>
 
                   {showWithdrawMenu && (
-                    <div className="absolute right-0 mt-2 w-56 rounded-lg border bg-popover shadow-lg z-20">
+                    <div className="absolute right-0 mt-2 w-64 rounded-xl border bg-popover shadow-lg z-20 overflow-hidden">
                       {withdrawChoices.map((choice) => (
                         <button
                           key={choice.id}
@@ -772,26 +799,24 @@ export function DepositWithdraw({
                             setWithdrawDest(choice.id);
                             setShowWithdrawMenu(false);
                           }}
-                          className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted ${
-                            choice.id === withdrawDest
-                              ? 'bg-muted'
-                              : 'bg-popover'
+                          className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted transition-colors ${
+                            choice.id === withdrawDest ? 'bg-muted' : 'bg-popover'
                           }`}
                         >
-                          <div className="w-5 h-5 relative">
+                          <div className="w-6 h-6 relative">
                             <Image
                               src={choice.icon}
                               alt={choice.chainLabel}
-                              width={20}
-                              height={20}
+                              width={24}
+                              height={24}
                               className="rounded-full"
                             />
                           </div>
                           <div className="flex flex-col">
-                            <span className="font-semibold">
+                            <span className="font-semibold text-sm">
                               {choice.symbol} • {choice.chainLabel}
                             </span>
-                            <span className="text-[11px] text-muted-foreground">
+                            <span className="text-xs text-muted-foreground">
                               {choice.description}
                             </span>
                           </div>
@@ -804,19 +829,73 @@ export function DepositWithdraw({
             </div>
           </div>
 
+          {/* Empty State */}
           {!amount && (
-            <div className="text-center py-8 text-muted-foreground rounded-lg bg-muted">
+            <div className="text-center py-12 text-muted-foreground text-base rounded-xl bg-muted/50">
               Enter an amount
             </div>
           )}
 
+          {/* Disclaimer for deposits over $1000 */}
+          {amount && requiresDisclaimer && (
+            <div className="border-2 border-orange-200 dark:border-orange-900/50 bg-orange-50 dark:bg-orange-950/20 rounded-xl p-4">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-5 h-5 rounded-full bg-orange-200 dark:bg-orange-900/50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    className="text-orange-600 dark:text-orange-400"
+                  >
+                    <path
+                      d="M6 1L1 11H11L6 1Z"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M6 5V7"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                    <circle cx="6" cy="9" r="0.5" fill="currentColor" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-orange-900 dark:text-orange-200 mb-1">
+                    Disclaimer
+                  </h3>
+                  <p className="text-sm text-orange-800 dark:text-orange-300">
+                    EcoVaults is in beta. For safety, we recommend keeping deposits under $1,000.
+                  </p>
+                </div>
+              </div>
+              <div className="border-t border-orange-200 dark:border-orange-900/50 pt-3 mt-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={disclaimerAccepted}
+                    onChange={(e) => setDisclaimerAccepted(e.target.checked)}
+                    className="w-5 h-5 rounded border-orange-300 dark:border-orange-800 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                  />
+                  <span className="text-sm font-medium text-orange-900 dark:text-orange-200">
+                    I understand and want to continue.
+                  </span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* Action Button */}
           {amount && (
             <>
               <Button
                 onClick={activeTab === 'deposit' ? onDepositClick : onWithdrawClick}
                 size="lg"
                 disabled={confirmDisabled}
-                className="w-full text-white bg-blue-600 hover:bg-blue-700 text-lg font-semibold py-6 disabled:opacity-60"
+                className="w-full text-white bg-blue-600 hover:bg-blue-700 text-base font-semibold h-14 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl"
                 title={
                   quoteError ??
                   (activeTab === 'deposit' ? 'Deposit' : 'Withdraw')
@@ -825,12 +904,22 @@ export function DepositWithdraw({
                 {activeTab === 'deposit' ? 'Deposit' : 'Withdraw'}
               </Button>
 
-              <div className="border border-border rounded-lg">
-                <button className="w-full px-4 py-4 flex items-center justify-between">
-                  <span className="font-semibold text-foreground">Route & fees</span>
+              {/* Route & Fees Section */}
+              <div className="border border-border rounded-xl overflow-hidden">
+                <button
+                  onClick={() => setRouteExpanded(!routeExpanded)}
+                  className="w-full px-5 py-4 flex items-center justify-center hover:bg-muted/30 transition-colors"
+                >
+                  <span className="font-semibold text-foreground text-base text-center">Route & fees</span>
+                  <ChevronDown
+                    size={20}
+                    className={`text-muted-foreground transition-transform ${
+                      routeExpanded ? 'rotate-180' : ''
+                    }`}
+                  />
                 </button>
 
-                {(() => {
+                {routeExpanded && (() => {
                   const isDeposit = activeTab === 'deposit';
 
                   const depSrcChainName =
@@ -904,113 +993,153 @@ export function DepositWithdraw({
                     if (isDeposit) {
                       if (route && route !== 'On-chain') return route;
                       if (bridgingOnDeposit) {
-                        return `${depSrcChainName.toUpperCase()} → ${depDstChainName.toUpperCase()}`;
+                        return 'Routing via LI.FI bridge';
                       }
                       return 'On-chain';
                     }
                     if (!bridgingOnWithdraw) return 'On-chain';
-                    return `${wSrcChainName.toUpperCase()} → ${wDstChainName.toUpperCase()}`;
+                    return 'Routing via LI.FI bridge';
                   })();
 
                   return (
-                    <div className="border-t border-border px-4 py-4 space-y-4 bg-muted">
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="bg-background rounded-lg p-3 flex items-center gap-2 justify-center">
-                            <div className="w-4 h-4 relative">
+                    <div className="border-t border-border px-5 py-5 bg-muted/30">
+                      {/* Chain Route Visualization */}
+                      <div className="flex items-center justify-between gap-3 mb-5">
+                        <div className="flex-1 bg-muted rounded-xl px-4 py-3.5">
+                          <div className="flex items-center gap-2.5 bg-white p-2 rounded-full">
+                            <div className="w-6 h-6 relative">
                               <Image
                                 src={isDeposit ? depSrcIcon : wSrcIcon}
                                 alt={isDeposit ? depSrcChainName : wSrcChainName}
-                                width={16}
-                                height={16}
+                                width={24}
+                                height={24}
                                 className="rounded-full"
                               />
                             </div>
-                            <span className="text-sm">
+                            <span className="font-semibold text-foreground">
                               {isDeposit ? depSrcChainName : wSrcChainName}
                             </span>
-                            <span className="text-sm font-semibold">
+                          </div>
+                          <div className="flex items-center gap-2.5 mt-1.5 bg-white p-2 rounded-full">
+                            <div className="w-6 h-6 relative">
+                              <Image
+                                src={isDeposit ? selectedToken.icon : (destTokenLabel === 'USDCe' ? '/tokens/usdc-icon.png' : '/tokens/usdt0-icon.png')}
+                                alt={isDeposit ? depSrcToken : wSrcToken}
+                                width={24}
+                                height={24}
+                                className="rounded-full"
+                              />
+                            </div>
+                            <span className="font-semibold text-foreground">
                               {isDeposit ? depSrcToken : wSrcToken}
                             </span>
                           </div>
                         </div>
 
-                        <span className="text-xl text-muted-foreground">→</span>
+                        <div className="w-12 h-12 rounded-xl border border-border bg-background flex items-center justify-center flex-shrink-0">
+                          <svg
+                            width="20"
+                            height="20"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                            className="text-muted-foreground"
+                          >
+                            <path
+                              d="M4 10H16M16 10L10 4M16 10L10 16"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </div>
 
-                        <div className="flex-1">
-                          <div className="bg-background rounded-lg p-3 flex items-center gap-2 justify-center">
-                            <div className="w-4 h-4 relative">
+                        <div className="flex-1 bg-muted rounded-xl px-4 py-3.5">
+                          <div className="flex items-center gap-2.5 bg-white p-2 rounded-full">
+                            <div className="w-6 h-6 relative">
                               <Image
                                 src={isDeposit ? depDstIcon : wDstIcon}
                                 alt={isDeposit ? depDstChainName : wDstChainName}
-                                width={16}
-                                height={16}
+                                width={24}
+                                height={24}
                                 className="rounded-full"
                               />
                             </div>
-                            <span className="text-sm">
+                            <span className="font-semibold text-foreground">
                               {isDeposit ? depDstChainName : wDstChainName}
                             </span>
-                            <span className="text-sm font-semibold">
+                          </div>
+                          <div className="flex items-center gap-2.5 mt-1.5 bg-white p-2 rounded-full">
+                            <div className="w-6 h-6 relative">
+                              <Image
+                                src={destTokenLabel === 'USDCe' ? '/tokens/usdc-icon.png' : '/tokens/usdt0-icon.png'}
+                                alt={isDeposit ? depDstToken : wDstToken}
+                                width={24}
+                                height={24}
+                                className="rounded-full"
+                              />
+                            </div>
+                            <span className="font-semibold text-foreground">
                               {isDeposit ? depDstToken : wDstToken}
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      <div className="bg-background rounded-lg p-4 space-y-3">
-                        <div className="flex items-start gap-2">
-                          <div className="w-6 h-6 relative flex-shrink-0">
-                            <Image
-                              src={logolifi}
-                              alt="Bridge"
-                              width={24}
-                              height={24}
-                              className="rounded-full"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = '/protocols/morpho-icon.png';
-                              }}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-muted-foreground text-sm">
-                              {routeLabel}
-                            </p>
-
-                            <div className="flex items-center justify-between mt-2">
-                              <span className="text-muted-foreground text-sm">
-                                Total fee (estimated):
-                              </span>
-                              <span className="font-semibold text-foreground">
-                                {totalFee.toFixed(6)} {feeToken}
-                              </span>
+                      {/* Fee Details */}
+                      <div className="bg-background rounded-xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-base text-muted-foreground">
+                            {routeLabel}
+                          </span>
+                          {bridgingOnDeposit && (
+                            <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                              <Image
+                                src={logolifi}
+                                alt="Bridge"
+                                width={18}
+                                height={18}
+                                className="object-contain"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = '/protocols/morpho-icon.png';
+                                }}
+                              />
                             </div>
-
-                            {!isDeposit && amountNum > 0 && (
-                              <div className="mt-1 text-[11px] text-muted-foreground space-y-0.5">
-                                <div>• 0.5% vault withdraw fee</div>
-                                {bridgingOnWithdraw && (
-                                  <div>• Bridge fee via LI.FI (est.)</div>
-                                )}
-                              </div>
-                            )}
-
-                            <div className="flex items-center justify-between mt-2">
-                              <span className="text-muted-foreground text-sm">
-                                You&apos;ll {isDeposit ? 'deposit' : 'receive'}:
-                              </span>
-                              <span className="font-semibold text-foreground">
-                                {receiveDisplay.toFixed(6)} {receiveToken}
-                              </span>
-                            </div>
-
-                            {quoteError && isDeposit && (
-                              <div className="mt-2 text-xs text-red-600">
-                                Quote error: {quoteError}
-                              </div>
-                            )}
-                          </div>
+                          )}
                         </div>
+
+                        <div className="flex items-center justify-between">
+                          <span className="text-base text-muted-foreground">
+                            Bridge fee (estimated):
+                          </span>
+                          <span className="font-medium text-foreground text-base">
+                            {totalFee.toFixed(4)} {feeToken}
+                          </span>
+                        </div>
+
+                        {!isDeposit && amountNum > 0 && (
+                          <div className="text-xs text-muted-foreground space-y-0.5 pl-2 border-l-2 border-muted">
+                            <div>• 0.5% vault withdraw fee</div>
+                            {bridgingOnWithdraw && (
+                              <div>• Bridge fee via LI.FI (est.)</div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between">
+                          <span className="text-base text-muted-foreground">
+                            You&apos;ll {isDeposit ? 'deposit' : 'receive'}:
+                          </span>
+                          <span className="font-medium text-foreground text-base">
+                            {receiveDisplay.toFixed(6)} {receiveToken}
+                          </span>
+                        </div>
+
+                        {quoteError && isDeposit && (
+                          <div className="mt-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2 py-1.5 rounded">
+                            Quote error: {quoteError}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1034,32 +1163,32 @@ export function DepositWithdraw({
       )}
 
       {showReview && activeTab === 'deposit' && snap && (
-       <DepositModal
-       open={showReview}
-       onClose={() => setShowReview(false)}
-       snap={snap}
-       amount={amount}
-       sourceSymbol={sourceSymbolForModal}
-       destTokenLabel={destTokenLabel}
-       routeLabel={
-         route ??
-         (selectedToken.id.includes('_lisk')
-           ? 'On-chain'
-           : 'Routing via LI.FI')
-       }
-       bridgeFeeDisplay={
-         selectedToken.id.includes('_lisk') ? 0 : bridgeFeeDisplay
-       }
-       receiveAmountDisplay={receiveAmountDisplay}
-       opBal={opBal}
-       baBal={baBal}
-       liBal={liBal}
-       liBalUSDT0={liBalUSDT0}
-       opUsdcBal={opUsdcBal}
-       baUsdcBal={baUsdcBal}
-       opUsdtBal={opUsdtBal}
-       baUsdtBal={baUsdtBal}
-     />     
+        <DepositModal
+          open={showReview}
+          onClose={() => setShowReview(false)}
+          snap={snap}
+          amount={amount}
+          sourceSymbol={sourceSymbolForModal}
+          destTokenLabel={destTokenLabel}
+          routeLabel={
+            route ??
+            (selectedToken.id.includes('_lisk')
+              ? 'On-chain'
+              : 'Routing via LI.FI')
+          }
+          bridgeFeeDisplay={
+            selectedToken.id.includes('_lisk') ? 0 : bridgeFeeDisplay
+          }
+          receiveAmountDisplay={receiveAmountDisplay}
+          opBal={opBal}
+          baBal={baBal}
+          liBal={liBal}
+          liBalUSDT0={liBalUSDT0}
+          opUsdcBal={opUsdcBal}
+          baUsdcBal={baUsdcBal}
+          opUsdtBal={opUsdtBal}
+          baUsdtBal={baUsdtBal}
+        />
       )}
 
       {showWithdrawReview &&
