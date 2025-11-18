@@ -40,7 +40,6 @@ const ClaimRewards: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedReward, setSelectedReward] = useState<(ClaimableReward & { __raw?: FlatReward }) | null>(null);
 
-  // Keep a 1:1 mapping (row -> underlying Merkl item) by attaching __raw
   const tableData: (ClaimableReward & { __raw: FlatReward })[] = useMemo(() => {
     if (!rewards || rewards.length === 0) return []
   
@@ -59,7 +58,6 @@ const ClaimRewards: React.FC = () => {
     })
   }, [rewards])
   
-
   function onClaimClick(row: ClaimableReward & { __raw?: FlatReward }) {
     if (!wallet) return openConnect?.();
     setSelectedReward(row);
