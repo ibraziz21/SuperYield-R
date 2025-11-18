@@ -17,7 +17,6 @@ import base_square from '@/public/base_square_blue.svg';
 
 import type { YieldSnapshot } from '@/hooks/useYields';
 
-// parity helpers
 import { getBridgeQuote, quoteUsdceOnLisk } from '@/lib/quotes';
 import { TokenAddresses, getDualBalances } from '@/lib/constants';
 import {
@@ -32,8 +31,7 @@ type TokenId =
   | 'usdt'
   | 'usdce_lisk'
   | 'usdt0_lisk'
-  | 'usdc_base'
-  | 'usdt_base';
+  | 'usdt0_op';
 
 interface Token {
   id: TokenId;
@@ -46,11 +44,9 @@ interface Token {
 
 interface DepositWithdrawProps {
   initialTab?: 'deposit' | 'withdraw';
-  /** Morpho Lisk snapshot (USDC/USDT). */
   snap?: YieldSnapshot;
 }
 
-// minimal humanizer
 function formatAmountBigint(n: bigint, decimals: number): string {
   const neg = n < 0n;
   const abs = neg ? -n : n;
@@ -83,7 +79,6 @@ export function DepositWithdraw({
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>(initialTab);
   const [amount, setAmount] = useState('');
 
-  // selector – safe default first, sync once snap arrives
   const [selectedToken, setSelectedToken] = useState<Token>({
     id: 'usdc',
     name: 'USD Coin',
@@ -96,25 +91,21 @@ export function DepositWithdraw({
   const [showTokenModal, setShowTokenModal] = useState(false);
   const [showReview, setShowReview] = useState(false);
 
-  // withdraw review modal + destination
   const [showWithdrawReview, setShowWithdrawReview] = useState(false);
   const [withdrawDest, setWithdrawDest] =
     useState<'lisk' | 'optimism' | 'base'>('optimism');
   const [showWithdrawMenu, setShowWithdrawMenu] = useState(false);
 
-  // balances (for quotes and modal decisions)
   const [availableTokenBalances, setAvailableTokenBalances] = useState<{
     USDC_Op: number;
-    USDC_Base: number;
     USDT_Op: number;
-    USDT_Base: number;
+    USDT0_OP: number;
     USDCe_Lisk: number;
     USDT0_Lisk: number;
   }>({
     USDC_Op: 0,
-    USDC_Base: 0,
     USDT_Op: 0,
-    USDT_Base: 0,
+    USDT0_OP: 0,
     USDCe_Lisk: 0,
     USDT0_Lisk: 0,
   });
@@ -128,26 +119,29 @@ export function DepositWithdraw({
   const [opUsdtBal, setOpUsdtBal] = useState<bigint | null>(null);
   const [baUsdtBal, setBaUsdtBal] = useState<bigint | null>(null);
 
-  // quote state (deposit side)
   const [route, setRoute] = useState<string | null>(null);
   const [fee, setFee] = useState<bigint>(0n);
   const [received, setReceived] = useState<bigint>(0n);
   const [quoteError, setQuoteError] = useState<string | null>(null);
 
-  // derive
   const vaultToken: 'USDC' | 'USDT' | 'WETH' = (snap?.token as any) ?? 'USDC';
   const tokenDecimals = vaultToken === 'WETH' ? 18 : 6;
   const destTokenLabel = toLiskDestLabel(vaultToken);
   const isUsdtFamily = vaultToken === 'USDT' || destTokenLabel === 'USDT0';
 
-  // positions for withdraw tab balance (Lisk USDCe/USDT0/WETH)
   const { data: positionsRaw } = usePositions();
-  const positions = (positionsRaw ?? []) as Array<{
-    protocol: string;
-    chain: 'lisk' | string;
-    token: 'USDCe' | 'USDT0' | 'WETH' | string;
-    amount: bigint;
-  }>;
+
+  const positions = useMemo(
+    () =>
+      (positionsRaw ?? []) as Array<{
+        protocol: string;
+        chain: 'lisk' | string;
+        token: 'USDCe' | 'USDT0' | 'WETH' | string;
+        amount: bigint;
+      }>,
+    [positionsRaw],
+  );
+  
 
   const morphoTokenOnLisk: 'USDCe' | 'USDT0' | 'WETH' = destTokenLabel;
   const withdrawPosition = useMemo(
@@ -161,13 +155,11 @@ export function DepositWithdraw({
     [positions, morphoTokenOnLisk],
   );
 
-  // Morpho shares are 18 decimals in our app
   const withdrawBalanceHuman = useMemo(
     () => formatAmountBigint(BigInt(withdrawPosition?.amount ?? 0n), 18),
     [withdrawPosition],
   );
 
-  // deposit-available wallet balance (pick the richer source chain) or Lisk direct
   const depositWalletBalance = useMemo(() => {
     const toNum6 = (x: bigint | null | undefined) => Number(x ?? 0n) / 1e6;
 
@@ -176,10 +168,8 @@ export function DepositWithdraw({
         return availableTokenBalances.USDCe_Lisk;
       case 'usdt0_lisk':
         return availableTokenBalances.USDT0_Lisk;
-      case 'usdc_base':
-        return availableTokenBalances.USDC_Base;
-      case 'usdt_base':
-        return availableTokenBalances.USDT_Base;
+      case 'usdt0_op':
+        return availableTokenBalances.USDT0_OP;
       case 'usdc': {
         const op = toNum6(opUsdcBal);
         const ba = toNum6(baUsdcBal);
@@ -202,14 +192,12 @@ export function DepositWithdraw({
     baUsdtBal,
   ]);
 
-  /* -------- Aggregate balances (OP/Base & Lisk USDCe/USDT0) for token picker -------- */
   useEffect(() => {
     if (!walletClient) {
       setAvailableTokenBalances({
         USDC_Op: 0,
-        USDC_Base: 0,
         USDT_Op: 0,
-        USDT_Base: 0,
+        USDT0_OP: 0,
         USDCe_Lisk: 0,
         USDT0_Lisk: 0,
       });
@@ -239,35 +227,33 @@ export function DepositWithdraw({
           ),
         ]);
 
-        // Lisk balances for USDCe / USDT0
         const usdceAddr = TokenAddresses.USDCe.lisk as `0x${string}`;
         const usdt0Addr = TokenAddresses.USDT0.lisk as `0x${string}`;
-        const [usdceLi, usdt0Li] = await Promise.all([
+        const usdt0OpAddr = TokenAddresses.USDT0.optimism as `0x${string}`;
+        const [usdceLi, usdt0Li, usdt0Op] = await Promise.all([
           readWalletBalance('lisk', usdceAddr, user).catch(() => 0n),
           readWalletBalance('lisk', usdt0Addr, user).catch(() => 0n),
+          readWalletBalance('optimism', usdt0OpAddr, user).catch(() => 0n),
         ]);
 
         const toNum6 = (x: bigint) => Number(x) / 1e6;
 
         const usdcOpNum = toNum6(usdcOp);
-        const usdcBaNum = toNum6(usdcBa);
         const usdtOpNum = toNum6(usdtOp);
-        const usdtBaNum = toNum6(usdtBa);
+        const usdt0NumOp = toNum6(usdt0Op);
 
         setAvailableTokenBalances({
           USDC_Op: usdcOpNum,
-          USDC_Base: usdcBaNum,
           USDT_Op: usdtOpNum,
-          USDT_Base: usdtBaNum,
+          USDT0_OP: usdt0NumOp,
           USDCe_Lisk: toNum6(usdceLi),
           USDT0_Lisk: toNum6(usdt0Li),
         });
       } catch {
         setAvailableTokenBalances({
           USDC_Op: 0,
-          USDC_Base: 0,
           USDT_Op: 0,
-          USDT_Base: 0,
+          USDT0_OP: 0,
           USDCe_Lisk: 0,
           USDT0_Lisk: 0,
         });
@@ -275,7 +261,6 @@ export function DepositWithdraw({
     })();
   }, [walletClient]);
 
-  // sync the selector with the vault once we have the snapshot
   useEffect(() => {
     if (!snap) return;
     const isUSDT = snap.token === 'USDT';
@@ -288,7 +273,6 @@ export function DepositWithdraw({
     }));
   }, [snap]);
 
-  /* -------- Wallet balances (OP/Base/Lisk) for review modal internals -------- */
   useEffect(() => {
     if (!walletClient || !snap) return;
     const user = walletClient.account?.address as `0x${string}`;
@@ -325,7 +309,6 @@ export function DepositWithdraw({
       reads.push(Promise.resolve(null));
     }
 
-    // extra OP/Base USDC+USDT for choosing a source chain
     const opUsdc = addrOrNull('USDC', 'optimism');
     const baUsdc = addrOrNull('USDC', 'base');
     const opUsdt = addrOrNull('USDT', 'optimism');
@@ -364,7 +347,6 @@ export function DepositWithdraw({
     });
   }, [walletClient, snap, isUsdtFamily]);
 
-  /* -------- Quote (Deposit) -------- */
   useEffect(() => {
     if (!walletClient || !amount || !snap) {
       setRoute(null);
@@ -383,23 +365,17 @@ export function DepositWithdraw({
 
     const amt = parseUnits(amount, tokenDecimals);
 
-    const forcedSrc: 'optimism' | 'base' | null =
-      selectedToken.id === 'usdc_base' || selectedToken.id === 'usdt_base'
-        ? 'base'
-        : null;
+    const forcedSrc: 'optimism' | 'base' | null = null;
 
     const pickSrcBy = (
       o?: bigint | null,
       b?: bigint | null,
-    ): 'optimism' | 'base' => {
+    ): 'optimism' => {
       const op = o ?? 0n;
-      const ba = b ?? 0n;
       if (op >= amt) return 'optimism';
-      if (ba >= amt) return 'base';
-      return op >= ba ? 'optimism' : 'base';
+      return 'optimism';
     };
 
-    // If user chose a Lisk-native token in the picker, enforce family match & bypass bridge.
     if (selectedToken.id === 'usdce_lisk' || selectedToken.id === 'usdt0_lisk') {
       if (selectedToken.id === 'usdce_lisk' && destTokenLabel !== 'USDCe') {
         setRoute(null);
@@ -415,7 +391,6 @@ export function DepositWithdraw({
         setQuoteError('Select USDCe (Lisk) for this vault.');
         return;
       }
-      // On-chain direct deposit (no bridge)
       setRoute('On-chain');
       setFee(0n);
       setReceived(amt);
@@ -423,7 +398,6 @@ export function DepositWithdraw({
       return;
     }
 
-    // Bridged deposit flows
     if (destTokenLabel === 'USDT0') {
       const src =
         forcedSrc ??
@@ -495,7 +469,6 @@ export function DepositWithdraw({
       return;
     }
 
-    // WETH (if used later)
     setRoute('On-chain');
     setFee(0n);
     setReceived(amt);
@@ -518,11 +491,11 @@ export function DepositWithdraw({
     baUsdtBal,
   ]);
 
-  // display numbers
   const amountNum = Number.parseFloat(amount) || 0;
+
   const bridgeFeeDisplay = useMemo(() => {
     if (!amount || Number(amount) <= 0) return 0;
-    if (fee === 0n) return 0.0025; // fallback if quote missing
+    if (fee === 0n) return 0.0025;
     return Number(fee) / 10 ** tokenDecimals;
   }, [amount, fee, tokenDecimals]);
 
@@ -532,7 +505,6 @@ export function DepositWithdraw({
     return Number(received) / 10 ** tokenDecimals;
   }, [amount, amountNum, received, tokenDecimals]);
 
-  // Withdraw visuals (we already support USDCe/USDT0 since vaults are those tokens)
   const withdrawBridgeFeeDisplay = 0.0025;
   const withdrawReceiveDisplay = Math.max(
     amountNum - withdrawBridgeFeeDisplay,
@@ -546,47 +518,31 @@ export function DepositWithdraw({
     }
   }, [amount]);
 
-  // Token picker: OP/Base + Lisk (USDCe/USDT0) to bypass bridge when possible
   const availableTokens: Token[] = [
     {
       id: 'usdc',
       name: 'USD Coin (OP Mainnet)',
       symbol: 'USDC',
       icon: '/tokens/usdc-icon.png',
-      balance: Math.max(
-        availableTokenBalances.USDC_Op,
-        availableTokenBalances.USDC_Base,
-      ),
-      address: TokenAddresses.USDC.optimism as `0x${string}`, // generic OP route
-    },
-    {
-      id: 'usdc_base',
-      name: 'USD Coin (Base)',
-      symbol: 'USDC',
-      icon: '/tokens/usdc-icon.png',
-      balance: availableTokenBalances.USDC_Base,
-      address: TokenAddresses.USDC.base as `0x${string}`,
+      balance: availableTokenBalances.USDC_Op,
+      address: TokenAddresses.USDC.optimism as `0x${string}`,
     },
     {
       id: 'usdt',
       name: 'Tether USD (OP Mainnet)',
       symbol: 'USDT',
       icon: '/tokens/usdt-icon.png',
-      balance: Math.max(
-        availableTokenBalances.USDT_Op,
-        availableTokenBalances.USDT_Base,
-      ),
+      balance: availableTokenBalances.USDT_Op,
       address: TokenAddresses.USDT.optimism as `0x${string}`,
     },
     {
-      id: 'usdt_base',
-      name: 'Tether USD (Base)',
-      symbol: 'USDT',
-      icon: '/tokens/usdt-icon.png',
-      balance: availableTokenBalances.USDT_Base,
-      address: TokenAddresses.USDT.base as `0x${string}`,
+      id: 'usdt0_op',
+      name: 'USDT0 (OP Mainnet)',
+      symbol: 'USDT0',
+      icon: '/tokens/usdt0-icon.png',
+      balance: availableTokenBalances.USDT0_OP,
+      address: TokenAddresses.USDT0.optimism as `0x${string}`,
     },
-    // Lisk native sources to bypass bridge
     {
       id: 'usdce_lisk',
       name: 'USDC.e (Lisk)',
@@ -605,32 +561,17 @@ export function DepositWithdraw({
     },
   ];
 
-  // Withdraw options for the dropdown (inside input area)
   const withdrawChoices = useMemo(
     () => {
       const isUSDT = destTokenLabel === 'USDT0';
       const stableSymbol = isUSDT ? 'USDT' : 'USDC';
       return [
         {
-          id: 'lisk' as const,
-          chainLabel: 'Lisk',
-          symbol: destTokenLabel, // USDCe / USDT0
-          icon: '/networks/lisk.png',
-          description: 'Keep on Lisk',
-        },
-        {
           id: 'optimism' as const,
           chainLabel: 'OP Mainnet',
           symbol: stableSymbol,
           icon: '/networks/op-icon.png',
           description: `Bridge to OP ${stableSymbol}`,
-        },
-        {
-          id: 'base' as const,
-          chainLabel: 'Base',
-          symbol: stableSymbol,
-          icon: base_square.src,
-          description: `Bridge to Base ${stableSymbol}`,
         },
       ];
     },
@@ -640,23 +581,23 @@ export function DepositWithdraw({
   const currentWithdrawChoice =
     withdrawChoices.find((c) => c.id === withdrawDest) ?? withdrawChoices[0];
 
-  // Source symbol communicated to the review modal (what user bridges FROM when needed)
-  const sourceSymbolForModal: 'USDC' | 'USDT' =
-    selectedToken.id === 'usdt' ||
-      selectedToken.id === 'usdt_base' ||
-      selectedToken.id === 'usdt0_lisk'
+    const sourceSymbolForModal: 'USDC' | 'USDT' | 'USDCe' | 'USDT0' =
+    selectedToken.id === 'usdce_lisk'
+      ? 'USDCe'
+      : selectedToken.id === 'usdt0_lisk' || selectedToken.id === 'usdt0_op'
+      ? 'USDT0'
+      : selectedToken.id === 'usdt'
       ? 'USDT'
       : 'USDC';
+
 
   const confirmDisabled =
     !(amountNum > 0) ||
     Boolean(quoteError) ||
     !snap ||
-    // prevent impossible cross-family Lisk deposit selections
     (selectedToken.id === 'usdce_lisk' && destTokenLabel !== 'USDCe') ||
     (selectedToken.id === 'usdt0_lisk' && destTokenLabel !== 'USDT0');
 
-  // open review modals instead of executing here
   const onDepositClick = () => {
     if (confirmDisabled || activeTab !== 'deposit') return;
     setShowReview(true);
@@ -681,14 +622,14 @@ export function DepositWithdraw({
   return (
     <>
       <Card className="w-full max-w-2xl mx-auto p-6">
-        {/* Tabs */}
         <div className="flex items-center gap-8 mb-8 border-b">
           <button
             onClick={() => setActiveTab('deposit')}
-            className={`pb-3 font-semibold transition-colors relative ${activeTab === 'deposit'
+            className={`pb-3 font-semibold transition-colors relative ${
+              activeTab === 'deposit'
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
-              }`}
+            }`}
           >
             Deposit
             {activeTab === 'deposit' && (
@@ -697,10 +638,11 @@ export function DepositWithdraw({
           </button>
           <button
             onClick={() => setActiveTab('withdraw')}
-            className={`pb-3 font-semibold transition-colors relative ${activeTab === 'withdraw'
+            className={`pb-3 font-semibold transition-colors relative ${
+              activeTab === 'withdraw'
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
-              }`}
+            }`}
           >
             Withdraw
             {activeTab === 'withdraw' && (
@@ -709,9 +651,7 @@ export function DepositWithdraw({
           </button>
         </div>
 
-        {/* Content */}
         <div className="space-y-6">
-          {/* Label and Balance */}
           <div className="flex items-center justify-between">
             <label className="text-muted-foreground">
               {activeTab === 'deposit' ? 'Deposit' : 'Withdraw'}{' '}
@@ -723,32 +663,28 @@ export function DepositWithdraw({
               <span className="text-muted-foreground text-sm">
                 {activeTab === 'withdraw'
                   ? `${withdrawBalanceHuman} ${destTokenLabel}`
-                  : `${depositWalletBalance.toFixed(2)} ${selectedToken.symbol}`}
+                  : `${depositWalletBalance.toFixed(
+                      2,
+                    )} ${selectedToken.symbol}`}
               </span>
               <button
                 onClick={() => {
                   if (activeTab === 'withdraw') {
-                    // withdrawBalanceHuman is a formatted string (up to 6dp)
                     const raw =
                       Number(withdrawBalanceHuman.replace(/,/g, '')) || 0;
                     if (raw <= 0) {
                       setAmount('');
                       return;
                     }
-
-                    // floor to 6 decimals (same precision as formatAmountBigint)
                     const factor = 1e6;
                     const floored = Math.floor(raw * factor) / factor;
                     setAmount(floored.toString());
                   } else {
-                    // deposit side: use the computed numeric balance but NEVER round up
                     const raw = depositWalletBalance;
                     if (!Number.isFinite(raw) || raw <= 0) {
                       setAmount('');
                       return;
                     }
-
-                    // tokens here are 6-dec stables; keep 6dp but always floor
                     const factor = 1e6;
                     const floored = Math.floor(raw * factor) / factor;
                     setAmount(floored.toString());
@@ -761,7 +697,6 @@ export function DepositWithdraw({
             </div>
           </div>
 
-          {/* Amount Input */}
           <div className="bg-muted rounded-lg p-4">
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1">
@@ -777,7 +712,6 @@ export function DepositWithdraw({
                 </div>
               </div>
 
-              {/* Token / Destination Selector inside the same input area */}
               {activeTab === 'deposit' ? (
                 <button
                   onClick={() => setShowTokenModal(true)}
@@ -838,10 +772,11 @@ export function DepositWithdraw({
                             setWithdrawDest(choice.id);
                             setShowWithdrawMenu(false);
                           }}
-                          className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted ${choice.id === withdrawDest
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted ${
+                            choice.id === withdrawDest
                               ? 'bg-muted'
                               : 'bg-popover'
-                            }`}
+                          }`}
                         >
                           <div className="w-5 h-5 relative">
                             <Image
@@ -869,14 +804,12 @@ export function DepositWithdraw({
             </div>
           </div>
 
-          {/* Placeholder */}
           {!amount && (
             <div className="text-center py-8 text-muted-foreground rounded-lg bg-muted">
               Enter an amount
             </div>
           )}
 
-          {/* CTA */}
           {amount && (
             <>
               <Button
@@ -892,7 +825,6 @@ export function DepositWithdraw({
                 {activeTab === 'deposit' ? 'Deposit' : 'Withdraw'}
               </Button>
 
-              {/* Route & Fees (under BOTH tabs) */}
               <div className="border border-border rounded-lg">
                 <button className="w-full px-4 py-4 flex items-center justify-between">
                   <span className="font-semibold text-foreground">Route & fees</span>
@@ -901,28 +833,22 @@ export function DepositWithdraw({
                 {(() => {
                   const isDeposit = activeTab === 'deposit';
 
-                  // Deposit route visualization
                   const depSrcChainName =
                     selectedToken.id === 'usdce_lisk' || selectedToken.id === 'usdt0_lisk'
                       ? 'Lisk'
-                      : selectedToken.id === 'usdc_base' || selectedToken.id === 'usdt_base'
-                        ? 'Base'
-                        : 'OP Mainnet';
+                      : 'OP Mainnet';
                   const depSrcIcon =
                     selectedToken.id === 'usdce_lisk' || selectedToken.id === 'usdt0_lisk'
                       ? '/networks/lisk.png'
-                      : selectedToken.id === 'usdc_base' || selectedToken.id === 'usdt_base'
-                        ? '/networks/base.png'
-                        : '/networks/op-icon.png';
+                      : '/networks/op-icon.png';
                   const depSrcToken = selectedToken.symbol;
                   const depDstChainName = 'Lisk';
                   const depDstIcon = '/networks/lisk.png';
-                  const depDstToken = destTokenLabel; // 'USDCe' | 'USDT0' | 'WETH'
+                  const depDstToken = destTokenLabel;
 
-                  // Withdraw route visualization (supports USDCe/USDT0 withdraws)
                   const wSrcChainName = 'Lisk';
                   const wSrcIcon = '/networks/lisk.png';
-                  const wSrcToken = destTokenLabel; // 'USDCe' | 'USDT0'
+                  const wSrcToken = destTokenLabel;
                   const wDstChainName =
                     withdrawDest === 'base'
                       ? 'Base'
@@ -944,11 +870,9 @@ export function DepositWithdraw({
                           ? 'USDC'
                           : 'WETH';
 
-                  // fee/receive token labels
                   const feeToken = isDeposit ? selectedToken.symbol : wDstToken;
                   const receiveToken = isDeposit ? destTokenLabel : wDstToken;
 
-                  // Bridge label only when actually bridging (deposit via OP/Base or withdraw off Lisk)
                   const bridgingOnDeposit =
                     isDeposit &&
                     !(selectedToken.id === 'usdce_lisk' || selectedToken.id === 'usdt0_lisk') &&
@@ -956,9 +880,8 @@ export function DepositWithdraw({
 
                   const bridgingOnWithdraw = !isDeposit && withdrawDest !== 'lisk';
 
-                  // --- Fee math ---
                   const protocolFee =
-                    !isDeposit && amountNum > 0 ? amountNum * 0.005 : 0; // 0.5%
+                    !isDeposit && amountNum > 0 ? amountNum * 0.005 : 0;
 
                   const bridgeFee =
                     isDeposit
@@ -977,7 +900,6 @@ export function DepositWithdraw({
                     return net;
                   })();
 
-                  // ---- Route label text (this is where we fix Lisk ↔ OP/Base) ----
                   const routeLabel = (() => {
                     if (isDeposit) {
                       if (route && route !== 'On-chain') return route;
@@ -986,14 +908,12 @@ export function DepositWithdraw({
                       }
                       return 'On-chain';
                     }
-                    // withdraw
                     if (!bridgingOnWithdraw) return 'On-chain';
                     return `${wSrcChainName.toUpperCase()} → ${wDstChainName.toUpperCase()}`;
                   })();
 
                   return (
                     <div className="border-t border-border px-4 py-4 space-y-4 bg-muted">
-                      {/* Route Display */}
                       <div className="flex items-center justify-between gap-4">
                         <div className="flex-1">
                           <div className="bg-background rounded-lg p-3 flex items-center gap-2 justify-center">
@@ -1038,7 +958,6 @@ export function DepositWithdraw({
                         </div>
                       </div>
 
-                      {/* Fee Details */}
                       <div className="bg-background rounded-lg p-4 space-y-3">
                         <div className="flex items-start gap-2">
                           <div className="w-6 h-6 relative flex-shrink-0">
@@ -1058,7 +977,6 @@ export function DepositWithdraw({
                               {routeLabel}
                             </p>
 
-                            {/* Total fee */}
                             <div className="flex items-center justify-between mt-2">
                               <span className="text-muted-foreground text-sm">
                                 Total fee (estimated):
@@ -1068,7 +986,6 @@ export function DepositWithdraw({
                               </span>
                             </div>
 
-                            {/* Breakdown on withdraw */}
                             {!isDeposit && amountNum > 0 && (
                               <div className="mt-1 text-[11px] text-muted-foreground space-y-0.5">
                                 <div>• 0.5% vault withdraw fee</div>
@@ -1078,7 +995,6 @@ export function DepositWithdraw({
                               </div>
                             )}
 
-                            {/* Receive */}
                             <div className="flex items-center justify-between mt-2">
                               <span className="text-muted-foreground text-sm">
                                 You&apos;ll {isDeposit ? 'deposit' : 'receive'}:
@@ -1100,13 +1016,11 @@ export function DepositWithdraw({
                   );
                 })()}
               </div>
-
             </>
           )}
         </div>
       </Card>
 
-      {/* Token picker */}
       {showTokenModal && (
         <SelectTokenModal
           tokens={availableTokens}
@@ -1119,38 +1033,35 @@ export function DepositWithdraw({
         />
       )}
 
-      {/* Deposit review modal */}
       {showReview && activeTab === 'deposit' && snap && (
-        <DepositModal
-          open={showReview}
-          onClose={() => setShowReview(false)}
-          snap={snap}
-          amount={amount}
-          // For Lisk-native selections we still pass the family symbol; the modal will short-circuit bridging.
-          sourceSymbol={sourceSymbolForModal}
-          destTokenLabel={destTokenLabel}
-          routeLabel={
-            route ??
-            (selectedToken.id.includes('_lisk')
-              ? 'On-chain'
-              : 'Routing via LI.FI')
-          }
-          bridgeFeeDisplay={
-            selectedToken.id.includes('_lisk') ? 0 : bridgeFeeDisplay
-          }
-          receiveAmountDisplay={receiveAmountDisplay}
-          opBal={opBal}
-          baBal={baBal}
-          liBal={liBal}
-          liBalUSDT0={liBalUSDT0}
-          opUsdcBal={opUsdcBal}
-          baUsdcBal={baUsdcBal}
-          opUsdtBal={opUsdtBal}
-          baUsdtBal={baUsdtBal}
-        />
+       <DepositModal
+       open={showReview}
+       onClose={() => setShowReview(false)}
+       snap={snap}
+       amount={amount}
+       sourceSymbol={sourceSymbolForModal}
+       destTokenLabel={destTokenLabel}
+       routeLabel={
+         route ??
+         (selectedToken.id.includes('_lisk')
+           ? 'On-chain'
+           : 'Routing via LI.FI')
+       }
+       bridgeFeeDisplay={
+         selectedToken.id.includes('_lisk') ? 0 : bridgeFeeDisplay
+       }
+       receiveAmountDisplay={receiveAmountDisplay}
+       opBal={opBal}
+       baBal={baBal}
+       liBal={liBal}
+       liBalUSDT0={liBalUSDT0}
+       opUsdcBal={opUsdcBal}
+       baUsdcBal={baUsdcBal}
+       opUsdtBal={opUsdtBal}
+       baUsdtBal={baUsdtBal}
+     />     
       )}
 
-      {/* Withdraw review modal */}
       {showWithdrawReview &&
         activeTab === 'withdraw' &&
         snap &&

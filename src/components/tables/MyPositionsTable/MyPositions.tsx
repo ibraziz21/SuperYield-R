@@ -67,9 +67,15 @@ function formatPercent(n: number): string {
 }
 
 function normalizeDisplayVault(token: string): string {
-  // Keep Lisk pool symbols literal so users see USDCe / USDT0 distinctly
+  // Official naming for the Re7 Morpho vaults on Lisk
+  if (token === "USDCe") return "Re7 USDC.e";
+  if (token === "USDT0") return "Re7 USDT0";
+  if (token === "WETH") return "Re7 WETH";
+
+  // Fallback for anything unexpected
   return token;
 }
+
 
 /* ────────────────────────────────────────────────────────── */
 /* Snapshot resolver                                          */
@@ -142,9 +148,13 @@ interface MyPositionsProps {
 
 const MyPositions: React.FC<MyPositionsProps> = ({ networkFilter, protocolFilter, filterUI }) => {
   const { data: positionsRaw, isLoading: positionsLoading } = usePositions();
-  const { yields: snapshots, isLoading: yieldsLoading } = useYields();
+const { yields: snapshots, isLoading: yieldsLoading } = useYields();
 
-  const positions = (positionsRaw ?? []) as unknown as PositionLike[];
+const positions = useMemo(
+  () => (positionsRaw ?? []) as unknown as PositionLike[],
+  [positionsRaw],
+);
+
 
   // Filter to Morpho (Lisk) with non-dust balances
   const positionsForMorpho: PositionLike[] = useMemo(() => {

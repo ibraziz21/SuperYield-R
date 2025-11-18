@@ -35,7 +35,7 @@ export interface MerklRewardItem {
     symbol: string
     decimals: number
   }
-  /** stringified wei */
+  /** stringified wei (claimable) */
   amount: string
   /** merkle proof as array of bytes32 */
   proofs: `0x${string}`[]
@@ -46,22 +46,35 @@ export interface MerklRewardsByChain {
   rewards: MerklRewardItem[]
 }
 
-/** Fetch claimable rewards for a user on 1+ chains (Merkl API v4). */
+/**
+ * Fetch claimable rewards for a user on 1+ chains (Merkl API v4).
+ *
+ * NOTE: Merkl caches this route per chain.
+ * To avoid showing stale balances after a claim, we always pass
+ * `reloadChainId=<chainId>` for each chain we query.
+ */
 export async function fetchMerklRewards(params: {
   user: Address
   chainIds: number[]
   apiBase?: string // defaults to https://api.merkl.xyz
 }): Promise<MerklRewardsByChain[]> {
   const { user, chainIds, apiBase = 'https://api.merkl.xyz' } = params
-  const qs = chainIds.map((id) => `chainId=${id}`).join('&')
-  const url = `${apiBase}/v4/users/${user}/rewards?${qs}`
 
+  const allResults: MerklRewardsByChain[] = []
 
-  const res = await fetch(url, { cache: 'no-store' })
- 
-  if (!res.ok) throw new Error(`Merkl API error: ${res.status}`)
-  const data = (await res.json()) as MerklRewardsByChain[]
-  return data
+  for (const chainId of chainIds) {
+    const url = `${apiBase}/v4/users/${user}/rewards?chainId=${chainId}&reloadChainId=${chainId}`
+
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) {
+      throw new Error(`Merkl API error on chain ${chainId}: ${res.status}`)
+    }
+
+    const data = (await res.json()) as MerklRewardsByChain[]
+    allResults.push(...data)
+  }
+
+  return allResults
 }
 
 /** Build flat arrays for Distributor.claim(...) for a specific chain. */
@@ -85,5 +98,6 @@ export function buildClaimArgs(input: {
     amounts.push(BigInt(r.amount))
     proofs.push(r.proofs)
   }
+
   return { users, tokens, amounts, proofs }
 }

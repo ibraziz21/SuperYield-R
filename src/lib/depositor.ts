@@ -2,7 +2,7 @@
 // Lisk + Morpho only: call these AFTER bridging finishes (user already received token on Lisk).
 
 import type { WalletClient, Address } from 'viem'
-import { erc20Abi, maxUint256 } from 'viem'
+import { erc20Abi } from 'viem'
 import { lisk as liskChain } from 'viem/chains'
 import { ROUTERS, TokenAddresses } from './constants'
 import aggregatorRouterAbi from './abi/AggregatorRouter.json'

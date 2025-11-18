@@ -17,8 +17,10 @@ const eslintConfig = [
       "@typescript-eslint/no-explicit-any": "off",
       // disable empty-interface warnings
       "@typescript-eslint/no-empty-interface": "off",
+      "@typescript-eslint/no-unused-vars": "off",
       // disable unused vars check (if desired)
-      // "no-unused-vars": "off",
+       "no-unused-vars": "off",
+       "no-constant-condition": "off",
       // disable hook rules if you really want (not recommended)
       // "react-hooks/rules-of-hooks": "off",
     },

@@ -50,6 +50,7 @@ export const TokenAddresses = {
   },
   USDT0: {
     lisk: '0x43f2376d5d03553ae72f4a8093bbe9de4336eb08',
+    optimism: '0x01bFF41798a0BcF287b996046Ca68b395DbC1071', // OP USDT0
   },
   WETH: {
     lisk: '0x4200000000000000000000000000000000000006',

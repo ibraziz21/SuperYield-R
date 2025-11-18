@@ -1,4 +1,3 @@
-
 import { ColumnDef } from "@tanstack/react-table";
 import Image from "next/image";
 
@@ -8,21 +7,20 @@ export type Position = {
   deposits: string;
   protocol: string;
   apy: string;
-}
+};
 
 import { DataTableColumnHeader } from "../data-table-header";
 
 // Token icon mapping (reusing from ClaimRewards)
-// Token icon mapping (reusing from ClaimRewards)
 const tokenIcons: Record<string, string> = {
   USDC: "/tokens/usdc-icon.png",
-  USDCe: "/tokens/usdc-icon.png",   // ⬅️ add this
+  USDCe: "/tokens/usdc-icon.png",
+  USDCE: "/tokens/usdc-icon.png",
   USDT: "/tokens/usdt-icon.png",
   USDT0: "/tokens/usdt0-icon.png",
   WETH: "/tokens/weth.png",
   DAI: "/tokens/dai.png",
 };
-
 
 // Network icon mapping
 const networkIcons: Record<string, string> = {
@@ -49,8 +47,26 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
       <DataTableColumnHeader column={column} title="Vault" />
     ),
     cell: ({ row }) => {
-      const vault = row.getValue("vault") as string;
-      const iconPath = tokenIcons[vault] || "/tokens/default.svg";
+      const vault = String(row.getValue("vault") ?? "");
+
+      // Strip "Re7 " prefix and normalize the token part (USDC.e, USDT0, etc.)
+      const base = vault.replace(/^Re7\s+/i, "").trim(); // e.g. "USDC.e", "USDT0"
+      const key = base.replace(/\./g, "").toUpperCase(); // e.g. "USDCE", "USDT0"
+
+      const iconPath =
+        // direct matches first
+        tokenIcons[base] ||
+        tokenIcons[key] ||
+        // family fallbacks (so USDCE/USDC.e → USDC icon, USDT0 → USDT0 icon, etc.)
+        (/^USDC/.test(key)
+          ? tokenIcons.USDC
+          : /^USDT0/.test(key)
+          ? tokenIcons.USDT0
+          : /^USDT/.test(key)
+          ? tokenIcons.USDT
+          : /^WETH/.test(key)
+          ? tokenIcons.WETH
+          : tokenIcons.DAI) || "/tokens/default.svg";
 
       return (
         <div className="flex items-center justify-center gap-2">
@@ -62,7 +78,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
               height={24}
               className="rounded-full"
               onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).style.display = "none";
               }}
             />
           </div>
@@ -91,7 +107,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
               height={24}
               className="rounded-full"
               onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).style.display = "none";
               }}
             />
           </div>
@@ -136,7 +152,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
               height={24}
               className="rounded-full"
               onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).style.display = "none";
               }}
             />
           </div>

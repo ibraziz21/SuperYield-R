@@ -8,15 +8,17 @@ import { useYields, type YieldSnapshot } from "@/hooks/useYields";
 
 /** Display names for Morpho Lisk vault tokens */
 const DISPLAY_TOKEN: Record<string, string> = {
-  USDC: "USDC.e",
-  USDT: "USDT0",
-  USDCe: "USDC.e",
-  USDT0: "USDT0",
-  WETH: "WETH",
+  USDC: "Re7 USDC.e",
+  USDT: "Re7 USDT0",
+  USDCe: "Re7 USDC.e",
+  USDT0: "Re7 USDT0",
+  WETH: "Re7 WETH",
 };
 
 /** Hard filter: only show Lisk + Morpho Blue + (USDC/USDT underlying) */
-const HARD_FILTER = (y: Pick<YieldSnapshot, "chain" | "protocolKey" | "token">) =>
+const HARD_FILTER = (
+  y: Pick<YieldSnapshot, "chain" | "protocolKey" | "token">,
+) =>
   y.chain === "lisk" &&
   y.protocolKey === "morpho-blue" &&
   (y.token === "USDC" || y.token === "USDT");
@@ -33,13 +35,19 @@ const Vaults: React.FC = () => {
     // Map YieldSnapshot -> Vault row shape
     return filtered.map((snap) => {
       const vaultDisplay = DISPLAY_TOKEN[snap.token] ?? snap.token;
-      const routeKey = snap.token === "USDC" ? "USDCe" : snap.token === "USDT" ? "USDT0" : snap.token;
+      const routeKey =
+        snap.token === "USDC"
+          ? "USDCe"
+          : snap.token === "USDT"
+          ? "USDT0"
+          : snap.token;
+
       return {
-        vault: vaultDisplay,                     // "USDC.e" | "USDT0"
-        royteKey: routeKey,                     // "USDCe" | "USDT0"
-        network: "Lisk",                         // fixed per filter
-        protocol: "Morpho Blue",                 // fixed per filter
-        apy: (Number(snap.apy) || 0).toFixed(2), // string for column renderer
+        vault: vaultDisplay, // "Re7 USDC.e" | "Re7 USDT0"
+        routeKey,            // "USDCe" | "USDT0"
+        network: "Lisk",     // fixed per filter
+        protocol: "Morpho Blue",
+        apy: (Number(snap.apy) || 0).toFixed(2),
         tvl: Number.isFinite(snap.tvlUSD)
           ? Math.round(snap.tvlUSD).toLocaleString()
           : "0",

@@ -1,6 +1,6 @@
 // src/lib/depositIntent.ts
 import type { Address, Hex } from 'viem'
-import { lisk } from 'viem/chains'
+
 
 // We’re not verifying on-chain, but the domain still binds signatures.
 export const INTENT_DOMAIN = {

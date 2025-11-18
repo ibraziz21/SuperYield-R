@@ -67,12 +67,9 @@ export default function VaultDetailPage() {
   const vaultCanonical: 'USDC' | 'USDT' | undefined = CANONICAL[vaultSlugKey]
   const headerLabel = vaultSlugKey || 'Vault'
 
+  // ── Hooks must always run, regardless of connection state ──
   const { yields, isLoading, error } = useYields()
-
-  // Show wallet prompt if not connected
-  if (!isConnected || !address) {
-    return <ConnectWalletPrompt />
-  }
+  const { data: positionsRaw } = usePositions()
 
   // Derive variants using the canonical token (so USDT0/USDCe work)
   const vaultVariants = useMemo(() => {
@@ -92,11 +89,10 @@ export default function VaultDetailPage() {
 
   const primaryVariant = vaultVariants[0] // we only have Lisk/Morpho for now
 
-  const { data: positionsRaw } = usePositions()
-
   // User shares: on Morpho Lisk, the share token is 18d; map header label to underlying
   const userShares = useMemo(() => {
     const positions = (positionsRaw ?? []) as any[]
+
     // If user visited alias, keep it; otherwise map canonical to underlying alias
     const morphoToken =
       vaultSlugKey === 'USDT0' || vaultSlugKey === 'USDCe'
@@ -121,6 +117,21 @@ export default function VaultDetailPage() {
     return Number.isFinite(num) ? num : 0
   }, [userShares])
 
+  // Choose the snapshot by canonical token (works for USDT0/USDCe routes)
+  const snapCandidate = (yields ?? []).find(
+    (s) =>
+      s.chain === 'lisk' &&
+      s.protocolKey === 'morpho-blue' &&
+      (DISPLAY_TOKEN[s.token] ?? s.token) === vaultCanonical
+  )
+
+  // ── Only rendering branches below this line, no new hooks ──
+
+  // Show wallet prompt if not connected
+  if (!isConnected || !address) {
+    return <ConnectWalletPrompt />
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground">
@@ -144,20 +155,11 @@ export default function VaultDetailPage() {
     )
   }
 
-  // Choose the snapshot by canonical token (works for USDT0/USDCe routes)
-  const snapCandidate = (yields ?? []).find(
-    (s) => s.chain === 'lisk' && s.protocolKey === 'morpho-blue' && (DISPLAY_TOKEN[s.token] ?? s.token) === vaultCanonical
-  )
-
   return (
     <div className="min-h-screen bg-[#F9FAFB] p-4 md:p-6">
       {/* Header with back button */}
       <div className="max-w-7xl mx-auto mb-6">
-        <Button variant="ghost" onClick={() => router.push('/vaults')} className="mb-4">
-          <ArrowLeftIcon className="mr-2 h-4 w-4" />
-          Back to Vaults
-        </Button>
-
+      
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 md:w-16 md:h-16 relative">
             <Image
@@ -170,11 +172,8 @@ export default function VaultDetailPage() {
           </div>
           <div>
             <h1 className="text-2xl md:text-4xl font-bold">
-              {headerLabel} Vault
+              Re7 {headerLabel} Vault
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Available across {vaultVariants.length} network{vaultVariants.length !== 1 ? 's' : ''}
-            </p>
           </div>
         </div>
       </div>
@@ -216,7 +215,7 @@ export default function VaultDetailPage() {
               </Card>
 
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
-              <CardContent className="space-y-1 p-4">
+                <CardContent className="space-y-1 p-4">
                   <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Total TVL</p>
                   <p className="text-2xl font-semibold">
                     $
@@ -225,16 +224,17 @@ export default function VaultDetailPage() {
                       .toLocaleString()}
                   </p>
                 </CardContent>
-
               </Card>
 
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
-              <CardContent className="space-y-1 p-4">
+                <CardContent className="space-y-1 p-4">
                   <p className="text-[11px] font-medium tracking-wide text-muted-foreground">APY</p>
                   <p className="text-2xl font-semibold">
                     {(
-                      vaultVariants.reduce((sum, v) => sum + Number(v.apy || 0), 0) / vaultVariants.length
-                    ).toFixed(2)}%
+                      vaultVariants.reduce((sum, v) => sum + Number(v.apy || 0), 0) /
+                      (vaultVariants.length || 1)
+                    ).toFixed(2)}
+                    %
                   </p>
                 </CardContent>
               </Card>
@@ -247,15 +247,16 @@ export default function VaultDetailPage() {
             <div className="text-center py-8 text-sm">
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                 <CardContent className="space-y-1 p-4">
-                  <p className="text-2xl font-semibold ">
-                   $ {userSharesHuman.toLocaleString(undefined, { maximumFractionDigits: 2 })} 
+                  <p className="text-2xl font-semibold">
+                    ${' '}
+                    {userSharesHuman.toLocaleString(undefined, {
+                      maximumFractionDigits: 2,
+                    })}
                   </p>
                 </CardContent>
               </Card>
             </div>
           </div>
-
-         
         </div>
 
         {/* Right Column - Deposit/Withdraw */}
