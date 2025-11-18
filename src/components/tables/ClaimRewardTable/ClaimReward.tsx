@@ -42,18 +42,23 @@ const ClaimRewards: React.FC = () => {
 
   // Keep a 1:1 mapping (row -> underlying Merkl item) by attaching __raw
   const tableData: (ClaimableReward & { __raw: FlatReward })[] = useMemo(() => {
-    if (!rewards || rewards.length === 0) return [];
+    if (!rewards || rewards.length === 0) return []
+  
     return rewards.map((r) => {
-      const qty = Number(formatUnits(BigInt(r.amount), r.token.decimals)) || 0;
+      // r.claimable is in wei, as string
+      const qty =
+        Number(formatUnits(BigInt(r.claimable), r.token.decimals)) || 0
+  
       return {
         network: CHAIN_LABEL[r.chainId] ?? `Chain ${r.chainId}`,
-        source: "Merkl",
-        claimable: formatNumber(qty, 6),
+        source: 'Merkl',
+        claimable: qty.toString(), // plain numeric string
         token: r.token.symbol,
         __raw: r,
-      };
-    });
-  }, [rewards]);
+      }
+    })
+  }, [rewards])
+  
 
   function onClaimClick(row: ClaimableReward & { __raw?: FlatReward }) {
     if (!wallet) return openConnect?.();
