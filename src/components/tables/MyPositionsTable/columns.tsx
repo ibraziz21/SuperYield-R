@@ -7,7 +7,9 @@ export type Position = {
   deposits: string;
   protocol: string;
   apy: string;
+  routeKey?: string; // 👈 add this
 };
+
 
 import { DataTableColumnHeader } from "../data-table-header";
 

@@ -62,3 +62,4 @@ export function useMerklRewards(opts?: { chains?: number[] }) {
     }, {}),
   }
 }
+
