@@ -170,34 +170,40 @@ const positions = useMemo(
     });
   }, [positions]);
 
-  // Build table rows (even if loading; UI gates below)
+
   const tableData: TableRow[] = useMemo(() => {
     let filtered = positionsForMorpho.map((p) => {
       const snap = findSnapshotForPosition(p, snapshots);
       // Morpho shares are 18 decimals in our app
       const depositsHuman = formatAmountBigint(p.amount ?? 0n, 18);
-
+  
+      const tokenSymbol = String(p.token); // "USDCe" | "USDT0" | "WETH"
+  
       return {
-        vault: normalizeDisplayVault(String(p.token)),
+        // Display text on the row
+        vault: normalizeDisplayVault(tokenSymbol), // e.g. "Re7 USDC.e"
+        // Canonical route key for URLs
+        routeKey: tokenSymbol, // 👈 used by MyPositionsTable for /vaults/USDCe
         network: CHAIN_LABEL[p.chain],
         deposits: depositsHuman,
         protocol: "Morpho Blue",
         apy: formatPercent(snap.apy),
       };
     });
-
+  
     // Apply network filter
     if (networkFilter && networkFilter !== "all") {
       filtered = filtered.filter((row) => row.network === networkFilter);
     }
-
+  
     // Apply protocol filter
     if (protocolFilter && protocolFilter !== "all") {
       filtered = filtered.filter((row) => row.protocol === protocolFilter);
     }
-
+  
     return filtered;
   }, [positionsForMorpho, snapshots, networkFilter, protocolFilter]);
+  
 
   // Loading state
   if (positionsLoading || yieldsLoading) {
