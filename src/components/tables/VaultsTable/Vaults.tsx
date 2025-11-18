@@ -36,7 +36,7 @@ const Vaults: React.FC<VaultsProps> = ({ networkFilter, protocolFilter, filterUI
     if (!yields || isLoading || error) return [];
 
     // Keep only Lisk • Morpho Blue • USDC/USDT
-    let filtered = yields.filter((y) => HARD_FILTER(y));
+    const filtered = yields.filter((y) => HARD_FILTER(y));
 
     // Map YieldSnapshot -> Vault row shape
     let mapped = filtered.map((snap) => {
