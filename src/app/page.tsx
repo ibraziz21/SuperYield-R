@@ -60,10 +60,10 @@ export default function Dashboard() {
   const [showProtocolFilter, setShowProtocolFilter] = useState(false)
 
   return (
-    <div className="">
+    <div className="min-h-[calc(100vh-3.5rem)]">
       {
         isConnected && address ? (
-          <>
+          <div className="w-full px-4">
             <PortfolioHeader />
 
             {/* Action modals */}
@@ -76,17 +76,17 @@ export default function Dashboard() {
             )}
 
             {/* Claimable Rewards */}
-            <section className="bg-white m-4 p-4 rounded-xl max-w-6xl mx-auto">
+            <section className="bg-white my-4 p-4 md:p-6 rounded-xl max-w-6xl mx-auto">
               <div className="mb-3">
-                <h2 className="text-base font-semibold tracking-tight">Claimable Rewards</h2>
+                <h2 className="text-base md:text-lg font-semibold tracking-tight">Claimable Rewards</h2>
               </div>
               <ClaimRewards />
             </section>
 
             {/* My Positions */}
-            <section className="bg-white m-4 p-4 rounded-xl max-w-6xl mx-auto">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold tracking-tight">My Positions</h2>
+            <section className="bg-white my-4 p-4 md:p-6 rounded-xl max-w-6xl mx-auto">
+              <div className="mb-4 flex items-center justify-between flex-wrap gap-3">
+                <h2 className="text-base md:text-lg font-semibold tracking-tight">My Positions</h2>
                 <Link href="/vaults">
                   <Button variant="ghost" className="flex items-center gap-2 text-sm font-medium hover:bg-gray-100" title="Explore Vaults">
                     Explore Vaults
@@ -99,7 +99,7 @@ export default function Dashboard() {
                 networkFilter={networkFilter}
                 protocolFilter={protocolFilter}
                 filterUI={
-                  <div className="flex items-center gap-4 px-2 py-3">
+                  <div className="flex items-center gap-3 md:gap-4 px-2 py-3 flex-wrap">
                     {/* Network Filter */}
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-gray-700">Network:</span>
@@ -191,7 +191,7 @@ export default function Dashboard() {
                 }
               />
             </section>
-          </>
+          </div>
         ) : (
           <ConnectWalletPrompt />
         )

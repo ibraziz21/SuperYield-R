@@ -67,7 +67,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
               alt={network}
               width={24}
               height={24}
-              className="rounded-full"
+              className="rounded-xl"
               onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
             />
           </div>
@@ -91,7 +91,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
               alt={source}
               width={24}
               height={24}
-              className="rounded-full"
+              className="rounded-xl"
               onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
             />
           </div>

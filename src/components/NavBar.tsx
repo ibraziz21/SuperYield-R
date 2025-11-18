@@ -168,7 +168,7 @@ export function Navbar() {
     <>
       {/* Top App Bar */}
       <header
-        className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 `}
+        className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-6xl mx-auto rounded-xl`}
       >
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-3 sm:px-4">
           {/* Brand */}

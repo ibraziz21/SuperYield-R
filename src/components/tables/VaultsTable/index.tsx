@@ -23,6 +23,9 @@ import { useRouter } from "next/navigation";
 interface TblProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
+  emptyMessage?: string;
+  emptySubMessage?: string;
+  filterUI?: React.ReactNode;
 }
 
 /** Fallback mapper from display label -> route slug */
@@ -40,6 +43,9 @@ export function normalizeVaultRoute(label: string): string {
 export default function VaultsTable<TData, TValue>({
   columns,
   data,
+  emptyMessage,
+  emptySubMessage,
+  filterUI,
 }: TblProps<TData, TValue>) {
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
@@ -75,56 +81,8 @@ export default function VaultsTable<TData, TValue>({
   };
 
   return (
-    <DataTable table={table} columns={columns} data={data} onRowClick={handleRowClick}>
-      <div className="p-3 flex items-center gap-3">
-        <Select
-          value={(table.getColumn("network")?.getFilterValue() as string) ?? "all"}
-          onValueChange={(value: string) => {
-            table.getColumn("network")?.setFilterValue(value === "all" ? "" : value);
-          }}
-        >
-          <SelectTrigger className="w-[200px] bg-[#A5A5A520] outline-none">
-            <SelectValue placeholder="All Networks" />
-          </SelectTrigger>
-          <SelectContent className="bg-[#ffffff] text-[#808195]">
-            <SelectItem value="all">All Networks</SelectItem>
-            <SelectItem value="Ethereum">Ethereum</SelectItem>
-            <SelectItem value="Lisk">Lisk</SelectItem>
-            <SelectItem value="Arbitrum">Arbitrum</SelectItem>
-            <SelectItem value="Optimism">Optimism</SelectItem>
-            <SelectItem value="Base">Base</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={(table.getColumn("protocol")?.getFilterValue() as string) ?? "all"}
-          onValueChange={(value: string) => {
-            table.getColumn("protocol")?.setFilterValue(value === "all" ? "" : value);
-          }}
-        >
-          <SelectTrigger className="w-[200px] bg-[#A5A5A520] outline-none">
-            <SelectValue placeholder="All Protocols" />
-          </SelectTrigger>
-          <SelectContent className="bg-[#ffffff] text-[#808195]">
-            <SelectItem value="all">All Protocols</SelectItem>
-            {/* IMPORTANT: this must match the actual cell value exactly */}
-            <SelectItem value="Morpho Blue">Morpho Blue</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <div className="flex items-center border border-[#ccc] rounded-full px-2 flex-1 max-w-md">
-          <MagnifyingGlassIcon color="#1e1e1e" />
-          <input
-            type="text"
-            className="outline-none p-2 w-full bg-transparent"
-            placeholder="Search Vaults"
-            value={(table.getColumn("vault")?.getFilterValue() as string) ?? ""}
-            onChange={(event: React.FormEvent<HTMLInputElement>) => {
-              table.getColumn("vault")?.setFilterValue(event.currentTarget.value);
-            }}
-          />
-        </div>
-      </div>
+    <DataTable table={table} columns={columns} data={data} onRowClick={handleRowClick} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage}>
+      {filterUI}
     </DataTable>
   );
 }

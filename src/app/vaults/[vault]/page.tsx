@@ -12,6 +12,7 @@ import { usePositions } from '@/hooks/usePositions'
 import { formatUnits } from 'viem'
 import { useAppKitAccount } from '@reown/appkit/react'
 import { ConnectWalletPrompt } from '@/components/ConnectWalletPrompt'
+import { WarningCircleIcon } from '@phosphor-icons/react'
 
 // Accept both canonical and alias slugs, normalize for lookups
 const CANONICAL: Record<string, 'USDC' | 'USDT'> = {
@@ -98,10 +99,10 @@ export default function VaultDetailPage() {
       vaultSlugKey === 'USDT0' || vaultSlugKey === 'USDCe'
         ? vaultSlugKey
         : vaultCanonical === 'USDC'
-        ? 'USDCe'
-        : vaultCanonical === 'USDT'
-        ? 'USDT0'
-        : vaultSlugKey
+          ? 'USDCe'
+          : vaultCanonical === 'USDT'
+            ? 'USDT0'
+            : vaultSlugKey
 
     const pos = positions.find(
       (p) =>
@@ -156,30 +157,28 @@ export default function VaultDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] p-4 md:p-6">
-      {/* Header with back button */}
-      <div className="max-w-7xl mx-auto mb-6">
-      
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 md:w-16 md:h-16 relative">
+    <div className="min-h-[calc(100vh-3.5rem)] bg-[#F9FAFB] p-4 md:p-6">
+      <div className="max-w-6xl mx-auto">
+        {/* Header with back button */}
+        <div className="mb-6">
+          <div className="flex items-center gap-3 md:gap-4">
             <Image
               src={tokenIcons[headerLabel] || tokenIcons[vaultCanonical] || '/tokens/usdc-icon.png'}
               alt={headerLabel}
-              width={64}
-              height={64}
+              width={32}
+              height={32}
               className="rounded-full"
             />
-          </div>
-          <div>
-            <h1 className="text-2xl md:text-4xl font-bold">
-              Re7 {headerLabel} Vault
-            </h1>
+            <div>
+              <h1 className="text-xl md:text-2xl lg:text-3xl font-bold">
+                Re7 {headerLabel} <span className='text-[#9CA3AF]'>Vault</span>
+              </h1>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Main Content Grid */}
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         {/* Left Column - Overview & Positions */}
         <div className="space-y-6">
           {/* Overview Stats */}
@@ -189,7 +188,7 @@ export default function VaultDetailPage() {
               {/* Network card mirrors "Available Networks" styling and data */}
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                 <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Network</p>
+                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground  flex items-center">Network<WarningCircleIcon size={16} className='mx-2' /></p>
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 relative">
                       <Image
@@ -197,7 +196,7 @@ export default function VaultDetailPage() {
                         alt={primaryVariant.network}
                         width={32}
                         height={32}
-                        className="rounded-full"
+                        className="rounded-xl"
                       />
                     </div>
                     <div>
@@ -209,14 +208,14 @@ export default function VaultDetailPage() {
 
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                 <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Protocol</p>
+                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground  flex items-center">Protocol<WarningCircleIcon size={16} className='mx-2' /></p>
                   <p className="font-semibold">{primaryVariant.protocol}</p>
                 </CardContent>
               </Card>
 
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                 <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground">Total TVL</p>
+                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground  flex items-center">Total TVL<WarningCircleIcon size={16} className='mx-2' /></p>
                   <p className="text-2xl font-semibold">
                     $
                     {vaultVariants
@@ -228,7 +227,7 @@ export default function VaultDetailPage() {
 
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                 <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground">APY</p>
+                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground  flex items-center">APY<WarningCircleIcon size={16} className='mx-2' /></p>
                   <p className="text-2xl font-semibold">
                     {(
                       vaultVariants.reduce((sum, v) => sum + Number(v.apy || 0), 0) /
@@ -247,7 +246,8 @@ export default function VaultDetailPage() {
             <div className="text-center py-8 text-sm">
               <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                 <CardContent className="space-y-1 p-4">
-                  <p className="text-2xl font-semibold">
+                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground  flex items-center">Total deposits<WarningCircleIcon size={16} className='mx-2' /></p>
+                  <p className="text-2xl font-semibold text-left">
                     ${' '}
                     {userSharesHuman.toLocaleString(undefined, {
                       maximumFractionDigits: 2,
@@ -262,6 +262,7 @@ export default function VaultDetailPage() {
         {/* Right Column - Deposit/Withdraw */}
         <div className="lg:sticky lg:top-6 h-fit">
           {snapCandidate && <DepositWithdraw initialTab="deposit" snap={snapCandidate} />}
+        </div>
         </div>
       </div>
     </div>

@@ -105,7 +105,7 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
               alt={network}
               width={24}
               height={24}
-              className="rounded-full"
+              className="rounded-xl"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}
@@ -150,7 +150,7 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
               alt={protocol}
               width={24}
               height={24}
-              className="rounded-full"
+              className="rounded-xl"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}

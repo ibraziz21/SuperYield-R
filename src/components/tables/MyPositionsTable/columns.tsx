@@ -105,7 +105,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
               alt={network}
               width={24}
               height={24}
-              className="rounded-full"
+              className="rounded-xl"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}
@@ -127,7 +127,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
 
       return (
         <div className="text-center">
-          <div className="font-medium text-green-600">${deposits}</div>
+          <div className="font-medium ">${deposits}</div>
         </div>
       );
     },
@@ -150,7 +150,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
               alt={protocol}
               width={24}
               height={24}
-              className="rounded-full"
+              className="rounded-xl"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}
@@ -172,7 +172,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
 
       return (
         <div className="text-center">
-          <div className="font-medium text-blue-600">{apy}%</div>
+          <div className="font-medium ">{apy}%</div>
         </div>
       );
     },

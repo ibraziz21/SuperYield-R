@@ -609,7 +609,7 @@ export function DepositWithdraw({
 
   if (!snap) {
     return (
-      <Card className="w-full max-w-2xl mx-auto p-6">
+      <Card className="w-full max-w-2xl mx-auto p-6 shadow-none">
         <div className="animate-pulse space-y-4">
           <div className="h-6 w-32 bg-muted rounded" />
           <div className="h-12 bg-muted rounded" />
@@ -621,7 +621,7 @@ export function DepositWithdraw({
 
   return (
     <>
-      <Card className="w-full max-w-2xl mx-auto p-6">
+      <Card className="w-full max-w-2xl mx-auto p-6 shadow-none">
         <div className="flex items-center gap-8 mb-8 border-b">
           <button
             onClick={() => setActiveTab('deposit')}

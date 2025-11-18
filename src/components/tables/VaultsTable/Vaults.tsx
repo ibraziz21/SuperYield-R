@@ -23,17 +23,23 @@ const HARD_FILTER = (
   y.protocolKey === "morpho-blue" &&
   (y.token === "USDC" || y.token === "USDT");
 
-const Vaults: React.FC = () => {
+interface VaultsProps {
+  networkFilter?: string;
+  protocolFilter?: string;
+  filterUI?: React.ReactNode;
+}
+
+const Vaults: React.FC<VaultsProps> = ({ networkFilter, protocolFilter, filterUI }) => {
   const { yields, isLoading, error } = useYields();
 
   const data = useMemo(() => {
     if (!yields || isLoading || error) return [];
 
     // Keep only Lisk • Morpho Blue • USDC/USDT
-    const filtered = yields.filter((y) => HARD_FILTER(y));
+    let filtered = yields.filter((y) => HARD_FILTER(y));
 
     // Map YieldSnapshot -> Vault row shape
-    return filtered.map((snap) => {
+    let mapped = filtered.map((snap) => {
       const vaultDisplay = DISPLAY_TOKEN[snap.token] ?? snap.token;
       const routeKey =
         snap.token === "USDC"
@@ -53,9 +59,21 @@ const Vaults: React.FC = () => {
           : "0",
       };
     });
-  }, [yields, isLoading, error]);
 
-  return <VaultsTable columns={VaultsColumns} data={data} />;
+    // Apply network filter
+    if (networkFilter && networkFilter !== "all") {
+      mapped = mapped.filter((row) => row.network === networkFilter);
+    }
+
+    // Apply protocol filter
+    if (protocolFilter && protocolFilter !== "all") {
+      mapped = mapped.filter((row) => row.protocol === protocolFilter);
+    }
+
+    return mapped;
+  }, [yields, isLoading, error, networkFilter, protocolFilter]);
+
+  return <VaultsTable columns={VaultsColumns} data={data} filterUI={filterUI} />;
 };
 
 export default Vaults;
