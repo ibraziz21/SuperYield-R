@@ -45,5 +45,5 @@ export default function ClaimRewardTable<TData, TValue>({
     state: { columnFilters, sorting },
   });
 
-  return <DataTable table={table} columns={columns} data={data} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage} />;
+  return <DataTable showExploreVaultsButton={false} table={table} columns={columns} data={data} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage} />;
 }

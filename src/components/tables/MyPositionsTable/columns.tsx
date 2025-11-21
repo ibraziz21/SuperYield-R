@@ -101,13 +101,13 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
 
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="w-6 h-6 relative">
+          <div className="w-6 h-6 relative  rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={network}
               width={24}
               height={24}
-              className="rounded-xl"
+              className="rounded-none"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}
@@ -146,13 +146,13 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
 
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="w-6 h-6 relative">
+          <div className="w-6 h-6 relative rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={protocol}
               width={24}
               height={24}
-              className="rounded-xl"
+              className="rounded-none"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}

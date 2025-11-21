@@ -6,7 +6,7 @@ import VaultsTable from ".";
 import { VaultsColumns } from "./columns";
 import { useYields, type YieldSnapshot } from "@/hooks/useYields";
 
-/** Display names for Morpho Lisk vault tokens */
+// Display names for Morpho Lisk vault tokens
 const DISPLAY_TOKEN: Record<string, string> = {
   USDC: "Re7 USDC.e",
   USDT: "Re7 USDT0",
@@ -15,7 +15,7 @@ const DISPLAY_TOKEN: Record<string, string> = {
   WETH: "Re7 WETH",
 };
 
-/** Hard filter: only show Lisk + Morpho Blue + (USDC/USDT underlying) */
+// Hard filter: only show Lisk + Morpho Blue + (USDC/USDT underlying)
 const HARD_FILTER = (
   y: Pick<YieldSnapshot, "chain" | "protocolKey" | "token">,
 ) =>
@@ -23,9 +23,10 @@ const HARD_FILTER = (
   y.protocolKey === "morpho-blue" &&
   (y.token === "USDC" || y.token === "USDT");
 
+// Props interface with multi-select filters
 interface VaultsProps {
-  networkFilter?: string;
-  protocolFilter?: string;
+  networkFilter?: string[];
+  protocolFilter?: string[];
   filterUI?: React.ReactNode;
 }
 
@@ -49,9 +50,9 @@ const Vaults: React.FC<VaultsProps> = ({ networkFilter, protocolFilter, filterUI
           : snap.token;
 
       return {
-        vault: vaultDisplay, // "Re7 USDC.e" | "Re7 USDT0"
-        routeKey,            // "USDCe" | "USDT0"
-        network: "Lisk",     // fixed per filter
+        vault: vaultDisplay,
+        routeKey,
+        network: "Lisk",
         protocol: "Morpho Blue",
         apy: (Number(snap.apy) || 0).toFixed(2),
         tvl: Number.isFinite(snap.tvlUSD)
@@ -61,13 +62,13 @@ const Vaults: React.FC<VaultsProps> = ({ networkFilter, protocolFilter, filterUI
     });
 
     // Apply network filter
-    if (networkFilter && networkFilter !== "all") {
-      mapped = mapped.filter((row) => row.network === networkFilter);
+    if (networkFilter && !networkFilter.includes("all")) {
+      mapped = mapped.filter((row) => networkFilter.includes(row.network));
     }
 
     // Apply protocol filter
-    if (protocolFilter && protocolFilter !== "all") {
-      mapped = mapped.filter((row) => row.protocol === protocolFilter);
+    if (protocolFilter && !protocolFilter.includes("all")) {
+      mapped = mapped.filter((row) => protocolFilter.includes(row.protocol));
     }
 
     return mapped;

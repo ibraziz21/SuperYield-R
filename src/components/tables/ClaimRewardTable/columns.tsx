@@ -17,29 +17,29 @@ export type ClaimableReward = {
 };
 
 const networkIcons: Record<string, string> = {
-  Ethereum: "/networks/ethereum.svg",
-  Lisk: "/networks/lisk.svg",
-  Arbitrum: "/networks/arbitrum.svg",
-  Optimism: "/networks/optimism.svg",
-  Base: "/networks/base.svg",
+  Ethereum: "/networks/ethereum.png",
+  Lisk: "/networks/lisk.png",
+  Arbitrum: "/networks/arbitrum.png",
+  Optimism: "/networks/optimism.png",
+  Base: "/networks/base.png",
 };
 
 const sourceIcons: Record<string, string> = {
-  "Aave V3": "/protocols/aave.svg",
-  "Morpho Blue": "/protocols/morpho.svg",
-  Compound: "/protocols/compound.svg",
-  GMX: "/protocols/gmx.svg",
-  Merkl: "/protocols/merkl.svg",
+  "Aave V3": "/protocols/aave.png",
+  "Morpho Blue": "/protocols/morpho.png",
+  Compound: "/protocols/compound.png",
+  GMX: "/protocols/gmx.png",
+  Merkl: "/protocols/merkle.png",
 };
 
 const tokenIcons: Record<string, string> = {
-  AAVE: "/tokens/aave.svg",
-  USDC: "/tokens/usdc.svg",
-  ETH: "/tokens/eth.svg",
-  WETH: "/tokens/weth.svg",
-  GMX: "/tokens/gmx.svg",
-  USDT: "/tokens/usdt.svg",
-  LSK: "/tokens/lsk.svg",
+  AAVE: "/tokens/aave.png",
+  USDC: "/tokens/usdc.png",
+  ETH: "/tokens/eth.png",
+  WETH: "/tokens/weth.png",
+  GMX: "/tokens/gmx.png",
+  USDT: "/tokens/usdt.png",
+  LSK: "/tokens/lisk.png",
 };
 
 const tokenPrices: Record<string, number> = {
@@ -131,13 +131,13 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const iconPath = tokenIcons[token] || "/tokens/default.svg";
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="relative h-6 w-6">
+          <div className="relative h-6 w-6 rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={token}
               width={24}
               height={24}
-              className="rounded-full"
+              className="rounded-none"
               onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
             />
           </div>
@@ -166,7 +166,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       };
 
       return (
-        <Button title="Claim" className="bg-blue-400" onClick={handleClaim} disabled={!onClaim || isClaiming}>
+        <Button title="Claim" className="bg-[#376FFF] rounded-[12px] p-3" onClick={handleClaim} disabled={!onClaim || isClaiming}>
           {isClaiming ? "Claiming…" : "Claim"}
         </Button>
       );
