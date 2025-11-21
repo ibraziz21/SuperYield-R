@@ -144,10 +144,6 @@ const MyPositions: React.FC<MyPositionsProps> = ({ networkFilter, protocolFilter
     });
   }, [positions]);
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 65ad43b2423f1e888b15cfb0478ecdd4f7942148
   const tableData: TableRow[] = useMemo(() => {
     let filtered = positionsForMorpho.map((p) => {
       const snap = findSnapshotForPosition(p, snapshots);
