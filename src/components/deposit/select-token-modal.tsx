@@ -44,7 +44,7 @@ export function SelectTokenModal({
 }: SelectTokenModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-md shadow-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-[20px] w-full max-w-md shadow-xl border border-gray-200 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 md:px-6 md:py-4 border-b border-gray-200">
           <h2 className="text-lg md:text-xl font-bold text-gray-900">Select a token</h2>

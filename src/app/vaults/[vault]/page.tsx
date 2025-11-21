@@ -13,6 +13,12 @@ import { formatUnits } from 'viem'
 import { useAppKitAccount } from '@reown/appkit/react'
 import { ConnectWalletPrompt } from '@/components/ConnectWalletPrompt'
 import { WarningCircleIcon } from '@phosphor-icons/react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 // Accept both canonical and alias slugs, normalize for lookups
 const CANONICAL: Record<string, 'USDC' | 'USDT'> = {
@@ -157,114 +163,175 @@ export default function VaultDetailPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] bg-[#F9FAFB] p-4 md:p-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Header with back button */}
-        <div className="mb-6">
-          <div className="flex items-center gap-3 md:gap-4">
-            <Image
-              src={tokenIcons[headerLabel] || tokenIcons[vaultCanonical] || '/tokens/usdc-icon.png'}
-              alt={headerLabel}
-              width={32}
-              height={32}
-              className="rounded-full"
-            />
-            <div>
-              <h1 className="text-xl md:text-2xl lg:text-3xl font-bold">
-                Re7 {headerLabel} <span className='text-[#9CA3AF]'>Vault</span>
-              </h1>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-        {/* Left Column - Overview & Positions */}
-        <div className="space-y-6">
-          {/* Overview Stats */}
-          <div className="bg-white rounded-xl p-6">
-            <h2 className="text-xl font-semibold mb-4">Overview</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Network card mirrors "Available Networks" styling and data */}
-              <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
-                <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground  flex items-center">Network<WarningCircleIcon size={16} className='mx-2' /></p>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 relative">
-                      <Image
-                        src={networkIcons[primaryVariant.network] || '/networks/default.svg'}
-                        alt={primaryVariant.network}
-                        width={32}
-                        height={32}
-                        className="rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <p className="font-semibold">{primaryVariant.network}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
-                <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground  flex items-center">Protocol<WarningCircleIcon size={16} className='mx-2' /></p>
-                  <p className="font-semibold">{primaryVariant.protocol}</p>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
-                <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground  flex items-center">Total TVL<WarningCircleIcon size={16} className='mx-2' /></p>
-                  <p className="text-2xl font-semibold">
-                    $
-                    {vaultVariants
-                      .reduce((sum, v) => sum + Number((v.tvl || '0').toString().replace(/,/g, '')), 0)
-                      .toLocaleString()}
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
-                <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground  flex items-center">APY<WarningCircleIcon size={16} className='mx-2' /></p>
-                  <p className="text-2xl font-semibold">
-                    {(
-                      vaultVariants.reduce((sum, v) => sum + Number(v.apy || 0), 0) /
-                      (vaultVariants.length || 1)
-                    ).toFixed(2)}
-                    %
-                  </p>
-                </CardContent>
-              </Card>
+    <TooltipProvider>
+      <div className="min-h-[calc(100vh-3.5rem)] bg-[#F9FAFB] p-4 md:p-6">
+        <div className="max-w-6xl mx-auto">
+          {/* Header with back button */}
+          <div className="mb-6">
+            <div className="flex items-center gap-3 md:gap-4">
+              <Image
+                src={tokenIcons[headerLabel] || tokenIcons[vaultCanonical] || '/tokens/usdc-icon.png'}
+                alt={headerLabel}
+                width={32}
+                height={32}
+                className="rounded-full"
+              />
+              <div>
+                <h1 className="text-xl md:text-2xl lg:text-3xl font-semibold">
+                  Re7 {headerLabel} <span className='text-[#9CA3AF]'>Vault</span>
+                </h1>
+              </div>
             </div>
           </div>
 
-          {/* My Positions */}
-          <div className="bg-white rounded-xl p-6">
-            <h2 className="text-xl font-semibold mb-4">My Positions</h2>
-            <div className="text-center py-8 text-sm">
-              <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
-                <CardContent className="space-y-1 p-4">
-                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground  flex items-center">Total deposits<WarningCircleIcon size={16} className='mx-2' /></p>
-                  <p className="text-2xl font-semibold text-left">
-                    ${' '}
-                    {userSharesHuman.toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    })}
-                  </p>
-                </CardContent>
-              </Card>
+          {/* Main Content Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+            {/* Left Column - Overview & Positions */}
+            <div className="space-y-6">
+              {/* Overview Stats */}
+              <div className="bg-white rounded-xl p-6">
+                <h2 className="text-xl font-semibold mb-4">Overview</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Network Card */}
+                  <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
+                    <CardContent className="space-y-1 p-4 h-[128px] flex flex-col justify-between">
+                      <p className="text-[11px] font-medium tracking-wide text-muted-foreground flex items-center">
+                        Network
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="ml-2">
+                              <WarningCircleIcon size={16} />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="max-w-xs">The blockchain network where this vault operates. Currently only Lisk network is supported.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 relative rounded-md overflow-hidden">
+                          <Image
+                            src={networkIcons[primaryVariant.network] || '/networks/default.svg'}
+                            alt={primaryVariant.network}
+                            width={32}
+                            height={32}
+                            className="rounded-none"
+                          />
+                        </div>
+                        <p className="font-semibold">{primaryVariant.network}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Protocol Card */}
+                  <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
+                    <CardContent className="space-y-1 p-4 h-[128px] flex flex-col justify-between">
+                      <p className="text-[11px] font-medium tracking-wide text-muted-foreground flex items-center">
+                        Protocol
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="ml-2">
+                              <WarningCircleIcon size={16} />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="max-w-xs">The DeFi protocol used for yield generation. This vault uses Morpho Blue for decentralized lending.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </p>
+                      <p className="font-semibold">{primaryVariant.protocol}</p>
+                    </CardContent>
+                  </Card>
+
+                  {/* TVL Card */}
+                  <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
+                    <CardContent className="space-y-1 p-4 h-[128px] flex flex-col justify-between">
+                      <p className="text-[11px] font-medium tracking-wide text-muted-foreground flex items-center">
+                        Total TVL
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="ml-2">
+                              <WarningCircleIcon size={16} />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="max-w-xs">Total Value Locked across all variants of this vault. Represents the sum of all deposits from all users.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </p>
+                      <p className="text-2xl font-semibold">
+                        $
+                        {vaultVariants
+                          .reduce((sum, v) => sum + Number((v.tvl || '0').toString().replace(/,/g, '')), 0)
+                          .toLocaleString()}
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  {/* APY Card */}
+                  <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
+                    <CardContent className="space-y-1 p-4 h-[128px] flex flex-col justify-between">
+                      <p className="text-[11px] font-medium tracking-wide text-muted-foreground flex items-center">
+                        APY
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="ml-2">
+                              <WarningCircleIcon size={16} />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="max-w-xs">Annual Percentage Yield based on current rates. This is an estimate and may fluctuate based on market conditions.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </p>
+                      <p className="text-2xl font-semibold">
+                        {(
+                          vaultVariants.reduce((sum, v) => sum + Number(v.apy || 0), 0) /
+                          (vaultVariants.length || 1)
+                        ).toFixed(2)}
+                        %
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+
+              {/* My Positions */}
+              <div className="bg-white rounded-xl p-6">
+                <h2 className="text-xl font-semibold mb-4">My Positions</h2>
+                <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
+                  <CardContent className="space-y-1 p-4 h-[128px] flex flex-col justify-between">
+                    <p className="text-[11px] font-medium tracking-wide text-muted-foreground flex items-center">
+                      Total deposits
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="ml-2">
+                            <WarningCircleIcon size={16} />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">Your personal deposit amount in this specific vault. Does not include your deposits in other vaults.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </p>
+                    <p className="text-2xl font-semibold text-left">
+                      ${' '}
+                      {userSharesHuman.toLocaleString(undefined, {
+                        maximumFractionDigits: 2,
+                      })}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+
+            {/* Right Column - Deposit/Withdraw */}
+            <div className="lg:sticky lg:top-6 h-fit">
+              {snapCandidate && <DepositWithdraw initialTab="deposit" snap={snapCandidate} />}
             </div>
           </div>
-        </div>
-
-        {/* Right Column - Deposit/Withdraw */}
-        <div className="lg:sticky lg:top-6 h-fit">
-          {snapCandidate && <DepositWithdraw initialTab="deposit" snap={snapCandidate} />}
-        </div>
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }

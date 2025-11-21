@@ -81,7 +81,7 @@ export default function VaultsTable<TData, TValue>({
   };
 
   return (
-    <DataTable table={table} columns={columns} data={data} onRowClick={handleRowClick} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage}>
+    <DataTable showExploreVaultsButton={true} table={table} columns={columns} data={data} onRowClick={handleRowClick} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage}>
       {filterUI}
     </DataTable>
   );

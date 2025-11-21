@@ -64,7 +64,7 @@ export default function MyPositionsTable<TData , TValue>({
   };
 
   return (
-    <DataTable table={table} columns={columns} data={data} onRowClick={handleRowClick} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage}>
+    <DataTable showExploreVaultsButton={false} table={table} columns={columns} data={data} onRowClick={handleRowClick} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage}>
       {filterUI}
     </DataTable>
   );

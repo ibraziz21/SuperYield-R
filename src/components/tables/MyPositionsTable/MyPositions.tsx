@@ -4,15 +4,10 @@
 import React, { useMemo } from "react";
 import MyPositionsTable from ".";
 import { MyPositionsColumns, type Position as TableRow } from "./columns";
-
 import { usePositions } from "@/hooks/usePositions";
 import { useYields, type YieldSnapshot } from "@/hooks/useYields";
 import { type Position as BasePosition } from "@/lib/positions";
 import { MORPHO_POOLS, TokenAddresses } from "@/lib/constants";
-
-/* ────────────────────────────────────────────────────────── */
-/* Types & small helpers                                      */
-/* ────────────────────────────────────────────────────────── */
 
 type EvmChain = "lisk";
 type MorphoToken = "USDCe" | "USDT0" | "WETH";
@@ -23,7 +18,7 @@ type PositionLike =
       protocol: "Morpho Blue";
       chain: Extract<EvmChain, "lisk">;
       token: MorphoToken;
-      amount: bigint; // receipt shares (18 decimals, or 0n)
+      amount: bigint;
     };
 
 const CHAIN_LABEL: Record<EvmChain, string> = { lisk: "Lisk" };
@@ -34,15 +29,12 @@ const MORPHO_VAULT_BY_TOKEN: Record<MorphoToken, `0x${string}`> = {
   WETH: MORPHO_POOLS["weth-supply"] as `0x${string}`,
 };
 
-// underlying token decimals (for reference)
 const TOKEN_DECIMALS: Record<MorphoToken, number> = {
   USDCe: 6,
   USDT0: 6,
   WETH: 18,
 };
 
-// treat tiny share balances as dust; shares are 18-decimals,
-// so this is ~1e-6 units (0.000001)
 const DUST_SHARES = 10n ** 12n;
 
 export function formatAmountBigint(amount: bigint, decimals: number): string {
@@ -67,19 +59,11 @@ function formatPercent(n: number): string {
 }
 
 function normalizeDisplayVault(token: string): string {
-  // Official naming for the Re7 Morpho vaults on Lisk
   if (token === "USDCe") return "Re7 USDC.e";
   if (token === "USDT0") return "Re7 USDT0";
   if (token === "WETH") return "Re7 WETH";
-
-  // Fallback for anything unexpected
   return token;
 }
-
-
-/* ────────────────────────────────────────────────────────── */
-/* Snapshot resolver                                          */
-/* ────────────────────────────────────────────────────────── */
 
 function findSnapshotForPosition(
   p: PositionLike,
@@ -87,7 +71,6 @@ function findSnapshotForPosition(
 ): YieldSnapshot {
   const normToken = String(p.token).toLowerCase();
 
-  // 1) direct token match for Lisk + Morpho
   const direct = snapshots?.find(
     (y) =>
       y.chain === p.chain &&
@@ -101,7 +84,6 @@ function findSnapshotForPosition(
   );
   if (direct) return direct;
 
-  // 2) vault address match
   const vault = MORPHO_VAULT_BY_TOKEN[p.token as MorphoToken];
   if (vault) {
     const byVault = snapshots?.find(
@@ -113,7 +95,6 @@ function findSnapshotForPosition(
     if (byVault) return byVault;
   }
 
-  // 3) fallback snapshot (0 APY/TVL but keeps UI stable if something slips through)
   const underlyingAddr: `0x${string}` =
     p.token === "USDCe"
       ? (TokenAddresses.USDCe as any).lisk
@@ -136,27 +117,21 @@ function findSnapshotForPosition(
   return fallback;
 }
 
-/* ────────────────────────────────────────────────────────── */
-/* Component                                                  */
-/* ────────────────────────────────────────────────────────── */
-
 interface MyPositionsProps {
-  networkFilter?: string;
-  protocolFilter?: string;
+  networkFilter?: string[];
+  protocolFilter?: string[];
   filterUI?: React.ReactNode;
 }
 
 const MyPositions: React.FC<MyPositionsProps> = ({ networkFilter, protocolFilter, filterUI }) => {
   const { data: positionsRaw, isLoading: positionsLoading } = usePositions();
-const { yields: snapshots, isLoading: yieldsLoading } = useYields();
+  const { yields: snapshots, isLoading: yieldsLoading } = useYields();
 
-const positions = useMemo(
-  () => (positionsRaw ?? []) as unknown as PositionLike[],
-  [positionsRaw],
-);
+  const positions = useMemo(
+    () => (positionsRaw ?? []) as unknown as PositionLike[],
+    [positionsRaw]
+  );
 
-
-  // Filter to Morpho (Lisk) with non-dust balances
   const positionsForMorpho: PositionLike[] = useMemo(() => {
     return positions.filter((p) => {
       if (p.protocol !== "Morpho Blue") return false;
@@ -165,16 +140,13 @@ const positions = useMemo(
       const amt = (p as any).amount as bigint | undefined;
       if (typeof amt !== "bigint") return false;
 
-      // hide dust
       return amt > DUST_SHARES;
     });
   }, [positions]);
 
-  // Build table rows (even if loading; UI gates below)
   const tableData: TableRow[] = useMemo(() => {
     let filtered = positionsForMorpho.map((p) => {
       const snap = findSnapshotForPosition(p, snapshots);
-      // Morpho shares are 18 decimals in our app
       const depositsHuman = formatAmountBigint(p.amount ?? 0n, 18);
 
       return {
@@ -186,20 +158,17 @@ const positions = useMemo(
       };
     });
 
-    // Apply network filter
-    if (networkFilter && networkFilter !== "all") {
-      filtered = filtered.filter((row) => row.network === networkFilter);
+    if (networkFilter && !networkFilter.includes("all")) {
+      filtered = filtered.filter((row) => networkFilter.includes(row.network));
     }
 
-    // Apply protocol filter
-    if (protocolFilter && protocolFilter !== "all") {
-      filtered = filtered.filter((row) => row.protocol === protocolFilter);
+    if (protocolFilter && !protocolFilter.includes("all")) {
+      filtered = filtered.filter((row) => protocolFilter.includes(row.protocol));
     }
 
     return filtered;
   }, [positionsForMorpho, snapshots, networkFilter, protocolFilter]);
 
-  // Loading state
   if (positionsLoading || yieldsLoading) {
     return (
       <div className="rounded-xl border border-border/60 p-4 text-sm text-muted-foreground">

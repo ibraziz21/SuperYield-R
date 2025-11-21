@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import socialImg from '@/public/logo_horizontal.svg'
 import ecovaults from "@/public/eco-vaults.svg"
 import baseImg from '@/public/base_square_blue.svg'
+import { ExitIcon } from '@radix-ui/react-icons'
 
 /* ──────────────────────────────────────────────────────────────── */
 
@@ -61,14 +62,14 @@ function NetworkBadge({ chainId }: { chainId?: number }) {
   const m = CHAIN_META[chainId]
 
   return (
-    <div className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white p-1" title={m.label}>
-      <span className="relative inline-flex h-5 w-5 items-center justify-center rounded-xl overflow-hidden">
+    <div className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white p-1" title={m.label}>
+      <span className="relative inline-flex h-5 w-5 items-center justify-center rounded-md overflow-hidden">
         <Image
           src={m.icon}
           alt={m.label}
           width={20}
           height={20}
-          className="h-5 w-5 rounded-xl"
+          className="h-5 w-5 rounded-md"
         />
       </span>
     </div>
@@ -168,7 +169,7 @@ export function Navbar() {
     <>
       {/* Top App Bar */}
       <header
-        className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-6xl mx-auto rounded-xl`}
+        className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-6xl mx-auto rounded-xl mt-2`}
       >
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-3 sm:px-4">
           {/* Brand */}
@@ -240,57 +241,25 @@ export function Navbar() {
                           <span className="text-[10px] text-muted-foreground">{currentChain?.label ?? 'Unknown'}</span>
                         </div>
                       </div>
+                      <button
+                        className="flex items-center justify-between rounded-md px-3 py-2 hover:bg-muted/60"
+                        onClick={copyAddress}
+                        title="Copy address"
+                      >
+                        <span className={`text-xs ${copied ? 'text-teal-600' : 'text-muted-foreground'}`}>{copied ? 'Copied' : '⌘C'}</span>
+                      </button>
                       <NetworkBadge chainId={chainId} />
                     </div>
 
                     {/* actions */}
                     <div className="p-2 text-sm">
                       <button
-                        className="flex w-full items-center justify-between rounded-md px-3 py-2 hover:bg-muted/60"
-                        onClick={copyAddress}
-                        title="Copy address"
-                      >
-                        <span>Copy address</span>
-                        <span className={`text-xs ${copied ? 'text-teal-600' : 'text-muted-foreground'}`}>{copied ? 'Copied' : '⌘C'}</span>
-                      </button>
-                      <button
-                        className="mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 hover:bg-muted/60"
-                        onClick={() => { setMenuOpen(false); open({ view: 'Connect' }) }}
-                      >
-                        <span>Switch wallet</span>
-                        <span className="text-xs text-muted-foreground">Modal</span>
-                      </button>
-
-                      {/* quick network switch */}
-                      <div className="mt-2 rounded-md border p-2">
-                        <div className="mb-1 text-[11px] font-semibold uppercase text-muted-foreground">Networks</div>
-                        <div className="grid grid-cols-3 gap-1">
-                          {[10, 8453, 1135].map((id) => {
-                            const meta = CHAIN_META[id]
-                            const active = chainId === id
-                            return (
-                              <button
-                                key={id}
-                                onClick={() => quickSwitch(id)}
-                                disabled={isSwitching || active}
-                                className={`flex items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] ${active ? `${meta.bg} text-white` : 'bg-muted hover:bg-muted/80'
-                                  } disabled:opacity-60`}
-                                title={meta.label}
-                              >
-                                {meta.badge}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-
-                      <button
-                        className="mt-2 flex w-full items-center justify-between rounded-md px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                        className="mt-2 flex w-full items-center justify-start rounded-md px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
                         onClick={() => { setMenuOpen(false); disconnect() }}
                         title="Disconnect"
                       >
-                        <span>Disconnect</span>
-                        <span className="text-xs">⌘D</span>
+                        <span className="text-xs"><ExitIcon /></span>
+                        <span className='mx-2'>Disconnect</span>
                       </button>
                     </div>
                   </div>

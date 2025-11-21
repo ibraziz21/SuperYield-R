@@ -5,13 +5,7 @@ import {
   ColumnDef,
   Table as TableTanstack,
   flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  useReactTable,
 } from "@tanstack/react-table";
-
-
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
@@ -30,6 +25,7 @@ interface DataTableProps<TData, TValue> {
   onRowClick?: (row: any) => void;
   emptyMessage?: string;
   emptySubMessage?: string;
+  showExploreVaultsButton?: boolean; // New prop
 }
 
 export function DataTable<TData, TValue>({
@@ -40,21 +36,8 @@ export function DataTable<TData, TValue>({
   onRowClick,
   emptyMessage = "No results.",
   emptySubMessage,
+  showExploreVaultsButton = false, // Defaults to false
 }: DataTableProps<TData, TValue>) {
-  // const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-  //   []
-  // );
-  // const table = useReactTable({
-  //   data,
-  //   columns,
-  //   getCoreRowModel: getCoreRowModel(),
-  //   getPaginationRowModel: getPaginationRowModel(),
-  //   onColumnFiltersChange: setColumnFilters,
-  //   getFilteredRowModel: getFilteredRowModel(),
-  //   state: {
-  //     columnFilters,
-  //   },
-  // });
   const { pageIndex } = table.getState().pagination;
   const router = useRouter();
 
@@ -127,6 +110,16 @@ export function DataTable<TData, TValue>({
                     <p className="text-sm text-muted-foreground font-medium">{emptyMessage}</p>
                     {emptySubMessage && (
                       <p className="text-xs text-muted-foreground mt-1">{emptySubMessage}</p>
+                    )}
+                    {showExploreVaultsButton && ( // Button renders when prop is true
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        className="mt-4"
+                        onClick={() => router.push('/vaults')}
+                      >
+                        Explore Vaults
+                      </Button>
                     )}
                   </div>
                 </TableCell>

@@ -1,3 +1,4 @@
+// src/app/dashboard/page.tsx
 'use client'
 
 import { useState } from 'react'
@@ -51,13 +52,45 @@ function toSnapshotFromPosition(p: {
 
 export default function Dashboard() {
   const [depositSnap, setDepositSnap] = useState<YieldSnapshot | null>(null)
-  const [withdrawSnap, setWithdrawSnap] = useState<YieldSnapshot | null>(null)
   const { address, isConnected } = useAppKitAccount()
 
-  const [networkFilter, setNetworkFilter] = useState<string>('all')
-  const [protocolFilter, setProtocolFilter] = useState<string>('all')
+  const [selectedNetworks, setSelectedNetworks] = useState<string[]>(['all'])
+  const [selectedProtocols, setSelectedProtocols] = useState<string[]>(['all'])
   const [showNetworkFilter, setShowNetworkFilter] = useState(false)
   const [showProtocolFilter, setShowProtocolFilter] = useState(false)
+
+  const handleNetworkToggle = (network: string) => {
+    if (network === 'all') {
+      setSelectedNetworks(['all'])
+    } else {
+      setSelectedNetworks(prev => {
+        const filtered = prev.filter(n => n !== 'all')
+        if (filtered.includes(network)) {
+          const newSelection = filtered.filter(n => n !== network)
+          return newSelection.length > 0 ? newSelection : ['all']
+        } else {
+          return [...filtered, network]
+        }
+      })
+    }
+  }
+
+  // ✅ Toggle handler for Protocol
+  const handleProtocolToggle = (protocol: string) => {
+    if (protocol === 'all') {
+      setSelectedProtocols(['all'])
+    } else {
+      setSelectedProtocols(prev => {
+        const filtered = prev.filter(p => p !== 'all')
+        if (filtered.includes(protocol)) {
+          const newSelection = filtered.filter(p => p !== protocol)
+          return newSelection.length > 0 ? newSelection : ['all']
+        } else {
+          return [...filtered, protocol]
+        }
+      })
+    }
+  }
 
   return (
     <div className="min-h-[calc(100vh-3.5rem)]">
@@ -77,8 +110,11 @@ export default function Dashboard() {
 
             {/* Claimable Rewards */}
             <section className="bg-white my-4 p-4 md:p-6 rounded-xl max-w-6xl mx-auto">
-              <div className="mb-3">
-                <h2 className="text-base md:text-lg font-semibold tracking-tight">Claimable Rewards</h2>
+              <div className="mb-3 flex justify-start items-center gap-2 ">
+                <h2 className="text-base md:text-lg font-semibold tracking-tight text-center">Claimable Rewards</h2>
+                <div className="px-2 py-1 bg-[#E5E7EB] text-[#4B5563] text-[12px] rounded-full">
+                  $13.46
+                </div>
               </div>
               <ClaimRewards />
             </section>
@@ -96,11 +132,12 @@ export default function Dashboard() {
               </div>
 
               <MyPositions
-                networkFilter={networkFilter}
-                protocolFilter={protocolFilter}
+                // ✅ Pass string[] for both filters
+                networkFilter={selectedNetworks}
+                protocolFilter={selectedProtocols}
                 filterUI={
                   <div className="flex items-center gap-3 md:gap-4 px-2 py-3 flex-wrap">
-                    {/* Network Filter */}
+                    {/* Network Filter with Checkboxes */}
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-gray-700">Network:</span>
                       <div className="relative">
@@ -110,41 +147,44 @@ export default function Dashboard() {
                             setShowProtocolFilter(false)
                           }}
                           className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
-                            networkFilter !== 'all'
+                            selectedNetworks.length > 0 && !selectedNetworks.includes('all')
                               ? 'border-blue-500 bg-blue-50 text-blue-700'
                               : 'border-gray-300 bg-white hover:bg-gray-50'
                           }`}
                           title="Filter by network"
                         >
                           <FunnelSimple size={14} weight="bold" />
-                          {networkFilter === 'all' ? 'All' : networkFilter}
+                          {selectedNetworks.includes('all') || selectedNetworks.length === 0 
+                            ? 'All' 
+                            : selectedNetworks.join(', ')}
                         </button>
+                        
                         {showNetworkFilter && (
-                          <div className="absolute left-0 top-full mt-1 z-10 w-36 rounded-lg border border-gray-200 bg-white shadow-lg">
-                            <button
-                              onClick={() => {
-                                setNetworkFilter('all')
-                                setShowNetworkFilter(false)
-                              }}
-                              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 first:rounded-t-lg"
-                            >
-                              All
-                            </button>
-                            <button
-                              onClick={() => {
-                                setNetworkFilter('Lisk')
-                                setShowNetworkFilter(false)
-                              }}
-                              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 last:rounded-b-lg"
-                            >
+                          <div className="absolute left-0 top-full mt-1 z-10 w-48 rounded-lg border border-gray-200 bg-white shadow-lg p-2">
+                            <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                              <input 
+                                type="checkbox" 
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                checked={selectedNetworks.includes('all')}
+                                onChange={() => handleNetworkToggle('all')}
+                              />
+                              All Networks
+                            </label>
+                            <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                              <input 
+                                type="checkbox" 
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                checked={selectedNetworks.includes('Lisk')}
+                                onChange={() => handleNetworkToggle('Lisk')}
+                              />
                               Lisk
-                            </button>
+                            </label>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* Protocol Filter */}
+                    {/* Protocol Filter with Checkboxes */}
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-gray-700">Protocol:</span>
                       <div className="relative">
@@ -154,35 +194,38 @@ export default function Dashboard() {
                             setShowNetworkFilter(false)
                           }}
                           className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
-                            protocolFilter !== 'all'
+                            selectedProtocols.length > 0 && !selectedProtocols.includes('all')
                               ? 'border-blue-500 bg-blue-50 text-blue-700'
                               : 'border-gray-300 bg-white hover:bg-gray-50'
                           }`}
                           title="Filter by protocol"
                         >
                           <FunnelSimple size={14} weight="bold" />
-                          {protocolFilter === 'all' ? 'All' : protocolFilter}
+                          {selectedProtocols.includes('all') || selectedProtocols.length === 0 
+                            ? 'All' 
+                            : selectedProtocols.join(', ')}
                         </button>
+                        
                         {showProtocolFilter && (
-                          <div className="absolute left-0 top-full mt-1 z-10 w-36 rounded-lg border border-gray-200 bg-white shadow-lg">
-                            <button
-                              onClick={() => {
-                                setProtocolFilter('all')
-                                setShowProtocolFilter(false)
-                              }}
-                              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 first:rounded-t-lg"
-                            >
-                              All
-                            </button>
-                            <button
-                              onClick={() => {
-                                setProtocolFilter('Morpho Blue')
-                                setShowProtocolFilter(false)
-                              }}
-                              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 last:rounded-b-lg"
-                            >
+                          <div className="absolute left-0 top-full mt-1 z-10 w-48 rounded-lg border border-gray-200 bg-white shadow-lg p-2">
+                            <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                              <input 
+                                type="checkbox" 
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                checked={selectedProtocols.includes('all')}
+                                onChange={() => handleProtocolToggle('all')}
+                              />
+                              All Protocols
+                            </label>
+                            <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                              <input 
+                                type="checkbox" 
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                checked={selectedProtocols.includes('Morpho Blue')}
+                                onChange={() => handleProtocolToggle('Morpho Blue')}
+                              />
                               Morpho Blue
-                            </button>
+                            </label>
                           </div>
                         )}
                       </div>
@@ -196,15 +239,6 @@ export default function Dashboard() {
           <ConnectWalletPrompt />
         )
       }
-
-      {/* Keep withdraw open for Morpho (the modal guards unsupported flows itself)
-      {withdrawSnap && (
-        <WithdrawModal
-          open
-          onClose={() => setWithdrawSnap(null)}
-          snap={withdrawSnap}
-        />
-      )} */}
     </div>
   )
 }

@@ -11,10 +11,46 @@ import { FunnelSimpleIcon } from '@phosphor-icons/react'
 
 export default function PositionsPage() {
   const { address, isConnected } = useAppKitAccount()
-  const [networkFilter, setNetworkFilter] = useState<string>('all')
-  const [protocolFilter, setProtocolFilter] = useState<string>('all')
+  
+  // Multi-select state for filters
+  const [selectedNetworks, setSelectedNetworks] = useState<string[]>(['all'])
+  const [selectedProtocols, setSelectedProtocols] = useState<string[]>(['all'])
   const [showNetworkFilter, setShowNetworkFilter] = useState(false)
   const [showProtocolFilter, setShowProtocolFilter] = useState(false)
+
+  // Toggle handler for network checkboxes
+  const handleNetworkToggle = (network: string) => {
+    if (network === 'all') {
+      setSelectedNetworks(['all'])
+    } else {
+      setSelectedNetworks(prev => {
+        const filtered = prev.filter(n => n !== 'all')
+        if (filtered.includes(network)) {
+          const newSelection = filtered.filter(n => n !== network)
+          return newSelection.length > 0 ? newSelection : ['all']
+        } else {
+          return [...filtered, network]
+        }
+      })
+    }
+  }
+
+  // Toggle handler for protocol checkboxes
+  const handleProtocolToggle = (protocol: string) => {
+    if (protocol === 'all') {
+      setSelectedProtocols(['all'])
+    } else {
+      setSelectedProtocols(prev => {
+        const filtered = prev.filter(p => p !== 'all')
+        if (filtered.includes(protocol)) {
+          const newSelection = filtered.filter(p => p !== protocol)
+          return newSelection.length > 0 ? newSelection : ['all']
+        } else {
+          return [...filtered, protocol]
+        }
+      })
+    }
+  }
 
   if (!isConnected || !address) {
     return <ConnectWalletPrompt />
@@ -22,7 +58,6 @@ export default function PositionsPage() {
 
   return (
     <div className="min-h-[calc(100vh-3.5rem)] w-full px-4">
-      {/* Vaults */}
       <section className="bg-[#F9FAFB] my-4 p-4 md:p-6 rounded-xl max-w-6xl mx-auto">
         <Tabs defaultValue="vaults" className="w-full">
           <TabsList className="mb-4">
@@ -31,8 +66,9 @@ export default function PositionsPage() {
           </TabsList>
 
           <TabsContent value="vaults">
-            <Vaults networkFilter={networkFilter}
-              protocolFilter={protocolFilter}
+            <Vaults 
+              networkFilter={selectedNetworks}
+              protocolFilter={selectedProtocols}
               filterUI={
                 <div className="flex items-center gap-3 md:gap-4 px-2 py-3 flex-wrap">
                   {/* Network Filter */}
@@ -44,35 +80,39 @@ export default function PositionsPage() {
                           setShowNetworkFilter(!showNetworkFilter)
                           setShowProtocolFilter(false)
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${networkFilter !== 'all'
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
+                          selectedNetworks.length > 0 && !selectedNetworks.includes('all')
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-gray-300 bg-white hover:bg-gray-50'
-                          }`}
+                        }`}
                         title="Filter by network"
                       >
                         <FunnelSimpleIcon size={14} weight="bold" />
-                        {networkFilter === 'all' ? 'All' : networkFilter}
+                        {selectedNetworks.includes('all') || selectedNetworks.length === 0 
+                          ? 'All' 
+                          : selectedNetworks.join(', ')}
                       </button>
+                      
                       {showNetworkFilter && (
-                        <div className="absolute left-0 top-full mt-1 z-10 w-36 rounded-lg border border-gray-200 bg-white shadow-lg">
-                          <button
-                            onClick={() => {
-                              setNetworkFilter('all')
-                              setShowNetworkFilter(false)
-                            }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 first:rounded-t-lg"
-                          >
-                            All
-                          </button>
-                          <button
-                            onClick={() => {
-                              setNetworkFilter('Lisk')
-                              setShowNetworkFilter(false)
-                            }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 last:rounded-b-lg"
-                          >
+                        <div className="absolute left-0 top-full mt-1 z-10 w-48 rounded-lg border border-gray-200 bg-white shadow-lg p-2">
+                          <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                            <input 
+                              type="checkbox" 
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              checked={selectedNetworks.includes('all')}
+                              onChange={() => handleNetworkToggle('all')}
+                            />
+                            All Networks
+                          </label>
+                          <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                            <input 
+                              type="checkbox" 
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              checked={selectedNetworks.includes('Lisk')}
+                              onChange={() => handleNetworkToggle('Lisk')}
+                            />
                             Lisk
-                          </button>
+                          </label>
                         </div>
                       )}
                     </div>
@@ -87,47 +127,52 @@ export default function PositionsPage() {
                           setShowProtocolFilter(!showProtocolFilter)
                           setShowNetworkFilter(false)
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${protocolFilter !== 'all'
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
+                          selectedProtocols.length > 0 && !selectedProtocols.includes('all')
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-gray-300 bg-white hover:bg-gray-50'
-                          }`}
+                        }`}
                         title="Filter by protocol"
                       >
                         <FunnelSimpleIcon size={14} weight="bold" />
-                        {protocolFilter === 'all' ? 'All' : protocolFilter}
+                        {selectedProtocols.includes('all') || selectedProtocols.length === 0 
+                          ? 'All' 
+                          : selectedProtocols.join(', ')}
                       </button>
+                      
                       {showProtocolFilter && (
-                        <div className="absolute left-0 top-full mt-1 z-10 w-36 rounded-lg border border-gray-200 bg-white shadow-lg">
-                          <button
-                            onClick={() => {
-                              setProtocolFilter('all')
-                              setShowProtocolFilter(false)
-                            }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 first:rounded-t-lg"
-                          >
-                            All
-                          </button>
-                          <button
-                            onClick={() => {
-                              setProtocolFilter('Morpho Blue')
-                              setShowProtocolFilter(false)
-                            }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 last:rounded-b-lg"
-                          >
+                        <div className="absolute left-0 top-full mt-1 z-10 w-48 rounded-lg border border-gray-200 bg-white shadow-lg p-2">
+                          <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                            <input 
+                              type="checkbox" 
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              checked={selectedProtocols.includes('all')}
+                              onChange={() => handleProtocolToggle('all')}
+                            />
+                            All Protocols
+                          </label>
+                          <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                            <input 
+                              type="checkbox" 
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              checked={selectedProtocols.includes('Morpho Blue')}
+                              onChange={() => handleProtocolToggle('Morpho Blue')}
+                            />
                             Morpho Blue
-                          </button>
+                          </label>
                         </div>
                       )}
                     </div>
                   </div>
                 </div>
-              } />
+              } 
+            />
           </TabsContent>
 
           <TabsContent value="positions">
             <MyPositions
-              networkFilter={networkFilter}
-              protocolFilter={protocolFilter}
+              networkFilter={selectedNetworks}
+              protocolFilter={selectedProtocols}
               filterUI={
                 <div className="flex items-center gap-3 md:gap-4 px-2 py-3 flex-wrap">
                   {/* Network Filter */}
@@ -139,35 +184,39 @@ export default function PositionsPage() {
                           setShowNetworkFilter(!showNetworkFilter)
                           setShowProtocolFilter(false)
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${networkFilter !== 'all'
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
+                          selectedNetworks.length > 0 && !selectedNetworks.includes('all')
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-gray-300 bg-white hover:bg-gray-50'
-                          }`}
+                        }`}
                         title="Filter by network"
                       >
                         <FunnelSimpleIcon size={14} weight="bold" />
-                        {networkFilter === 'all' ? 'All' : networkFilter}
+                        {selectedNetworks.includes('all') || selectedNetworks.length === 0 
+                          ? 'All' 
+                          : selectedNetworks.join(', ')}
                       </button>
+                      
                       {showNetworkFilter && (
-                        <div className="absolute left-0 top-full mt-1 z-10 w-36 rounded-lg border border-gray-200 bg-white shadow-lg">
-                          <button
-                            onClick={() => {
-                              setNetworkFilter('all')
-                              setShowNetworkFilter(false)
-                            }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 first:rounded-t-lg"
-                          >
-                            All
-                          </button>
-                          <button
-                            onClick={() => {
-                              setNetworkFilter('Lisk')
-                              setShowNetworkFilter(false)
-                            }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 last:rounded-b-lg"
-                          >
+                        <div className="absolute left-0 top-full mt-1 z-10 w-48 rounded-lg border border-gray-200 bg-white shadow-lg p-2">
+                          <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                            <input 
+                              type="checkbox" 
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              checked={selectedNetworks.includes('all')}
+                              onChange={() => handleNetworkToggle('all')}
+                            />
+                            All Networks
+                          </label>
+                          <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                            <input 
+                              type="checkbox" 
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              checked={selectedNetworks.includes('Lisk')}
+                              onChange={() => handleNetworkToggle('Lisk')}
+                            />
                             Lisk
-                          </button>
+                          </label>
                         </div>
                       )}
                     </div>
@@ -182,35 +231,39 @@ export default function PositionsPage() {
                           setShowProtocolFilter(!showProtocolFilter)
                           setShowNetworkFilter(false)
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${protocolFilter !== 'all'
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
+                          selectedProtocols.length > 0 && !selectedProtocols.includes('all')
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-gray-300 bg-white hover:bg-gray-50'
-                          }`}
+                        }`}
                         title="Filter by protocol"
                       >
                         <FunnelSimpleIcon size={14} weight="bold" />
-                        {protocolFilter === 'all' ? 'All' : protocolFilter}
+                        {selectedProtocols.includes('all') || selectedProtocols.length === 0 
+                          ? 'All' 
+                          : selectedProtocols.join(', ')}
                       </button>
+                      
                       {showProtocolFilter && (
-                        <div className="absolute left-0 top-full mt-1 z-10 w-36 rounded-lg border border-gray-200 bg-white shadow-lg">
-                          <button
-                            onClick={() => {
-                              setProtocolFilter('all')
-                              setShowProtocolFilter(false)
-                            }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 first:rounded-t-lg"
-                          >
-                            All
-                          </button>
-                          <button
-                            onClick={() => {
-                              setProtocolFilter('Morpho Blue')
-                              setShowProtocolFilter(false)
-                            }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 last:rounded-b-lg"
-                          >
+                        <div className="absolute left-0 top-full mt-1 z-10 w-48 rounded-lg border border-gray-200 bg-white shadow-lg p-2">
+                          <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                            <input 
+                              type="checkbox" 
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              checked={selectedProtocols.includes('all')}
+                              onChange={() => handleProtocolToggle('all')}
+                            />
+                            All Protocols
+                          </label>
+                          <label className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer rounded">
+                            <input 
+                              type="checkbox" 
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              checked={selectedProtocols.includes('Morpho Blue')}
+                              onChange={() => handleProtocolToggle('Morpho Blue')}
+                            />
                             Morpho Blue
-                          </button>
+                          </label>
                         </div>
                       )}
                     </div>
