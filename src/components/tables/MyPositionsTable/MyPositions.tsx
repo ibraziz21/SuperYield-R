@@ -144,13 +144,22 @@ const MyPositions: React.FC<MyPositionsProps> = ({ networkFilter, protocolFilter
     });
   }, [positions]);
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 65ad43b2423f1e888b15cfb0478ecdd4f7942148
   const tableData: TableRow[] = useMemo(() => {
     let filtered = positionsForMorpho.map((p) => {
       const snap = findSnapshotForPosition(p, snapshots);
       const depositsHuman = formatAmountBigint(p.amount ?? 0n, 18);
-
+  
+      const tokenSymbol = String(p.token); // "USDCe" | "USDT0" | "WETH"
+  
       return {
-        vault: normalizeDisplayVault(String(p.token)),
+        // Display text on the row
+        vault: normalizeDisplayVault(tokenSymbol), // e.g. "Re7 USDC.e"
+        // Canonical route key for URLs
+        routeKey: tokenSymbol, // 👈 used by MyPositionsTable for /vaults/USDCe
         network: CHAIN_LABEL[p.chain],
         deposits: depositsHuman,
         protocol: "Morpho Blue",
@@ -165,9 +174,10 @@ const MyPositions: React.FC<MyPositionsProps> = ({ networkFilter, protocolFilter
     if (protocolFilter && !protocolFilter.includes("all")) {
       filtered = filtered.filter((row) => protocolFilter.includes(row.protocol));
     }
-
+  
     return filtered;
   }, [positionsForMorpho, snapshots, networkFilter, protocolFilter]);
+  
 
   if (positionsLoading || yieldsLoading) {
     return (

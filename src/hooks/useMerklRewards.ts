@@ -12,27 +12,39 @@ import {
 export type FlatReward = MerklRewardItem & {
   chainId: number
   chainName: string
+  /** claimable = amount - claimed (wei, as string) */
+  claimable: string
 }
 
 export function useMerklRewards(opts?: { chains?: number[] }) {
   const { data: wallet } = useWalletClient()
   const addr = wallet?.account?.address as Address | undefined
-  const chainIds = opts?.chains ?? [lisk.id, optimism.id, base.id] // cover Lisk + OP/Base
+  const chainIds = opts?.chains ?? [lisk.id, optimism.id, base.id]
 
   const q = useQuery<FlatReward[]>({
     queryKey: ['merkl-rewards', addr, chainIds],
     enabled: !!addr,
     queryFn: async () => {
       const byChain = await fetchMerklRewards({ user: addr!, chainIds })
-      const flat: FlatReward[] = (byChain as MerklRewardsByChain[]).flatMap((row) =>
-        row.rewards.map((r) => ({
-          ...r,
-          chainId: row.chain.id,
-          chainName: row.chain.name,
-        })),
+
+      const flat: FlatReward[] = (byChain as MerklRewardsByChain[]).flatMap(
+        (row) =>
+          row.rewards.map((r) => {
+            const total = BigInt(r.amount)
+            const alreadyClaimed = BigInt((r as any).claimed ?? '0')
+            const claimable = total - alreadyClaimed
+
+            return {
+              ...r,
+              chainId: row.chain.id,
+              chainName: row.chain.name,
+              claimable: claimable.toString(),
+            }
+          }),
       )
-      // keep only strictly positive claimables
-      return flat.filter((r) => BigInt(r.amount) > 0n)
+
+      // keep only strictly positive *unclaimed* amounts
+      return flat.filter((r) => BigInt(r.claimable) > 0n)
     },
     staleTime: 60_000,
     refetchOnWindowFocus: false,
@@ -50,3 +62,4 @@ export function useMerklRewards(opts?: { chains?: number[] }) {
     }, {}),
   }
 }
+

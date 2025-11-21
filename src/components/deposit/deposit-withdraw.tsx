@@ -526,7 +526,7 @@ export function DepositWithdraw({
   const availableTokens: Token[] = [
     {
       id: 'usdc',
-      name: 'USD Coin (OP Mainnet)',
+      name: 'USD Coin',
       symbol: 'USDC',
       icon: '/tokens/usdc-icon.png',
       balance: availableTokenBalances.USDC_Op,
@@ -534,7 +534,7 @@ export function DepositWithdraw({
     },
     {
       id: 'usdt',
-      name: 'Tether USD (OP Mainnet)',
+      name: 'Tether USD',
       symbol: 'USDT',
       icon: '/tokens/usdt-icon.png',
       balance: availableTokenBalances.USDT_Op,
@@ -542,7 +542,7 @@ export function DepositWithdraw({
     },
     {
       id: 'usdt0_op',
-      name: 'USDT0 (OP Mainnet)',
+      name: 'USDT0 ',
       symbol: 'USDT0',
       icon: '/tokens/usdt0-icon.png',
       balance: availableTokenBalances.USDT0_OP,
@@ -550,7 +550,7 @@ export function DepositWithdraw({
     },
     {
       id: 'usdce_lisk',
-      name: 'USDC.e (Lisk)',
+      name: 'USDC.e',
       symbol: 'USDCe',
       icon: '/tokens/usdc-icon.png',
       balance: availableTokenBalances.USDCe_Lisk,
@@ -558,7 +558,7 @@ export function DepositWithdraw({
     },
     {
       id: 'usdt0_lisk',
-      name: 'USDT0 (Lisk)',
+      name: 'USDT0',
       symbol: 'USDT0',
       icon: '/tokens/usdt0-icon.png',
       balance: availableTokenBalances.USDT0_Lisk,

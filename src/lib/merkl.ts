@@ -35,11 +35,16 @@ export interface MerklRewardItem {
     symbol: string
     decimals: number
   }
-  /** stringified wei (claimable) */
+  /** total credited (wei, as string) */
   amount: string
+  /** already claimed on this token (wei, as string) */
+  claimed: string
+  /** pending rewards that are *not yet* in `amount` */
+  pending: string
   /** merkle proof as array of bytes32 */
   proofs: `0x${string}`[]
 }
+
 
 export interface MerklRewardsByChain {
   chain: { id: number; name: string }
