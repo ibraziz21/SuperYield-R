@@ -42,16 +42,6 @@ const tokenIcons: Record<string, string> = {
   LSK: "/tokens/lisk.png",
 };
 
-const tokenPrices: Record<string, number> = {
-  AAVE: 85.5,
-  USDC: 1.0,
-  ETH: 2400.0,
-  WETH: 2400.0,
-  GMX: 45.2,
-  USDT: 1.0,
-  LSK: 0, // price optional; show $0.00 if unknown
-};
-
 export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
   {
     accessorKey: "network",
@@ -104,10 +94,14 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
   {
     accessorKey: "claimable",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Claimable" />,
-    cell: ({ row }) => {
+    cell: ({ row, table }) => {
       const claimable = Number(row.getValue("claimable") as string) || 0;
       const token = row.getValue("token") as string;
-      const price = tokenPrices[token] ?? 0;
+
+      const meta: any = table.options.meta ?? {};
+      const priceFn =
+        typeof meta.priceUsdForSymbol === "function" ? meta.priceUsdForSymbol : undefined;
+      const price = priceFn ? priceFn(token) : 0;
       const usdValue = claimable * price;
 
       return (
@@ -147,14 +141,14 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
     id: "actions",
     cell: ({ row, table }) => {
       const meta: any = table.options.meta ?? {};
-      const onClaim = meta.onClaim as ((row: ClaimableReward & { __raw?: unknown }) => Promise<void>) | undefined;
+      const onClaim = meta.onClaim as
+        | ((row: ClaimableReward & { __raw?: unknown }) => Promise<void>)
+        | undefined;
       const isClaiming = typeof meta.isClaiming === "function" ? meta.isClaiming(row.original) : false;
 
       const handleClaim = async () => {
         try {
           await onClaim?.(row.original as any);
-          // Optional UX ping
-          // toast.success("Claim submitted");
         } catch (e: any) {
           toast.error(e?.message ?? "Claim failed");
         }
