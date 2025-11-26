@@ -164,7 +164,7 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
                     <span className="text-sm text-foreground font-medium">{reward.token}</span>
                     <div className="flex items-center gap-1.5">
                       <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getColorIndicator(reward) }} />
-                      <span className="text-sm text-foreground">{reward.symbol}</span>
+                      <span className="text-sm text-foreground">{reward.amount.toFixed(2)}</span>
                     </div>
                   </div>
                   <span className="text-sm text-foreground font-semibold">${reward.usdValue.toFixed(2)}</span>
