@@ -166,10 +166,10 @@ export function Navbar() {
   }
 
   return (
-    <>
+    <div className='mt-[12px]'>
       {/* Top App Bar */}
       <header
-        className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-6xl mx-auto rounded-xl mt-2`}
+        className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-6xl mx-auto rounded-xl`}
       >
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-3 sm:px-4">
           {/* Brand */}
@@ -178,10 +178,10 @@ export function Navbar() {
               <Image
                 src={ecovaults}
                 alt="ecovaults"
-                width={160}
-                height={28}
+                width={0}
+                height={0}
                 priority
-                className="h-7 w-auto"
+                className="h-auto w-auto"
               />
             </Link>
             {/* Desktop nav */}
@@ -227,7 +227,6 @@ export function Navbar() {
                 >
                   <div className="h-5 w-5 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5" />
                   <span className="max-w-[92px] truncate">{shortAddr(address)}</span>
-                  <svg width="16" height="16" viewBox="0 0 24 24" className={`transition ${menuOpen ? 'rotate-180 opacity-80' : 'opacity-60'}`}><path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </button>
 
                 {menuOpen && (
@@ -385,7 +384,7 @@ export function Navbar() {
       </div>
 
   
-    </>
+    </div>
   )
 }
 

@@ -61,13 +61,13 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const iconPath = networkIcons[network] || "/networks/default.svg";
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="relative h-6 w-6">
+          <div className="relative h-6 w-6 rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={network}
-              width={24}
-              height={24}
-              className="rounded-xl"
+              width={20}
+              height={20}
+              className="rounded-none"
               onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
             />
           </div>
@@ -75,7 +75,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
         </div>
       );
     },
-    enableSorting: true,
+    enableSorting: false,
   },
   {
     accessorKey: "source",
@@ -85,13 +85,13 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const iconPath = sourceIcons[source] || "/protocols/default.svg";
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="relative h-6 w-6">
+          <div className="relative h-6 w-6 rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={source}
-              width={24}
-              height={24}
-              className="rounded-xl"
+              width={20}
+              height={20}
+              className="rounded-none"
               onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
             />
           </div>
@@ -99,7 +99,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
         </div>
       );
     },
-    enableSorting: true,
+    enableSorting: false,
   },
   {
     accessorKey: "claimable",
@@ -112,10 +112,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
 
       return (
         <div className="text-center">
-          <div className="font-medium">
-            {claimable.toLocaleString(undefined, { maximumFractionDigits: 6 })} {token}
-          </div>
-          <div className="text-xs text-muted-foreground">
+          <div className="text-[14px] font-normal text-muted-foreground">
             ${usdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
@@ -135,21 +132,19 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
             <Image
               src={iconPath}
               alt={token}
-              width={24}
-              height={24}
+              width={20}
+              height={20}
               className="rounded-none"
               onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
             />
           </div>
-          <span className="font-medium">{token}</span>
         </div>
       );
     },
-    enableSorting: true,
+    enableSorting: false,
   },
   {
     id: "actions",
-    header: "Actions",
     cell: ({ row, table }) => {
       const meta: any = table.options.meta ?? {};
       const onClaim = meta.onClaim as ((row: ClaimableReward & { __raw?: unknown }) => Promise<void>) | undefined;
@@ -166,7 +161,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       };
 
       return (
-        <Button title="Claim" className="bg-[#376FFF] rounded-[12px] p-3" onClick={handleClaim} disabled={!onClaim || isClaiming}>
+        <Button title="Claim" className="bg-[#376FFF] rounded-full px-3" onClick={handleClaim} disabled={!onClaim || isClaiming}>
           {isClaiming ? "Claiming…" : "Claim"}
         </Button>
       );

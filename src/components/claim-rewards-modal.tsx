@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Check, AlertCircle, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Image from "next/image"
+import { CheckCircleIcon } from "@phosphor-icons/react"
 
 interface Reward {
   token: string
@@ -125,12 +126,12 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
   if (state === "success") {
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-background rounded-2xl w-full max-w-sm mx-4 shadow-lg border border-border overflow-hidden">
+        <div className="bg-background rounded-[20px] w-full max-w-sm mx-4 shadow-lg border border-border overflow-hidden">
           {/* Header with Success Icon */}
           <div className="flex items-center justify-between p-6 border-b border-border">
             <h2 className="text-xl font-semibold">Rewards claimed</h2>
-            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30">
-              <Check size={20} className="text-emerald-600 dark:text-emerald-400" />
+            <div className="flex items-center justify-center w-[32px] h-[32px] rounded-[12px] bg-[#E7F8F0]">
+              <CheckCircleIcon size={16} weight="bold" className="text-[#12B76A]" />
             </div>
           </div>
 
@@ -139,10 +140,10 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
             <p className="text-sm text-muted-foreground">You can view your claimed tokens in your wallet.</p>
 
             {/* Summary Box */}
-            <div className="bg-muted rounded-xl p-4 space-y-3">
+            <div className=" border border-border rounded-xl p-4 space-y-3">
               <div className="flex justify-between items-center pb-3 border-b border-border">
-                <span className="text-sm text-foreground font-medium">Total value claimed</span>
-                <span className="text-base font-semibold text-foreground">${totalUsd.toFixed(2)}</span>
+                <span className="text-sm text-foreground font-normal">Total value claimed</span>
+                <span className="text-[13px] font-normal text-foreground">${totalUsd.toFixed(2)}</span>
               </div>
 
               {/* Claimed Tokens */}
@@ -161,23 +162,25 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
                         }}
                       />
                     </div>
-                    <span className="text-sm text-foreground font-medium">{reward.token}</span>
+                    <span className="text-sm text-foreground font-normal">{reward.token}</span>
                     <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getColorIndicator(reward) }} />
-                      <span className="text-sm text-foreground">{reward.symbol}</span>
+                      <span className="text-sm text-foreground">{reward.amount.toFixed(2)} {reward.token}</span>
                     </div>
                   </div>
-                  <span className="text-sm text-foreground font-semibold">${reward.usdValue.toFixed(2)}</span>
                 </div>
               ))}
             </div>
 
             {/* Info Box */}
-            <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 rounded-xl p-4">
+            <div className="bg-blue-50 dark:bg-blue-950/30 border border-[#7FA6FF] rounded-xl p-4">
               <div className="flex gap-3">
-                <Sparkles size={18} className="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12.3529 2L13.8782 6.12184L18 7.64706L13.8782 9.17228L12.3529 13.2941L10.8277 9.17228L6.70588 7.64706L10.8277 6.12184L12.3529 2Z" stroke="#376FFF" stroke-width="1.5" stroke-linejoin="round" />
+                  <path d="M5.29412 11.4118L6.62647 13.3735L8.58824 14.7059L6.62647 16.0382L5.29412 18L3.96176 16.0382L2 14.7059L3.96176 13.3735L5.29412 11.4118Z" stroke="#376FFF" stroke-width="1.5" stroke-linejoin="round" />
+                </svg>
+
                 <div>
-                  <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                  <p className="text-sm font-normal text-[#376FFF] ">
                     Earn more with your rewards
                   </p>
                   <p className="text-xs text-foreground mt-1">
@@ -192,7 +195,7 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
               <Button
                 onClick={handleExploreVaults}
                 size="lg"
-                className="w-full text-white bg-blue-600 hover:bg-blue-700 text-base font-semibold h-12"
+                className="w-full rounded-lg text-white bg-[#376FFF] hover:bg-blue-700 text-[13px] font-normal h-12"
               >
                 Explore vaults
               </Button>
@@ -200,7 +203,7 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
                 onClick={handleBackToDashboard}
                 variant="ghost"
                 size="lg"
-                className="w-full text-base font-medium h-12 hover:bg-muted"
+                className="w-full rounded-lg text-[13px] font-medium h-12 hover:bg-muted border border-border"
               >
                 Back to dashboard
               </Button>
@@ -214,21 +217,21 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
   // INITIAL, SIGNING, CLAIMING, OR ERROR STATE
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-background rounded-2xl w-full max-w-sm mx-4 shadow-lg border border-border overflow-hidden">
+      <div className="bg-background rounded-[20px] w-full max-w-sm mx-4 shadow-lg border border-border overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border">
           <h2 className="text-xl font-semibold">Claim rewards</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors text-xl">
+          <button onClick={onClose} className="rounded-[12px] bg-[#F3F4F6] px-2 text-muted-foreground hover:text-foreground transition-colors text-xl">
             ✕
           </button>
         </div>
 
         {/* Content */}
         <div className="p-6 space-y-4">
-          <p className="text-sm text-muted-foreground">Claim your Merkl rewards on OP Mainnet</p>
+          <p className="text-[12px] text-muted-foreground">Claim your Merkl rewards on OP Mainnet</p>
 
           {/* Rewards List */}
-          <div className="bg-muted rounded-xl overflow-hidden divide-y divide-border">
+          <div className="border border-muted rounded-xl overflow-hidden divide-y divide-border">
             {/* Select All */}
             <div className="flex items-center justify-between px-4 py-3.5 hover:bg-background/50 transition-colors cursor-pointer">
               <label className="flex items-center gap-3 cursor-pointer flex-1">
@@ -263,7 +266,8 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
                     className="w-4 h-4 rounded accent-blue-600 cursor-pointer"
                     onClick={(e) => e.stopPropagation()}
                   />
-                  <div className="flex items-center gap-2.5">
+                  <span className="text-sm font-semibold text-foreground">{reward.token}</span>
+                  <div className="flex items-center gap-2.5 rounded-full bg-[#F3F4F6] px-2">
                     <div className="w-5 h-5 relative">
                       <Image
                         src={reward.icon}
@@ -301,7 +305,7 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
             onClick={state === "error" ? handleTryAgain : handleClaim}
             disabled={selectedRewards.length === 0 || state === "claiming" || state === "signing"}
             size="lg"
-            className="w-full text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-base font-semibold h-12 flex items-center justify-center gap-2"
+            className="w-full rounded-[12px] text-white bg-[#376FFF] hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-[13px] font-medium h-12 flex items-center justify-center gap-2"
           >
             {state === "signing" && (
               <>

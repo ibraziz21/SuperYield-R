@@ -35,7 +35,7 @@ export default function ClaimRewardTable<TData, TValue>({
   const table = useReactTable({
     data,
     columns,
-    meta, // NEW: pass meta so cells can call onClaim
+    meta,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),

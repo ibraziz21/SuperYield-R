@@ -104,9 +104,9 @@ export function DataTable<TData, TValue>({
               <TableRow>
                 <TableCell
                   colSpan={columns.length}
-                  className="h-32 text-center"
+                  className="h-[52px] text-center"
                 >
-                  <div className="flex flex-col items-center justify-center py-8">
+                  <div className="flex flex-col items-center justify-center">
                     <p className="text-sm text-muted-foreground font-medium">{emptyMessage}</p>
                     {emptySubMessage && (
                       <p className="text-xs text-muted-foreground mt-1">{emptySubMessage}</p>

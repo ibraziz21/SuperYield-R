@@ -52,17 +52,13 @@ export default function PositionsPage() {
     }
   }
 
-  if (!isConnected || !address) {
-    return <ConnectWalletPrompt />
-  }
-
   return (
     <div className="min-h-[calc(100vh-3.5rem)] w-full px-4">
       <section className="bg-[#F9FAFB] my-4 p-4 md:p-6 rounded-xl max-w-6xl mx-auto">
         <Tabs defaultValue="vaults" className="w-full">
           <TabsList className="mb-4">
             <TabsTrigger value="positions">Your Positions</TabsTrigger>
-            <TabsTrigger value="vaults">All Vaults</TabsTrigger>
+            <TabsTrigger value="vaults">Vaults</TabsTrigger>
           </TabsList>
 
           <TabsContent value="vaults">
@@ -80,7 +76,7 @@ export default function PositionsPage() {
                           setShowNetworkFilter(!showNetworkFilter)
                           setShowProtocolFilter(false)
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium transition-colors ${
                           selectedNetworks.length > 0 && !selectedNetworks.includes('all')
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-gray-300 bg-white hover:bg-gray-50'
@@ -127,7 +123,7 @@ export default function PositionsPage() {
                           setShowProtocolFilter(!showProtocolFilter)
                           setShowNetworkFilter(false)
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium transition-colors ${
                           selectedProtocols.length > 0 && !selectedProtocols.includes('all')
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-gray-300 bg-white hover:bg-gray-50'
@@ -184,7 +180,7 @@ export default function PositionsPage() {
                           setShowNetworkFilter(!showNetworkFilter)
                           setShowProtocolFilter(false)
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
+                        className={`inline-flex items-center gap-1.5 rounded-lg  px-2.5 py-1 text-sm font-medium transition-colors ${
                           selectedNetworks.length > 0 && !selectedNetworks.includes('all')
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-gray-300 bg-white hover:bg-gray-50'
@@ -231,7 +227,7 @@ export default function PositionsPage() {
                           setShowProtocolFilter(!showProtocolFilter)
                           setShowNetworkFilter(false)
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium transition-colors ${
                           selectedProtocols.length > 0 && !selectedProtocols.includes('all')
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-gray-300 bg-white hover:bg-gray-50'

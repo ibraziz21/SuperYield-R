@@ -115,13 +115,6 @@ const ClaimRewards: React.FC = () => {
   return (
     <>
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Button variant="ghost" size="sm" onClick={() => refetch()} title="Refresh" className="gap-2">
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
-
         <ClaimRewardTable
           columns={ClaimableRewardColumns}
           data={tableData as ClaimableReward[]}

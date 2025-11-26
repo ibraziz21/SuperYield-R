@@ -13,6 +13,7 @@ import React from "react";
 import { DataTable } from "../data-table";
 import { normalizeVaultRoute } from "../VaultsTable";
 import { useRouter } from "next/navigation";
+import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 
 
 interface TblProps<TData, TValue> {
@@ -23,7 +24,7 @@ interface TblProps<TData, TValue> {
   filterUI?: React.ReactNode;
 }
 
-export default function MyPositionsTable<TData , TValue>({
+export default function MyPositionsTable<TData, TValue>({
   columns,
   data,
   emptyMessage,
@@ -65,7 +66,26 @@ export default function MyPositionsTable<TData , TValue>({
 
   return (
     <DataTable showExploreVaultsButton={false} table={table} columns={columns} data={data} onRowClick={handleRowClick} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage}>
-      {filterUI}
+      <div className="flex justify-between items-center">
+        {filterUI}
+        <div className="flex items-center border border-[#ccc] bg-[#F3F4F6] rounded-full px-2 h-full">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M9.63457 9.71L11.95 11.95M11.2033 5.97667C11.2033 8.86328 8.86328 11.2033 5.97667 11.2033C3.09006 11.2033 0.75 8.86328 0.75 5.97667C0.75 3.09006 3.09006 0.75 5.97667 0.75C8.86328 0.75 11.2033 3.09006 11.2033 5.97667Z" stroke="#4B5563" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+
+          <input
+            type="text"
+            className="outline-none p-1 text-[12px]"
+            placeholder="Search Vaults"
+            value={(table.getColumn("vault")?.getFilterValue() as string) ?? ""}
+            onChange={(event: React.FormEvent<HTMLInputElement>) => {
+              table
+                .getColumn("vault")
+                ?.setFilterValue(event.currentTarget.value);
+            }}
+          />
+        </div>
+      </div>
     </DataTable>
   );
 }

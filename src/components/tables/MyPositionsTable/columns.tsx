@@ -88,7 +88,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
         </div>
       );
     },
-    enableSorting: true,
+    enableSorting: false,
   },
   {
     accessorKey: "network",
@@ -117,7 +117,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
         </div>
       );
     },
-    enableSorting: true,
+    enableSorting: false,
   },
   {
     accessorKey: "deposits",
@@ -162,7 +162,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
         </div>
       );
     },
-    enableSorting: true,
+    enableSorting: false,
   },
   {
     accessorKey: "apy",

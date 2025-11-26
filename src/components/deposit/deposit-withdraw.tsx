@@ -643,7 +643,7 @@ export function DepositWithdraw({
         <div className="flex items-center gap-8 mb-6 border-b">
           <button
             onClick={() => setActiveTab('deposit')}
-            className={`pb-3 text-lg font-semibold transition-colors relative ${
+            className={`pb-3 text-[16px] font-semibold transition-colors relative ${
               activeTab === 'deposit'
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -656,7 +656,7 @@ export function DepositWithdraw({
           </button>
           <button
             onClick={() => setActiveTab('withdraw')}
-            className={`pb-3 text-lg font-semibold transition-colors relative ${
+            className={`pb-3 text-[16px] font-semibold transition-colors relative ${
               activeTab === 'withdraw'
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -833,7 +833,7 @@ export function DepositWithdraw({
 
           {/* Empty State */}
           {!amount && (
-            <div className="text-center py-12 text-muted-foreground text-base rounded-xl bg-muted/50">
+            <div className="text-center p-4 text-muted-foreground text-[13px] rounded-xl bg-muted/50">
               Enter an amount
             </div>
           )}
