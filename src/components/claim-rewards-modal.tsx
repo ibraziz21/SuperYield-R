@@ -5,6 +5,7 @@ import { Check, AlertCircle, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Image from "next/image"
 import { CheckCircleIcon } from "@phosphor-icons/react"
+import { useUsdPrices } from "@/hooks/useUSDPrices"
 
 interface Reward {
   token: string
@@ -162,7 +163,7 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
                         }}
                       />
                     </div>
-                    <span className="text-sm text-foreground font-normal">{reward.token}</span>
+                    <span className="text-sm text-foreground font-normal">{reward.amount}</span>
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm text-foreground">{reward.amount.toFixed(2)} {reward.token}</span>
                     </div>
@@ -244,7 +245,7 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
                 <span className="text-sm font-semibold text-foreground">Select all</span>
               </label>
               <span className="text-sm text-foreground font-semibold">
-                {rewards.reduce((sum, r) => sum + r.usdValue, 0).toFixed(2)}
+               ${rewards.reduce((sum, r) => sum + r.usdValue, 0).toFixed(2)}
               </span>
             </div>
 
@@ -280,14 +281,14 @@ export function ClaimRewardsModal({ isOpen, onClose, onClaim, rewards: initialRe
                         }}
                       />
                     </div>
+                    <span className="text-sm text-foreground">{reward.amount.toFixed(2)}</span>
                     <span className="text-sm font-semibold text-foreground">{reward.token}</span>
-                    {/* <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getColorIndicator(reward) }} />
-                      <span className="text-sm text-foreground">{reward.symbol}</span>
-                    </div> */}
+                      
                   </div>
                 </label>
-                <span className="text-sm text-foreground font-semibold">{reward.amount.toFixed(2)}</span>
+                <span className="text-sm text-foreground font-semibold">
+                  ${(useUsdPrices().priceUsdForSymbol(reward.token) * reward.amount).toFixed(2)}
+                </span>
               </div>
             ))}
           </div>
