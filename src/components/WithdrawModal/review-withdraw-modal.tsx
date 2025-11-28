@@ -358,7 +358,6 @@ export const ReviewWithdrawModal: FC<Props> = ({
             <div className="flex items-start gap-3">
               <div className="relative mt-0.5">
                 <Image src={ICON.bridge} alt="LI.FI" width={28} height={28} className="rounded-full" />
-              // src/components/WithdrawModal/review-withdraw-modal.tsx (continued)
               </div>
               <div className="flex-1">
                 <div className="text-lg font-semibold">
