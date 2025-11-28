@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { MERKL_DISTRIBUTOR, distributorAbi, buildClaimArgs } from "@/lib/merkl";
 import { ClaimRewardsModal } from "@/components/claim-rewards-modal";
-import { useUsdPrices } from "@/hooks/useUSDPrices";     // ⬅️ NEW
+import { useUsdPrices } from "@/hooks/useUSDPrices";
 
 const CHAIN_LABEL: Record<number, string> = {
   [lisk.id]: "Lisk",
@@ -24,23 +24,23 @@ const CHAIN_LABEL: Record<number, string> = {
 };
 
 function formatNumber(n: number, maxFrac = 6) {
-  return n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: maxFrac });
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: maxFrac,
+  });
 }
 
 const ClaimRewards: React.FC = () => {
   const { rewards, isLoading, refetch } = useMerklRewards();
   const { open: openConnect } = useAppKit();
-  const { data: wallet } = useWalletClient();
+  const { data: wallet, refetch: refetchWalletClient } = useWalletClient(); // ⬅️ refetch
   const { switchChainAsync } = useSwitchChain();
   const activeChainId = useChainId();
 
-  // ⬅️ Price helper
   const { priceUsdForSymbol } = useUsdPrices();
 
-  // Track which row is claiming to disable its button
   const [claimingKey, setClaimingKey] = useState<string | null>(null);
 
-  // Modal state
   const [showModal, setShowModal] = useState(false);
   const [selectedReward, setSelectedReward] =
     useState<(ClaimableReward & { __raw?: FlatReward }) | null>(null);
@@ -49,12 +49,13 @@ const ClaimRewards: React.FC = () => {
     if (!rewards || rewards.length === 0) return [];
 
     return rewards.map((r) => {
-      const qty = Number(formatUnits(BigInt(r.claimable), r.token.decimals)) || 0;
+      const qty =
+        Number(formatUnits(BigInt(r.claimable), r.token.decimals)) || 0;
 
       return {
         network: CHAIN_LABEL[r.chainId] ?? `Chain ${r.chainId}`,
         source: "Merkl",
-        claimable: qty.toString(), // plain numeric string
+        claimable: qty.toString(),
         token: r.token.symbol,
         __raw: r,
       };
@@ -78,23 +79,35 @@ const ClaimRewards: React.FC = () => {
       setClaimingKey(key);
 
       const distributor = MERKL_DISTRIBUTOR[chainId];
-      if (!distributor) throw new Error(`Missing Merkl Distributor for chain ${chainId}`);
+      if (!distributor)
+        throw new Error(`Missing Merkl Distributor for chain ${chainId}`);
+
+      // --- ensure we're on the right chain & refresh the wallet client ---
+      let signer = wallet;
 
       if (activeChainId !== chainId && switchChainAsync) {
         await switchChainAsync({ chainId });
+        const refreshed = (await refetchWalletClient()).data;
+        if (refreshed) {
+          signer = refreshed;
+        }
+      }
+
+      if (!signer) {
+        throw new Error("No wallet client available after chain switch");
       }
 
       const { users, tokens, amounts, proofs } = buildClaimArgs({
-        user: wallet.account!.address as Address,
+        user: signer.account!.address as Address,
         items: [item],
       });
 
-      await wallet.writeContract({
+      await signer.writeContract({
         address: distributor,
         abi: distributorAbi,
         functionName: "claim",
         args: [users, tokens, amounts, proofs],
-        account: wallet.account!.address as Address,
+        account: signer.account!.address as Address,
       });
 
       await refetch();
@@ -123,11 +136,14 @@ const ClaimRewards: React.FC = () => {
           data={tableData as ClaimableReward[]}
           meta={{
             onClaim: onClaimClick,
-            priceUsdForSymbol, // ⬅️ NEW for cells
+            priceUsdForSymbol,
             isClaiming: (r: any) => {
               const raw = (r as any).__raw as FlatReward | undefined;
               if (!raw) return false;
-              return claimingKey === `${raw.chainId}-${raw.token.address.toLowerCase()}`;
+              return (
+                claimingKey ===
+                `${raw.chainId}-${raw.token.address.toLowerCase()}`
+              );
             },
           }}
           emptyMessage="No rewards to claim yet."
@@ -135,7 +151,6 @@ const ClaimRewards: React.FC = () => {
         />
       </div>
 
-      {/* Claim Rewards Modal */}
       {selectedReward && (
         <ClaimRewardsModal
           isOpen={showModal}
@@ -153,7 +168,7 @@ const ClaimRewards: React.FC = () => {
               amount: parseFloat(selectedReward.claimable),
               usdValue:
                 parseFloat(selectedReward.claimable) *
-                priceUsdForSymbol(selectedReward.token), // ⬅️ REAL PRICE
+                priceUsdForSymbol(selectedReward.token),
               icon: `/tokens/${selectedReward.token.toLowerCase()}-icon.png`,
               color: "bg-blue-100 dark:bg-blue-900/30",
               checked: true,

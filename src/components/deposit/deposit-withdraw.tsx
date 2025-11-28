@@ -46,6 +46,17 @@ interface DepositWithdrawProps {
   snap?: YieldSnapshot;
 }
 
+
+function normalizeRouteLabel(raw?: string | null) {
+  if (!raw) return raw ?? null;
+  return raw
+    .replace(/Optimism/gi, 'OP Mainnet')
+    .replace(/optimism/gi, 'OP Mainnet')
+    .replace(/OPTIMISM/gi, 'OP Mainnet')
+    .replace(/OP mainnet/gi, 'OP Mainnet'); // just in case
+}
+
+
 function formatAmountBigint(n: bigint, decimals: number): string {
   const neg = n < 0n;
   const abs = neg ? -n : n;
@@ -377,28 +388,28 @@ export function DepositWithdraw({
           ? pickSrcBy(opUsdcBal)
           : pickSrcBy(opUsdtBal));
 
-      getBridgeQuote({
-        token: 'USDT0',
-        amount: amt,
-        from: src,
-        to: 'lisk',
-        fromAddress: walletClient.account!.address as `0x${string}`,
-        fromTokenSym: selectedToken.symbol,
-      })
-        .then((q) => {
-          const minOut = BigInt(q.estimate?.toAmountMin ?? '0');
-          const f = BigInt(q.bridgeFeeTotal ?? '0');
-          setRoute(q.route ?? `Bridge ${selectedToken.symbol} → USDT0`);
-          setFee(f);
-          setReceived(minOut);
-          setQuoteError(null);
-        })
-        .catch(() => {
-          setRoute(null);
-          setFee(0n);
-          setReceived(0n);
-          setQuoteError('Could not fetch bridge quote');
-        });
+    // USDT0 branch
+getBridgeQuote({
+  token: 'USDT0',
+  amount: amt,
+  from: src,
+  to: 'lisk',
+  fromAddress: walletClient.account!.address as `0x${string}`,
+  fromTokenSym: selectedToken.symbol,
+})
+  .then((q) => {
+    const minOut = BigInt(q.estimate?.toAmountMin ?? '0');
+    const f = BigInt(q.bridgeFeeTotal ?? '0');
+
+    setRoute(
+      normalizeRouteLabel(q.route) ??
+        `Bridge ${selectedToken.symbol} → USDT0`,
+    );
+    setFee(f);
+    setReceived(minOut);
+    setQuoteError(null);
+  })
+
       return;
     }
 
@@ -410,10 +421,10 @@ export function DepositWithdraw({
         setQuoteError(null);
         return;
       }
-
+    
       const opBalForQuote = opBal ?? 0n;
       const baBalForQuote = 0n; // no Base, but function still expects a value
-
+    
       quoteUsdceOnLisk({
         amountIn: amt,
         opBal: opBalForQuote,
@@ -421,7 +432,9 @@ export function DepositWithdraw({
         fromAddress: walletClient.account!.address as `0x${string}`,
       })
         .then((q) => {
-          setRoute(q.route ?? 'Bridge → USDCe');
+          setRoute(
+            normalizeRouteLabel(q.route) ?? 'Bridge → USDCe'
+          );                       // 👈 normalize here
           setFee(q.bridgeFee ?? 0n);
           setReceived(q.bridgeOutUSDCe ?? 0n);
           setQuoteError(null);
@@ -434,6 +447,7 @@ export function DepositWithdraw({
         });
       return;
     }
+    
 
     setRoute('On-chain');
     setFee(0n);
