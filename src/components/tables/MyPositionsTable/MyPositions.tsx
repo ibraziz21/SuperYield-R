@@ -6,7 +6,10 @@ import MyPositionsTable from ".";
 import { MyPositionsColumns, type Position as TableRow } from "./columns";
 import { usePositions } from "@/hooks/usePositions";
 import { useYields, type YieldSnapshot } from "@/hooks/useYields";
-import { type Position as BasePosition } from "@/lib/positions";
+import {
+  type Position as BasePosition,
+  DUST_SHARES,
+} from "@/lib/positions";
 import { MORPHO_POOLS, TokenAddresses } from "@/lib/constants";
 
 type EvmChain = "lisk";
@@ -34,8 +37,6 @@ const TOKEN_DECIMALS: Record<MorphoToken, number> = {
   USDT0: 6,
   WETH: 18,
 };
-
-const DUST_SHARES = 10n ** 12n;
 
 export function formatAmountBigint(amount: bigint, decimals: number): string {
   const neg = amount < 0n;
@@ -123,7 +124,11 @@ interface MyPositionsProps {
   filterUI?: React.ReactNode;
 }
 
-const MyPositions: React.FC<MyPositionsProps> = ({ networkFilter, protocolFilter, filterUI }) => {
+const MyPositions: React.FC<MyPositionsProps> = ({
+  networkFilter,
+  protocolFilter,
+  filterUI,
+}) => {
   const { data: positionsRaw, isLoading: positionsLoading } = usePositions();
   const { yields: snapshots, isLoading: yieldsLoading } = useYields();
 
@@ -140,6 +145,7 @@ const MyPositions: React.FC<MyPositionsProps> = ({ networkFilter, protocolFilter
       const amt = (p as any).amount as bigint | undefined;
       if (typeof amt !== "bigint") return false;
 
+      // same dust cutoff as lib/positions
       return amt > DUST_SHARES;
     });
   }, [positions]);
@@ -148,14 +154,14 @@ const MyPositions: React.FC<MyPositionsProps> = ({ networkFilter, protocolFilter
     let filtered = positionsForMorpho.map((p) => {
       const snap = findSnapshotForPosition(p, snapshots);
       const depositsHuman = formatAmountBigint(p.amount ?? 0n, 18);
-  
+
       const tokenSymbol = String(p.token); // "USDCe" | "USDT0" | "WETH"
-  
+
       return {
         // Display text on the row
         vault: normalizeDisplayVault(tokenSymbol), // e.g. "Re7 USDC.e"
         // Canonical route key for URLs
-        routeKey: tokenSymbol, // 👈 used by MyPositionsTable for /vaults/USDCe
+        routeKey: tokenSymbol, // used by MyPositionsTable for /vaults/USDCe
         network: CHAIN_LABEL[p.chain],
         deposits: depositsHuman,
         protocol: "Morpho Blue",
@@ -170,10 +176,9 @@ const MyPositions: React.FC<MyPositionsProps> = ({ networkFilter, protocolFilter
     if (protocolFilter && !protocolFilter.includes("all")) {
       filtered = filtered.filter((row) => protocolFilter.includes(row.protocol));
     }
-  
+
     return filtered;
   }, [positionsForMorpho, snapshots, networkFilter, protocolFilter]);
-  
 
   if (positionsLoading || yieldsLoading) {
     return (

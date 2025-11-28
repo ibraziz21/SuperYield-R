@@ -12,7 +12,7 @@ import { usePositions } from '@/hooks/usePositions'
 import { formatUnits } from 'viem'
 import { useAppKitAccount } from '@reown/appkit/react'
 import { ConnectWalletPrompt } from '@/components/ConnectWalletPrompt'
-import { WarningCircleIcon } from '@phosphor-icons/react'
+import { InfoIcon } from '@phosphor-icons/react'
 import {
   Tooltip,
   TooltipContent,
@@ -46,6 +46,12 @@ const networkIcons: Record<string, string> = {
   Arbitrum: '/networks/arbitrum.png',
   Optimism: '/networks/op-icon.png',
   Base: '/networks/base.png',
+}
+
+// Protocol icon mapping
+const protocolIcons: Record<string, string> = {
+  'Morpho Blue': '/protocols/morpho-icon.png', // Added this key
+  Morpho: '/protocols/morpho-icon.png', // Keep as fallback
 }
 
 // Normalize for display parity with YieldRow (underlying → canonical)
@@ -177,7 +183,7 @@ export default function VaultDetailPage() {
                 className="rounded-full"
               />
               <div>
-                <h1 className="text-xl md:text-2xl lg:text-3xl font-semibold">
+                <h1 className="text-xl md:text-2xl  font-semibold">
                   Re7 {headerLabel} <span className='text-[#9CA3AF]'>Vault</span>
                 </h1>
               </div>
@@ -190,17 +196,17 @@ export default function VaultDetailPage() {
             <div className="space-y-6">
               {/* Overview Stats */}
               <div className="bg-white rounded-xl p-6">
-                <h2 className="text-xl font-semibold mb-4">Overview</h2>
+                <h2 className="text-[16px] font-semibold mb-4">Overview</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Network Card */}
                   <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                     <CardContent className="space-y-1 p-4 h-[128px] flex flex-col justify-between">
-                      <p className="text-[11px] font-medium tracking-wide text-muted-foreground flex items-center">
+                      <p className="text-[14px] font-normal tracking-wide text-[#4B5563] flex items-center">
                         Network
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="ml-2">
-                              <WarningCircleIcon size={16} />
+                              <InfoIcon size={16} />
                             </span>
                           </TooltipTrigger>
                           <TooltipContent>
@@ -209,12 +215,12 @@ export default function VaultDetailPage() {
                         </Tooltip>
                       </p>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 relative rounded-md overflow-hidden">
+                        <div className="w-[24px] h-[24px] relative rounded-md overflow-hidden">
                           <Image
                             src={networkIcons[primaryVariant.network] || '/networks/default.svg'}
                             alt={primaryVariant.network}
-                            width={32}
-                            height={32}
+                            width={24}
+                            height={24}
                             className="rounded-none"
                           />
                         </div>
@@ -226,12 +232,12 @@ export default function VaultDetailPage() {
                   {/* Protocol Card */}
                   <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                     <CardContent className="space-y-1 p-4 h-[128px] flex flex-col justify-between">
-                      <p className="text-[11px] font-medium tracking-wide text-muted-foreground flex items-center">
+                      <p className="text-[14px] font-normal tracking-wide text-[#4B5563] flex items-center">
                         Protocol
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="ml-2">
-                              <WarningCircleIcon size={16} />
+                              <InfoIcon size={16} />
                             </span>
                           </TooltipTrigger>
                           <TooltipContent>
@@ -239,19 +245,30 @@ export default function VaultDetailPage() {
                           </TooltipContent>
                         </Tooltip>
                       </p>
-                      <p className="font-semibold">{primaryVariant.protocol}</p>
+                      <div className="flex items-center gap-3">
+                        <div className="w-[24px] h-[24px] relative rounded-md overflow-hidden">
+                          <Image
+                            src={protocolIcons[primaryVariant.protocol] || '/protocols/default.svg'}
+                            alt={primaryVariant.protocol}
+                            width={24}
+                            height={24}
+                            className="rounded-none"
+                          />
+                        </div>
+                        <p className="font-semibold">{primaryVariant.protocol}</p>
+                      </div>
                     </CardContent>
                   </Card>
 
                   {/* TVL Card */}
                   <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                     <CardContent className="space-y-1 p-4 h-[128px] flex flex-col justify-between">
-                      <p className="text-[11px] font-medium tracking-wide text-muted-foreground flex items-center">
+                      <p className="text-[14px] font-normal tracking-wide text-[#4B5563] flex items-center">
                         Total TVL
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="ml-2">
-                              <WarningCircleIcon size={16} />
+                              <InfoIcon size={16} />
                             </span>
                           </TooltipTrigger>
                           <TooltipContent>
@@ -271,12 +288,12 @@ export default function VaultDetailPage() {
                   {/* APY Card */}
                   <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                     <CardContent className="space-y-1 p-4 h-[128px] flex flex-col justify-between">
-                      <p className="text-[11px] font-medium tracking-wide text-muted-foreground flex items-center">
+                      <p className="text-[14px] font-normal tracking-wide text-[#4B5563] flex items-center">
                         APY
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="ml-2">
-                              <WarningCircleIcon size={16} />
+                              <InfoIcon size={16} />
                             </span>
                           </TooltipTrigger>
                           <TooltipContent>
@@ -298,15 +315,15 @@ export default function VaultDetailPage() {
 
               {/* My Positions */}
               <div className="bg-white rounded-xl p-6">
-                <h2 className="text-xl font-semibold mb-4">My Positions</h2>
+                <h2 className="text-[16px] font-semibold mb-4">My Positions</h2>
                 <Card className="rounded-2xl border-[1.5px] border-gray-200 bg-white shadow-none">
                   <CardContent className="space-y-1 p-4 h-[128px] flex flex-col justify-between">
-                    <p className="text-[11px] font-medium tracking-wide text-muted-foreground flex items-center">
+                    <p className="text-[14px] font-normal tracking-wide text-[#4B5563] flex items-center">
                       Total deposits
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="ml-2">
-                            <WarningCircleIcon size={16} />
+                            <InfoIcon size={16} />
                           </span>
                         </TooltipTrigger>
                         <TooltipContent>

@@ -6,7 +6,7 @@ import { usePositions } from '@/hooks/usePositions'
 import { usePortfolioApy } from '@/hooks/usePortfolioApy'
 import { rewardForecast } from '@/lib/rewardForecast'
 import { formatAmountBigint } from '@/components/tables/MyPositionsTable/MyPositions'
-import { WarningCircleIcon } from '@phosphor-icons/react'
+import { InfoIcon } from '@phosphor-icons/react'
 import {
   Tooltip,
   TooltipContent,
@@ -45,18 +45,18 @@ export const PortfolioHeader: FC = () => {
 
   return (
     <TooltipProvider>
-      <div className="bg-white my-4 rounded-xl max-w-6xl mx-auto">
-        <h3 className='p-4 md:p-6 font-semibold text-base md:text-lg'>Overview</h3>
-        <div className="mx-auto grid w-full gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4 sm:p-4 md:p-6">
+      <div className="bg-white my-4 rounded-xl max-w-6xl mx-auto min-h-[216px] p-5 flex flex-col justify-around">
+        <h3 className='font-semibold text-base md:text-lg'>Overview</h3>
+        <div className="mx-auto grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Kpi title="My Deposits" value={
             kpis.total ? `$${kpis.total.toLocaleString(undefined,{maximumFractionDigits:2})}` : '—'
           } />
           <Kpi title="Average APY" value={loading ? '—' : `${kpis.apy.toFixed(2)}%`} />
           <Kpi title="Est. Weekly Yield" value={
-            loading || kpis.weekly == null ? '—' : `≈ $${kpis.weekly.toLocaleString(undefined,{maximumFractionDigits:2})}`
+            loading || kpis.weekly == null ? '—' : `$${kpis.weekly.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
           } sub="at current APY" />
           <Kpi title="Est. Annual Yield" value={
-            loading || kpis.yearly == null ? '—' : `≈ $${kpis.yearly.toLocaleString(undefined,{maximumFractionDigits:2})}`
+            loading || kpis.yearly == null ? '—' : `$${kpis.yearly.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
           } sub={`${kpis.count} position${kpis.count===1?'':'s'}`} />
         </div>
       </div>
@@ -66,13 +66,13 @@ export const PortfolioHeader: FC = () => {
 
 const Kpi = ({ title, value, sub }: { title: string; value: string; sub?: string }) => (
   <Card className="rounded-2xl border-[1.5px] border-[#E5E7EB] bg-white shadow-none">
-    <CardContent className="space-y-1 p-4 md:p-5 flex flex-col justify-around h-[132px]">
-      <p className="text-[11px] md:text-xs font-medium text-[#4B5563] flex items-center">
+    <CardContent className="space-y-1 p-4 md:p-5 flex flex-col justify-around max-h-[132px]">
+      <p className="text-[14px] font-normal text-[#4B5563] flex items-center">
         {title}
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="ml-2">
-              <WarningCircleIcon size={16} />
+              <InfoIcon weight='bold' size={16} />
             </span>
           </TooltipTrigger>
           <TooltipContent>
@@ -85,8 +85,7 @@ const Kpi = ({ title, value, sub }: { title: string; value: string; sub?: string
           </TooltipContent>
         </Tooltip>
       </p>
-      <p className="text-xl md:text-2xl lg:text-3xl font-semibold break-words">{value}</p>
-      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+      <p className="text-2xl font-medium break-words">{value}</p>
     </CardContent>
   </Card>
 )

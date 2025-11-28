@@ -643,7 +643,7 @@ export function DepositWithdraw({
         <div className="flex items-center gap-8 mb-6 border-b">
           <button
             onClick={() => setActiveTab('deposit')}
-            className={`pb-3 text-lg font-semibold transition-colors relative ${
+            className={`pb-3 text-[16px] font-semibold transition-colors relative ${
               activeTab === 'deposit'
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -656,7 +656,7 @@ export function DepositWithdraw({
           </button>
           <button
             onClick={() => setActiveTab('withdraw')}
-            className={`pb-3 text-lg font-semibold transition-colors relative ${
+            className={`pb-3 text-[16px] font-semibold transition-colors relative ${
               activeTab === 'withdraw'
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -707,7 +707,7 @@ export function DepositWithdraw({
                     setAmount(floored.toString());
                   }
                 }}
-                className="text-sm font-semibold text-foreground hover:underline"
+                className="text-xs font-semibold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-md hover:bg-blue-50 transition-colors"
               >
                 MAX
               </button>
@@ -743,8 +743,8 @@ export function DepositWithdraw({
                       height={28}
                       className="rounded-full"
                     />
-                    {/* Network badge */}
-                    <div className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-background">
+                    {/* Square network badge */}
+                    <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
                       <Image
                         src={
                           selectedToken.id === 'usdce_lisk' || selectedToken.id === 'usdt0_lisk'
@@ -754,7 +754,7 @@ export function DepositWithdraw({
                         alt="network"
                         width={16}
                         height={16}
-                        className="rounded-full"
+                        className="rounded-sm"
                       />
                     </div>
                   </div>
@@ -776,14 +776,14 @@ export function DepositWithdraw({
                         height={28}
                         className="rounded-full"
                       />
-                      {/* Network badge - updated to match deposit section */}
-                      <div className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-background">
+                      {/* Square network badge */}
+                      <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
                         <Image
                           src={'/networks/op-icon.png'}
                           alt="network"
                           width={16}
                           height={16}
-                          className="rounded-full"
+                          className="rounded-sm"
                         />
                       </div>
                     </div>
@@ -833,7 +833,7 @@ export function DepositWithdraw({
 
           {/* Empty State */}
           {!amount && (
-            <div className="text-center py-12 text-muted-foreground text-base rounded-xl bg-muted/50">
+            <div className="text-center p-4 text-muted-foreground text-[13px] rounded-xl bg-muted/50">
               Enter an amount
             </div>
           )}
@@ -1004,11 +1004,11 @@ export function DepositWithdraw({
                   })();
 
                   return (
-                    <div className="border-t border-border px-5 py-5 bg-muted/30">
+                    <div className="border-t border-border px-5 py-5  ">
                       {/* Chain Route Visualization */}
-                      <div className="flex items-center justify-between gap-3 mb-5">
+                      <div className="flex justify-between gap-3 mb-5">
                         <div className="flex-1 bg-muted rounded-xl px-4 py-3.5">
-                          <div className="flex items-center gap-2.5 bg-white p-2 rounded-full">
+                          <div className="flex items-center gap-2.5 bg-white p-2 rounded-lg">
                             <div className="w-6 h-6 relative rounded-md overflow-hidden">
                               <Image
                                 src={isDeposit ? depSrcIcon : wSrcIcon}
@@ -1018,7 +1018,7 @@ export function DepositWithdraw({
                                 className="rounded-none"
                               />
                             </div>
-                            <span className="font-semibold text-foreground">
+                            <span className="font-semibold text-sm text-foreground">
                               {isDeposit ? depSrcChainName : wSrcChainName}
                             </span>
                           </div>
@@ -1032,13 +1032,14 @@ export function DepositWithdraw({
                                 className="rounded-full"
                               />
                             </div>
-                            <span className="font-semibold text-foreground">
+                            <span className="font-semibold text-sm text-foreground">
                               {isDeposit ? depSrcToken : wSrcToken}
                             </span>
                           </div>
                         </div>
 
-                        <div className="w-12 h-12 rounded-xl border border-border bg-background flex items-center justify-center flex-shrink-0">
+                        <div className=''>
+                          <div className="w-18 h-full rounded-xl border border-border flex items-center justify-center flex-shrink-0">
                           <svg
                             width="20"
                             height="20"
@@ -1055,9 +1056,10 @@ export function DepositWithdraw({
                             />
                           </svg>
                         </div>
+                        </div>
 
                         <div className="flex-1 bg-muted rounded-xl px-4 py-3.5">
-                          <div className="flex items-center gap-2.5 bg-white p-2 rounded-full">
+                          <div className="flex items-center gap-2.5 bg-white p-2 rounded-lg">
                             <div className="w-6 h-6 relative rounded-md overflow-hidden">
                               <Image
                                 src={isDeposit ? depDstIcon : wDstIcon}
@@ -1067,7 +1069,7 @@ export function DepositWithdraw({
                                 className="rounded-none"
                               />
                             </div>
-                            <span className="font-semibold text-foreground">
+                            <span className="font-semibold text-sm text-foreground">
                               {isDeposit ? depDstChainName : wDstChainName}
                             </span>
                           </div>
@@ -1081,7 +1083,7 @@ export function DepositWithdraw({
                                 className="rounded-full"
                               />
                             </div>
-                            <span className="font-semibold text-foreground">
+                            <span className="font-semibold text-sm text-foreground">
                               {isDeposit ? depDstToken : wDstToken}
                             </span>
                           </div>
@@ -1089,18 +1091,18 @@ export function DepositWithdraw({
                       </div>
 
                       {/* Fee Details */}
-                      <div className="bg-background rounded-xl p-4 space-y-3 text-xs">
+                      <div className="border-[#E5E7EB] border rounded-xl p-4 space-y-3 text-sm">
                         <div className="flex items-center justify-between">
-                          <span className=" text-muted-foreground">
+                          <span className="text-muted-foreground">
                             {routeLabel}
                           </span>
                           {bridgingOnDeposit && (
-                            <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                            <div className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
                               <Image
                                 src={logolifi}
                                 alt="Bridge"
-                                width={18}
-                                height={18}
+                                width={16}
+                                height={16}
                                 className="object-contain"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).src = '/protocols/morpho-icon.png';
@@ -1111,10 +1113,10 @@ export function DepositWithdraw({
                         </div>
 
                         <div className="flex items-center justify-between">
-                          <span className=" text-muted-foreground">
+                          <span className="text-muted-foreground">
                             Bridge fee (estimated):
                           </span>
-                          <span className="font-medium text-foreground">
+                          <span className="font-normal text-foreground">
                             {totalFee.toFixed(4)} {feeToken}
                           </span>
                         </div>
@@ -1129,16 +1131,16 @@ export function DepositWithdraw({
                         )}
 
                         <div className="flex items-center justify-between">
-                          <span className=" text-muted-foreground">
+                          <span className="text-muted-foreground">
                             You&apos;ll {isDeposit ? 'deposit' : 'receive'}:
                           </span>
-                          <span className="font-medium text-foreground">
+                          <span className="font-normal text-foreground">
                             {receiveDisplay.toFixed(6)} {receiveToken}
                           </span>
                         </div>
 
                         {quoteError && isDeposit && (
-                          <div className="mt-2  text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2 py-1.5 rounded">
+                          <div className="mt-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2 py-1.5 rounded">
                             Quote error: {quoteError}
                           </div>
                         )}

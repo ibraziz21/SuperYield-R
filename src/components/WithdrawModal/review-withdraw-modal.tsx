@@ -1,3 +1,4 @@
+// src/components/WithdrawModal/review-withdraw-modal.tsx
 'use client'
 
 import { FC, useMemo, useState } from 'react'
@@ -115,11 +116,11 @@ export const ReviewWithdrawModal: FC<Props> = ({
   const primaryLabel =
     state === 'success' ? 'Done'
       : state === 'withdrawing' ? 'Withdrawing…'
-      : state === 'sign-bridge' ? 'Sign bridge transaction…'
-      : state === 'bridging' ? 'Bridging…'
-      : state === 'error' && withdrawOk ? 'Try bridge again'
-      : state === 'error' ? 'Try again'
-      : 'Withdraw now'
+        : state === 'sign-bridge' ? 'Sign bridge transaction…'
+          : state === 'bridging' ? 'Bridging…'
+            : state === 'error' && withdrawOk ? 'Try bridge again'
+              : state === 'error' ? 'Try again'
+                : 'Withdraw now'
 
   // --- Flow pieces -----------------------------------------------------------
 
@@ -207,7 +208,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
       if (code === 4001) {
         setErr('Signature was cancelled. You can try again.')
         if (withdrawOk) {
-          setState('error') // shows “Try bridge again”
+          setState('error') // shows "Try bridge again"
           return
         }
         setState('idle')
@@ -316,7 +317,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
 
           {/* body */}
           <div className="px-5 py-4 space-y-5">
-      
+
             {/* row 1: withdrawing from vault */}
             <div className="flex items-start gap-3">
               <div className="relative mt-0.5">
@@ -334,6 +335,16 @@ export const ReviewWithdrawModal: FC<Props> = ({
             <div className="flex items-start gap-3">
               <div className="relative mt-0.5">
                 <Image src={ICON[liskToken]} alt={liskToken} width={28} height={28} className="rounded-full" />
+                {/* Square network badge */}
+                <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+                  <Image
+                    src="/networks/lisk.png"
+                    alt="Lisk"
+                    width={16}
+                    height={16}
+                    className="rounded-sm"
+                  />
+                </div>
               </div>
               <div className="flex-1">
                 <div className="text-2xl font-bold">{amountOnLiskDisplay}</div>
@@ -362,23 +373,21 @@ export const ReviewWithdrawModal: FC<Props> = ({
                   <div className="mt-2 space-y-2 text-xs">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`h-2 w-2 rounded-full ${
-                          trigger1Done ? 'bg-emerald-500' : 'bg-muted-foreground/40'
-                        }`}
+                        className={`h-2 w-2 rounded-full ${trigger1Done ? 'bg-emerald-500' : 'bg-muted-foreground/40'
+                          }`}
                       />
                       <span>{destSymbol} spending approved</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span
-                        className={`h-2 w-2 rounded-full ${
-                          state === 'sign-bridge'
+                        className={`h-2 w-2 rounded-full ${state === 'sign-bridge'
                             ? 'bg-blue-500 animate-pulse'
                             : state === 'bridging' || state === 'success'
-                            ? 'bg-emerald-500'
-                            : trigger2InError
-                            ? 'bg-red-500'
-                            : 'bg-muted-foreground/40'
-                        }`}
+                              ? 'bg-emerald-500'
+                              : trigger2InError
+                                ? 'bg-red-500'
+                                : 'bg-muted-foreground/40'
+                          }`}
                       />
                       <span>
                         {trigger2InError ? 'Signature required' : 'Sign bridge transaction'}
@@ -386,15 +395,14 @@ export const ReviewWithdrawModal: FC<Props> = ({
                     </div>
                     <div className="flex items-center gap-2">
                       <span
-                        className={`h-2 w-2 rounded-full ${
-                          state === 'bridging'
+                        className={`h-2 w-2 rounded-full ${state === 'bridging'
                             ? 'bg-blue-500 animate-pulse'
                             : state === 'success'
-                            ? 'bg-emerald-500'
-                            : trigger3InError
-                            ? 'bg-red-500'
-                            : 'bg-muted-foreground/40'
-                        }`}
+                              ? 'bg-emerald-500'
+                              : trigger3InError
+                                ? 'bg-red-500'
+                                : 'bg-muted-foreground/40'
+                          }`}
                       />
                       <span>{trigger3InError ? 'Bridge failed' : 'Bridge transaction confirmed'}</span>
                     </div>
@@ -422,6 +430,17 @@ export const ReviewWithdrawModal: FC<Props> = ({
                   height={28}
                   className="rounded-full"
                 />
+                {dest !== 'lisk' && (
+                  <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+                    <Image
+                      src={dest === 'optimism' ? '/networks/op-icon.png' : '/networks/base.png'}
+                      alt={destChainLabel}
+                      width={16}
+                      height={16}
+                      className="rounded-sm"
+                    />
+                  </div>
+                )}
               </div>
               <div className="flex-1">
                 <div className="text-2xl font-bold">
@@ -468,7 +487,6 @@ export const ReviewWithdrawModal: FC<Props> = ({
 
       {showSuccess && (
         <WithdrawSuccessModal
-          // show net amounts inside the success screen so it matches this modal
           liskAmount={netOnLisk}
           liskToken={liskToken}
           destAmount={dest === 'lisk' ? undefined : netOnDest}

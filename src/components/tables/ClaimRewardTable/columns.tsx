@@ -42,16 +42,6 @@ const tokenIcons: Record<string, string> = {
   LSK: "/tokens/lisk.png",
 };
 
-const tokenPrices: Record<string, number> = {
-  AAVE: 85.5,
-  USDC: 1.0,
-  ETH: 2400.0,
-  WETH: 2400.0,
-  GMX: 45.2,
-  USDT: 1.0,
-  LSK: 0, // price optional; show $0.00 if unknown
-};
-
 export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
   {
     accessorKey: "network",
@@ -61,13 +51,13 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const iconPath = networkIcons[network] || "/networks/default.svg";
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="relative h-6 w-6">
+          <div className="relative h-6 w-6 rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={network}
-              width={24}
-              height={24}
-              className="rounded-xl"
+              width={20}
+              height={20}
+              className="rounded-none"
               onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
             />
           </div>
@@ -75,7 +65,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
         </div>
       );
     },
-    enableSorting: true,
+    enableSorting: false,
   },
   {
     accessorKey: "source",
@@ -85,13 +75,13 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const iconPath = sourceIcons[source] || "/protocols/default.svg";
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="relative h-6 w-6">
+          <div className="relative h-6 w-6 rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={source}
-              width={24}
-              height={24}
-              className="rounded-xl"
+              width={20}
+              height={20}
+              className="rounded-none"
               onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
             />
           </div>
@@ -99,23 +89,24 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
         </div>
       );
     },
-    enableSorting: true,
+    enableSorting: false,
   },
   {
     accessorKey: "claimable",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Claimable" />,
-    cell: ({ row }) => {
+    cell: ({ row, table }) => {
       const claimable = Number(row.getValue("claimable") as string) || 0;
       const token = row.getValue("token") as string;
-      const price = tokenPrices[token] ?? 0;
+
+      const meta: any = table.options.meta ?? {};
+      const priceFn =
+        typeof meta.priceUsdForSymbol === "function" ? meta.priceUsdForSymbol : undefined;
+      const price = priceFn ? priceFn(token) : 0;
       const usdValue = claimable * price;
 
       return (
         <div className="text-center">
-          <div className="font-medium">
-            {claimable.toLocaleString(undefined, { maximumFractionDigits: 6 })} {token}
-          </div>
-          <div className="text-xs text-muted-foreground">
+          <div className="text-[14px] font-normal text-muted-foreground">
             ${usdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
@@ -135,38 +126,36 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
             <Image
               src={iconPath}
               alt={token}
-              width={24}
-              height={24}
+              width={20}
+              height={20}
               className="rounded-none"
               onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
             />
           </div>
-          <span className="font-medium">{token}</span>
         </div>
       );
     },
-    enableSorting: true,
+    enableSorting: false,
   },
   {
     id: "actions",
-    header: "Actions",
     cell: ({ row, table }) => {
       const meta: any = table.options.meta ?? {};
-      const onClaim = meta.onClaim as ((row: ClaimableReward & { __raw?: unknown }) => Promise<void>) | undefined;
+      const onClaim = meta.onClaim as
+        | ((row: ClaimableReward & { __raw?: unknown }) => Promise<void>)
+        | undefined;
       const isClaiming = typeof meta.isClaiming === "function" ? meta.isClaiming(row.original) : false;
 
       const handleClaim = async () => {
         try {
           await onClaim?.(row.original as any);
-          // Optional UX ping
-          // toast.success("Claim submitted");
         } catch (e: any) {
           toast.error(e?.message ?? "Claim failed");
         }
       };
 
       return (
-        <Button title="Claim" className="bg-[#376FFF] rounded-[12px] p-3" onClick={handleClaim} disabled={!onClaim || isClaiming}>
+        <Button title="Claim" className="bg-[#376FFF] rounded-full px-3" onClick={handleClaim} disabled={!onClaim || isClaiming}>
           {isClaiming ? "Claiming…" : "Claim"}
         </Button>
       );

@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { MERKL_DISTRIBUTOR, distributorAbi, buildClaimArgs } from "@/lib/merkl";
 import { ClaimRewardsModal } from "@/components/claim-rewards-modal";
+import { useUsdPrices } from "@/hooks/useUSDPrices";     // ⬅️ NEW
 
 const CHAIN_LABEL: Record<number, string> = {
   [lisk.id]: "Lisk",
@@ -33,31 +34,33 @@ const ClaimRewards: React.FC = () => {
   const { switchChainAsync } = useSwitchChain();
   const activeChainId = useChainId();
 
+  // ⬅️ Price helper
+  const { priceUsdForSymbol } = useUsdPrices();
+
   // Track which row is claiming to disable its button
   const [claimingKey, setClaimingKey] = useState<string | null>(null);
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
-  const [selectedReward, setSelectedReward] = useState<(ClaimableReward & { __raw?: FlatReward }) | null>(null);
+  const [selectedReward, setSelectedReward] =
+    useState<(ClaimableReward & { __raw?: FlatReward }) | null>(null);
 
   const tableData: (ClaimableReward & { __raw: FlatReward })[] = useMemo(() => {
-    if (!rewards || rewards.length === 0) return []
-  
+    if (!rewards || rewards.length === 0) return [];
+
     return rewards.map((r) => {
-      // r.claimable is in wei, as string
-      const qty =
-        Number(formatUnits(BigInt(r.claimable), r.token.decimals)) || 0
-  
+      const qty = Number(formatUnits(BigInt(r.claimable), r.token.decimals)) || 0;
+
       return {
         network: CHAIN_LABEL[r.chainId] ?? `Chain ${r.chainId}`,
-        source: 'Merkl',
+        source: "Merkl",
         claimable: qty.toString(), // plain numeric string
         token: r.token.symbol,
         __raw: r,
-      }
-    })
-  }, [rewards])
-  
+      };
+    });
+  }, [rewards]);
+
   function onClaimClick(row: ClaimableReward & { __raw?: FlatReward }) {
     if (!wallet) return openConnect?.();
     setSelectedReward(row);
@@ -115,18 +118,12 @@ const ClaimRewards: React.FC = () => {
   return (
     <>
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Button variant="ghost" size="sm" onClick={() => refetch()} title="Refresh" className="gap-2">
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
-
         <ClaimRewardTable
           columns={ClaimableRewardColumns}
           data={tableData as ClaimableReward[]}
           meta={{
             onClaim: onClaimClick,
+            priceUsdForSymbol, // ⬅️ NEW for cells
             isClaiming: (r: any) => {
               const raw = (r as any).__raw as FlatReward | undefined;
               if (!raw) return false;
@@ -154,11 +151,13 @@ const ClaimRewards: React.FC = () => {
               token: selectedReward.token,
               symbol: `${selectedReward.claimable} ${selectedReward.token}`,
               amount: parseFloat(selectedReward.claimable),
-              usdValue: parseFloat(selectedReward.claimable) * 1.0, // You can add actual price calculation here
+              usdValue:
+                parseFloat(selectedReward.claimable) *
+                priceUsdForSymbol(selectedReward.token), // ⬅️ REAL PRICE
               icon: `/tokens/${selectedReward.token.toLowerCase()}-icon.png`,
               color: "bg-blue-100 dark:bg-blue-900/30",
               checked: true,
-            }
+            },
           ]}
         />
       )}

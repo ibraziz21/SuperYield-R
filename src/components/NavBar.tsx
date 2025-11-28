@@ -12,6 +12,9 @@ import socialImg from '@/public/logo_horizontal.svg'
 import ecovaults from "@/public/eco-vaults.svg"
 import baseImg from '@/public/base_square_blue.svg'
 import { ExitIcon } from '@radix-ui/react-icons'
+import ExitIconSvg from "../../public/exit-icon.svg"
+import CopyIconSvg from "../../public/copy.svg"
+import ShareIconSvg from "../../public/share.svg"
 
 /* ──────────────────────────────────────────────────────────────── */
 
@@ -166,10 +169,10 @@ export function Navbar() {
   }
 
   return (
-    <>
+    <div className='mt-[12px]'>
       {/* Top App Bar */}
       <header
-        className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-6xl mx-auto rounded-xl mt-2`}
+        className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-6xl mx-auto rounded-xl`}
       >
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-3 sm:px-4">
           {/* Brand */}
@@ -178,10 +181,10 @@ export function Navbar() {
               <Image
                 src={ecovaults}
                 alt="ecovaults"
-                width={160}
-                height={28}
+                width={0}
+                height={0}
                 priority
-                className="h-7 w-auto"
+                className="h-auto w-auto"
               />
             </Link>
             {/* Desktop nav */}
@@ -227,28 +230,25 @@ export function Navbar() {
                 >
                   <div className="h-5 w-5 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5" />
                   <span className="max-w-[92px] truncate">{shortAddr(address)}</span>
-                  <svg width="16" height="16" viewBox="0 0 24 24" className={`transition ${menuOpen ? 'rotate-180 opacity-80' : 'opacity-60'}`}><path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </button>
 
                 {menuOpen && (
-                  <div className="absolute right-0 mt-2 w-64 overflow-hidden rounded-2xl border border-border/60 bg-white shadow-xl focus:outline-none" role="menu">
+                  <div className="absolute flex flex-col justify-between right-0 mt-2 w-64  overflow-hidden rounded-2xl border border-border/60 bg-white shadow-xl focus:outline-none" role="menu">
                     {/* header */}
                     <div className="flex items-center justify-between border-b px-3 py-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5" />
-                        <div className="flex min-w-0 flex-col">
-                          <span className="truncate text-xs font-semibold" title={address}>{shortAddr(address)}</span>
-                          <span className="text-[10px] text-muted-foreground">{currentChain?.label ?? 'Unknown'}</span>
+                      <div className='flex flex-col justify-between w-full'>
+                        <div className='w-full flex justify-center'>
+                          <div className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5" />
+                        </div>
+
+                        <div className="flex justify-center items-center p-2 gap-2 min-w-0">
+                          <div className="flex min-w-0 flex-col">
+                            <span className="truncate text-xs font-semibold" title={address}>{shortAddr(address)}</span>
+                          </div>
+                          <Image src={CopyIconSvg} width={14} height={14} onClick={copyAddress} alt="" />
+                          <Image src={ShareIconSvg} onClick={copyAddress} width={14} height={14} alt="" />
                         </div>
                       </div>
-                      <button
-                        className="flex items-center justify-between rounded-md px-3 py-2 hover:bg-muted/60"
-                        onClick={copyAddress}
-                        title="Copy address"
-                      >
-                        <span className={`text-xs ${copied ? 'text-teal-600' : 'text-muted-foreground'}`}>{copied ? 'Copied' : '⌘C'}</span>
-                      </button>
-                      <NetworkBadge chainId={chainId} />
                     </div>
 
                     {/* actions */}
@@ -258,7 +258,7 @@ export function Navbar() {
                         onClick={() => { setMenuOpen(false); disconnect() }}
                         title="Disconnect"
                       >
-                        <span className="text-xs"><ExitIcon /></span>
+                        <span className="text-xs"><Image src={ExitIconSvg} alt="" /></span>
                         <span className='mx-2'>Disconnect</span>
                       </button>
                     </div>
@@ -384,8 +384,8 @@ export function Navbar() {
         </div>
       </div>
 
-  
-    </>
+
+    </div>
   )
 }
 
