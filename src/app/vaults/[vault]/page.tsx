@@ -50,7 +50,8 @@ const networkIcons: Record<string, string> = {
 
 // Protocol icon mapping
 const protocolIcons: Record<string, string> = {
-  Morpho: '/protocols/morpho-icon.png',
+  'Morpho Blue': '/protocols/morpho-icon.png', // Added this key
+  Morpho: '/protocols/morpho-icon.png', // Keep as fallback
 }
 
 // Normalize for display parity with YieldRow (underlying → canonical)

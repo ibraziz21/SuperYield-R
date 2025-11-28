@@ -114,7 +114,7 @@ export default function Dashboard() {
   const isClaimableLoading = isRewardsLoading || isPricesLoading
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)]">
+    <div className="min-h-[calc(100vh-3.5rem)] bg-[#F9FAFB]">
       {isConnected && address ? (
         <div className="w-full px-4">
           <PortfolioHeader />
@@ -180,7 +180,7 @@ export default function Dashboard() {
                           setShowNetworkFilter(!showNetworkFilter)
                           setShowProtocolFilter(false)
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium transition-colors ${
                           selectedNetworks.length > 0 &&
                           !selectedNetworks.includes('all')
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
@@ -231,7 +231,7 @@ export default function Dashboard() {
                           setShowProtocolFilter(!showProtocolFilter)
                           setShowNetworkFilter(false)
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-medium transition-colors ${
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium transition-colors ${
                           selectedProtocols.length > 0 &&
                           !selectedProtocols.includes('all')
                             ? 'border-blue-500 bg-blue-50 text-blue-700'

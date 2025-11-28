@@ -1,3 +1,4 @@
+// src/components/DepositModal/review-deposit-modal.tsx
 'use client'
 
 import { FC, useMemo, useState, useEffect, useCallback } from 'react'
@@ -476,10 +477,20 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                 <Image
                   src={sourceIcon}
                   alt={sourceTokenLabel}
-                  width={28}
-                  height={28}
+                  width={40}
+                  height={40}
                   className="rounded-full"
                 />
+                {/* Square network badge */}
+                <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+                  <Image
+                    src={sourceChainLabel === 'Lisk' ? '/networks/lisk.png' : '/networks/op-icon.png'}
+                    alt={sourceChainLabel}
+                    width={16}
+                    height={16}
+                    className="rounded-sm"
+                  />
+                </div>
               </div>
               <div className="flex-1">
                 <div className="text-2xl font-bold">
@@ -497,7 +508,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                 <AlertCircle className="text-red-600" size={18} />
               )}
             </div>
-
+            
             {/* bridge – hidden for pure Lisk deposits */}
             {!isOnChainDeposit && (
               <div className="flex items-start gap-3">
@@ -505,8 +516,8 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                   <Image
                     src={lifilogo.src}
                     alt="bridge"
-                    width={28}
-                    height={28}
+                    width={40}
+                    height={40}
                     className="rounded-full"
                   />
                 </div>
@@ -546,10 +557,20 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                       : '/tokens/weth.png'
                   }
                   alt={destTokenLabel}
-                  width={28}
-                  height={28}
+                  width={40}
+                  height={40}
                   className="rounded-full"
                 />
+                {/* Square network badge */}
+                <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+                  <Image
+                    src="/networks/lisk.png"
+                    alt="Lisk"
+                    width={16}
+                    height={16}
+                    className="rounded-sm"
+                  />
+                </div>
               </div>
               <div className="flex-1">
                 <div className="text-2xl font-bold">
@@ -573,8 +594,8 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                 <Image
                   src="/protocols/morpho-icon.png"
                   alt="Morpho"
-                  width={28}
-                  height={28}
+                  width={40}
+                  height={40}
                   className="rounded-lg"
                 />
               </div>

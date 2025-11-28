@@ -69,8 +69,8 @@ export function SelectTokenModal({
                 onClick={() => onSelect(token)}
                 className={`w-full px-4 py-3 md:px-6 md:py-4 transition-all flex items-center justify-between group text-left border-b border-gray-100 last:border-b-0 ${
                   isSelected
-                    ? "bg-blue-50 hover:bg-blue-100"
-                    : "bg-[#F9FAFB] hover:bg-gray-100"
+                    ? "bg-[#F9FAFB] hover:bg-[#F9FAFB]"
+                    : "bg-white hover:bg-[#F9FAFB]"
                 }`}
               >
                 <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
@@ -82,8 +82,8 @@ export function SelectTokenModal({
                       height={48}
                       className="rounded-full"
                     />
-                    {/* Network badge */}
-                    <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-xl border-2 border-white bg-white">
+                    {/* Network badge - square with rounded-md */}
+                    <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-md border-2 border-white bg-white overflow-hidden">
                       <Image
                         src={
                           token.id.includes('_lisk')
@@ -93,7 +93,7 @@ export function SelectTokenModal({
                         alt="network"
                         width={20}
                         height={20}
-                        className="rounded-xl"
+                        className="rounded-none"
                       />
                     </div>
                   </div>

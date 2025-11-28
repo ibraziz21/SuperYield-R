@@ -61,12 +61,12 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
         (/^USDC/.test(key)
           ? tokenIcons.USDC
           : /^USDT0/.test(key)
-          ? tokenIcons.USDT0
-          : /^USDT/.test(key)
-          ? tokenIcons.USDT
-          : /^WETH/.test(key)
-          ? tokenIcons.WETH
-          : tokenIcons.DAI) || "/tokens/default.svg";
+            ? tokenIcons.USDT0
+            : /^USDT/.test(key)
+              ? tokenIcons.USDT
+              : /^WETH/.test(key)
+                ? tokenIcons.WETH
+                : tokenIcons.DAI) || "/tokens/default.svg";
 
       return (
         <div className="flex items-center justify-center gap-2">
@@ -86,7 +86,7 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
         </div>
       );
     },
-    enableSorting: true,
+    enableSorting: false,
   },
   {
     accessorKey: "network",
@@ -99,7 +99,7 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
 
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="w-6 h-6 relative rounded-md overflow-hidden">
+          <div className="w-6 h-6 relative rounded-sm overflow-hidden">
             <Image
               src={iconPath}
               alt={network}
@@ -115,23 +115,7 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
         </div>
       );
     },
-    enableSorting: true,
-  },
-  {
-    accessorKey: "tvl",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="TVL" />
-    ),
-    cell: ({ row }) => {
-      const tvl = row.getValue("tvl") as string;
-
-      return (
-        <div className="text-center">
-          <div className="font-medium">${tvl}</div>
-        </div>
-      );
-    },
-    enableSorting: true,
+    enableSorting: false,
   },
   {
     accessorKey: "protocol",
@@ -144,7 +128,7 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
 
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="w-6 h-6 relative rounded-md overflow-hidden">
+          <div className="w-6 h-6 relative rounded-sm overflow-hidden">
             <Image
               src={iconPath}
               alt={protocol}
@@ -157,6 +141,22 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
             />
           </div>
           <span className="font-medium">{protocol}</span>
+        </div>
+      );
+    },
+    enableSorting: false,
+  },
+  {
+    accessorKey: "tvl",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="TVL" />
+    ),
+    cell: ({ row }) => {
+      const tvl = row.getValue("tvl") as string;
+
+      return (
+        <div className="text-center">
+          <div className="font-medium">${tvl}</div>
         </div>
       );
     },

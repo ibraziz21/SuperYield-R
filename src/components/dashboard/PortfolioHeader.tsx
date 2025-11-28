@@ -66,7 +66,7 @@ export const PortfolioHeader: FC = () => {
 
 const Kpi = ({ title, value, sub }: { title: string; value: string; sub?: string }) => (
   <Card className="rounded-2xl border-[1.5px] border-[#E5E7EB] bg-white shadow-none">
-    <CardContent className="space-y-1 p-4 md:p-5 flex flex-col justify-around h-[132px]">
+    <CardContent className="space-y-1 p-4 md:p-5 flex flex-col justify-around max-h-[132px]">
       <p className="text-[14px] font-normal text-[#4B5563] flex items-center">
         {title}
         <Tooltip>
