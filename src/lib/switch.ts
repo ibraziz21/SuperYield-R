@@ -1,21 +1,26 @@
 // src/lib/wallet/switchStrict.ts
 import type { WalletClient } from 'viem'
-import { CHAINS } from '@/lib/wallet' // your existing chain defs
+import { CHAINS } from '@/lib/wallet' // your chain defs
 
-// Reuse your CHAINS.lisk values to avoid hardcoding RPC/explorer here.
+// Strict in the sense of "always try to end up on target",
+// but no aggressive polling / timeouts.
 export async function switchOrAddChainStrict(
   walletClient: WalletClient,
-  target = CHAINS.lisk // viem-style chain object you already have
+  target = CHAINS.lisk
 ) {
   const hex = `0x${target.id.toString(16)}`
 
-  // Fast path: already there
+  // 1) Fast path – already on target chain
   try {
     const currentHex = await walletClient.request({ method: 'eth_chainId' })
-    if (currentHex?.toLowerCase() === hex.toLowerCase()) return
-  } catch {}
+    if (currentHex?.toLowerCase() === hex.toLowerCase()) {
+      return
+    }
+  } catch {
+    // ignore, we'll just try to switch/add
+  }
 
-  // Try switch first
+  // 2) Try simple switch first
   try {
     await walletClient.request({
       method: 'wallet_switchEthereumChain',
@@ -24,35 +29,32 @@ export async function switchOrAddChainStrict(
   } catch (e: any) {
     // 4902 = chain not added
     if (e?.code === 4902 || /unknown chain/i.test(e?.message ?? '')) {
-      // Use your existing CHAINS.lisk shape
+      // 3) Add chain, then switch
       await walletClient.request({
         method: 'wallet_addEthereumChain',
-        params: [{
-          chainId: hex,
-          chainName: target.name,
-          nativeCurrency: target.nativeCurrency,
-          rpcUrls: target.rpcUrls.default.http,
-          blockExplorerUrls: target.blockExplorers ? [target.blockExplorers.default.url] : [],
-        }],
+        params: [
+          {
+            chainId: hex,
+            chainName: target.name,
+            nativeCurrency: target.nativeCurrency,
+            rpcUrls: target.rpcUrls.default.http,
+            blockExplorerUrls: target.blockExplorers
+              ? [target.blockExplorers.default.url]
+              : [],
+          },
+        ],
       })
+
       await walletClient.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: hex }],
       })
     } else {
+      // real error (user rejected, etc.)
       throw e
     }
   }
 
-  // Verify with a short poll (wallets sometimes resolve before UI updates)
-  const end = Date.now() + 10_000
-  while (true) {
-    const idNow = await walletClient.request({ method: 'eth_chainId' })
-    if (idNow?.toLowerCase() === hex.toLowerCase()) break
-    if (Date.now() > end) throw new Error('Failed to switch to Lisk (timed out)')
-    await new Promise(r => setTimeout(r, 350))
-  }
-
-  // Give wagmi/react a moment to refresh internal client state
-  await new Promise(r => setTimeout(r, 150))
+  // 4) Tiny settle delay so wallets/wagmi can update internally
+  await new Promise((r) => setTimeout(r, 400))
 }
