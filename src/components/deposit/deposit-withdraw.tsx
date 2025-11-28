@@ -13,19 +13,18 @@ import { ReviewWithdrawModal } from '../WithdrawModal/review-withdraw-modal';
 import logolifi from '@/public/logo_lifi_light.png';
 import { useWalletClient } from 'wagmi';
 import { parseUnits } from 'viem';
-import base_square from '@/public/base_square_blue.svg';
 
 import type { YieldSnapshot } from '@/hooks/useYields';
 
 import { getBridgeQuote, quoteUsdceOnLisk } from '@/lib/quotes';
-import { TokenAddresses, getDualBalances } from '@/lib/constants';
+import { TokenAddresses } from '@/lib/constants';
 import {
   readWalletBalance,
   symbolForWalletDisplay,
   tokenAddrFor,
 } from './helpers';
 
-type EvmChain = 'optimism' | 'base' | 'lisk';
+type EvmChain = 'optimism' | 'lisk';
 type TokenId =
   | 'usdc'
   | 'usdt'
@@ -93,7 +92,7 @@ export function DepositWithdraw({
 
   const [showWithdrawReview, setShowWithdrawReview] = useState(false);
   const [withdrawDest, setWithdrawDest] =
-    useState<'lisk' | 'optimism' | 'base'>('optimism');
+    useState<'lisk' | 'optimism' | 'base'>('optimism'); // NOTE: type kept to avoid touching other components; we just never actually use 'base'
   const [showWithdrawMenu, setShowWithdrawMenu] = useState(false);
 
   // Disclaimer state for deposits over $1000
@@ -114,13 +113,15 @@ export function DepositWithdraw({
   });
 
   const [opBal, setOpBal] = useState<bigint | null>(null);
-  const [baBal, setBaBal] = useState<bigint | null>(null);
   const [liBal, setLiBal] = useState<bigint | null>(null);
   const [liBalUSDT0, setLiBalUSDT0] = useState<bigint | null>(null);
   const [opUsdcBal, setOpUsdcBal] = useState<bigint | null>(null);
-  const [baUsdcBal, setBaUsdcBal] = useState<bigint | null>(null);
   const [opUsdtBal, setOpUsdtBal] = useState<bigint | null>(null);
-  const [baUsdtBal, setBaUsdtBal] = useState<bigint | null>(null);
+
+  // These are kept for DepositModal prop compatibility, but no longer populated from Base.
+  const [baBal] = useState<bigint | null>(null);
+  const [baUsdcBal] = useState<bigint | null>(null);
+  const [baUsdtBal] = useState<bigint | null>(null);
 
   const [route, setRoute] = useState<string | null>(null);
   const [fee, setFee] = useState<bigint>(0n);
@@ -177,13 +178,11 @@ export function DepositWithdraw({
         return availableTokenBalances.USDT0_OP;
       case 'usdc': {
         const op = toNum6(opUsdcBal);
-        const ba = toNum6(baUsdcBal);
-        return op >= ba ? op : ba;
+        return op;
       }
       case 'usdt': {
         const op = toNum6(opUsdtBal);
-        const ba = toNum6(baUsdtBal);
-        return op >= ba ? op : ba;
+        return op;
       }
       default:
         return 0;
@@ -192,11 +191,10 @@ export function DepositWithdraw({
     selectedToken.id,
     availableTokenBalances,
     opUsdcBal,
-    baUsdcBal,
     opUsdtBal,
-    baUsdtBal,
   ]);
 
+  // Fetch OP + Lisk balances (no Base)
   useEffect(() => {
     if (!walletClient) {
       setAvailableTokenBalances({
@@ -212,30 +210,15 @@ export function DepositWithdraw({
 
     (async () => {
       try {
-        const [
-          { opBal: usdcOp, baBal: usdcBa },
-          { opBal: usdtOp, baBal: usdtBa },
-        ] = await Promise.all([
-          getDualBalances(
-            {
-              optimism: TokenAddresses.USDC.optimism as `0x${string}`,
-              base: TokenAddresses.USDC.base as `0x${string}`,
-            },
-            user,
-          ),
-          getDualBalances(
-            {
-              optimism: TokenAddresses.USDT.optimism as `0x${string}`,
-              base: TokenAddresses.USDT.base as `0x${string}`,
-            },
-            user,
-          ),
-        ]);
-
         const usdceAddr = TokenAddresses.USDCe.lisk as `0x${string}`;
         const usdt0Addr = TokenAddresses.USDT0.lisk as `0x${string}`;
         const usdt0OpAddr = TokenAddresses.USDT0.optimism as `0x${string}`;
-        const [usdceLi, usdt0Li, usdt0Op] = await Promise.all([
+        const usdcOpAddr = TokenAddresses.USDC.optimism as `0x${string}`;
+        const usdtOpAddr = TokenAddresses.USDT.optimism as `0x${string}`;
+
+        const [usdcOp, usdtOp, usdceLi, usdt0Li, usdt0Op] = await Promise.all([
+          readWalletBalance('optimism', usdcOpAddr, user).catch(() => 0n),
+          readWalletBalance('optimism', usdtOpAddr, user).catch(() => 0n),
           readWalletBalance('lisk', usdceAddr, user).catch(() => 0n),
           readWalletBalance('lisk', usdt0Addr, user).catch(() => 0n),
           readWalletBalance('optimism', usdt0OpAddr, user).catch(() => 0n),
@@ -243,14 +226,10 @@ export function DepositWithdraw({
 
         const toNum6 = (x: bigint) => Number(x) / 1e6;
 
-        const usdcOpNum = toNum6(usdcOp);
-        const usdtOpNum = toNum6(usdtOp);
-        const usdt0NumOp = toNum6(usdt0Op);
-
         setAvailableTokenBalances({
-          USDC_Op: usdcOpNum,
-          USDT_Op: usdtOpNum,
-          USDT0_OP: usdt0NumOp,
+          USDC_Op: toNum6(usdcOp),
+          USDT_Op: toNum6(usdtOp),
+          USDT0_OP: toNum6(usdt0Op),
           USDCe_Lisk: toNum6(usdceLi),
           USDT0_Lisk: toNum6(usdt0Li),
         });
@@ -278,12 +257,12 @@ export function DepositWithdraw({
     }));
   }, [snap]);
 
+  // Wallet balances per chain (OP + Lisk only)
   useEffect(() => {
     if (!walletClient || !snap) return;
     const user = walletClient.account?.address as `0x${string}`;
 
     const opSym = symbolForWalletDisplay(snap.token, 'optimism');
-    const baSym = symbolForWalletDisplay(snap.token, 'base');
     const liSym = symbolForWalletDisplay(snap.token, 'lisk');
 
     const addrOrNull = (sym: YieldSnapshot['token'], ch: EvmChain) => {
@@ -295,14 +274,12 @@ export function DepositWithdraw({
     };
 
     const opAddr = addrOrNull(opSym, 'optimism');
-    const baAddr = addrOrNull(baSym, 'base');
     const liAddr = addrOrNull(liSym, 'lisk');
 
     const reads: Promise<bigint | null>[] = [
       opAddr
         ? readWalletBalance('optimism', opAddr, user)
         : Promise.resolve(null),
-      baAddr ? readWalletBalance('base', baAddr, user) : Promise.resolve(null),
       liAddr ? readWalletBalance('lisk', liAddr, user) : Promise.resolve(null),
     ];
 
@@ -315,9 +292,7 @@ export function DepositWithdraw({
     }
 
     const opUsdc = addrOrNull('USDC', 'optimism');
-    const baUsdc = addrOrNull('USDC', 'base');
     const opUsdt = addrOrNull('USDT', 'optimism');
-    const baUsdt = addrOrNull('USDT', 'base');
 
     reads.push(
       opUsdc
@@ -325,33 +300,25 @@ export function DepositWithdraw({
         : Promise.resolve(null),
     );
     reads.push(
-      baUsdc ? readWalletBalance('base', baUsdc, user) : Promise.resolve(null),
-    );
-    reads.push(
       opUsdt
         ? readWalletBalance('optimism', opUsdt, user)
         : Promise.resolve(null),
-    );
-    reads.push(
-      baUsdt ? readWalletBalance('base', baUsdt, user) : Promise.resolve(null),
     );
 
     Promise.allSettled(reads).then((vals) => {
       const v = vals.map((r) =>
         r.status === 'fulfilled' ? ((r as any).value as bigint | null) : null,
       );
-      const [op, ba, li, liU0, _opUsdc, _baUsdc, _opUsdt, _baUsdt] = v;
+      const [op, li, liU0, _opUsdc, _opUsdt] = v;
       setOpBal(op ?? null);
-      setBaBal(ba ?? null);
       setLiBal(li ?? null);
       setLiBalUSDT0(liU0 ?? null);
       setOpUsdcBal(_opUsdc ?? null);
-      setBaUsdcBal(_baUsdc ?? null);
       setOpUsdtBal(_opUsdt ?? null);
-      setBaUsdtBal(_baUsdt ?? null);
     });
   }, [walletClient, snap, isUsdtFamily]);
 
+  // Quote logic – OP + Lisk only
   useEffect(() => {
     if (!walletClient || !amount || !snap) {
       setRoute(null);
@@ -374,7 +341,7 @@ export function DepositWithdraw({
 
     const pickSrcBy = (
       o?: bigint | null,
-      b?: bigint | null,
+      _b?: bigint | null,
     ): 'optimism' => {
       const op = o ?? 0n;
       if (op >= amt) return 'optimism';
@@ -407,8 +374,8 @@ export function DepositWithdraw({
       const src =
         forcedSrc ??
         (selectedToken.symbol === 'USDC'
-          ? pickSrcBy(opUsdcBal, baUsdcBal)
-          : pickSrcBy(opUsdtBal, baUsdtBal));
+          ? pickSrcBy(opUsdcBal)
+          : pickSrcBy(opUsdtBal));
 
       getBridgeQuote({
         token: 'USDT0',
@@ -444,14 +411,8 @@ export function DepositWithdraw({
         return;
       }
 
-      let opBalForQuote = opBal;
-      let baBalForQuote = baBal;
-
-      if (forcedSrc === 'base') {
-        opBalForQuote = 0n;
-      } else if (forcedSrc === 'optimism') {
-        baBalForQuote = 0n;
-      }
+      const opBalForQuote = opBal ?? 0n;
+      const baBalForQuote = 0n; // no Base, but function still expects a value
 
       quoteUsdceOnLisk({
         amountIn: amt,
@@ -485,15 +446,12 @@ export function DepositWithdraw({
     snap,
     destTokenLabel,
     opBal,
-    baBal,
     liBal,
     liBalUSDT0,
     selectedToken.id,
     selectedToken.symbol,
     opUsdcBal,
-    baUsdcBal,
     opUsdtBal,
-    baUsdtBal,
   ]);
 
   const amountNum = Number.parseFloat(amount) || 0;
@@ -548,22 +506,6 @@ export function DepositWithdraw({
       balance: availableTokenBalances.USDT0_OP,
       address: TokenAddresses.USDT0.optimism as `0x${string}`,
     },
-    {
-      id: 'usdce_lisk',
-      name: 'USDC.e',
-      symbol: 'USDCe',
-      icon: '/tokens/usdc-icon.png',
-      balance: availableTokenBalances.USDCe_Lisk,
-      address: TokenAddresses.USDCe.lisk as `0x${string}`,
-    },
-    {
-      id: 'usdt0_lisk',
-      name: 'USDT0',
-      symbol: 'USDT0',
-      icon: '/tokens/usdt0-icon.png',
-      balance: availableTokenBalances.USDT0_Lisk,
-      address: TokenAddresses.USDT0.lisk as `0x${string}`,
-    },
   ];
 
   const withdrawChoices = useMemo(
@@ -578,6 +520,7 @@ export function DepositWithdraw({
           icon: '/networks/op-icon.png',
           description: `Bridge to OP ${stableSymbol}`,
         },
+        // NOTE: no Base option anymore
       ];
     },
     [destTokenLabel],
@@ -941,17 +884,13 @@ export function DepositWithdraw({
                   const wSrcIcon = '/networks/lisk.png';
                   const wSrcToken = destTokenLabel;
                   const wDstChainName =
-                    withdrawDest === 'base'
-                      ? 'Base'
-                      : withdrawDest === 'optimism'
-                        ? 'OP Mainnet'
-                        : 'Lisk';
+                    withdrawDest === 'optimism'
+                      ? 'OP Mainnet'
+                      : 'Lisk';
                   const wDstIcon =
-                    withdrawDest === 'base'
-                      ? '/networks/base.png'
-                      : withdrawDest === 'optimism'
-                        ? '/networks/op-icon.png'
-                        : '/networks/lisk.png';
+                    withdrawDest === 'optimism'
+                      ? '/networks/op-icon.png'
+                      : '/networks/lisk.png';
                   const wDstToken =
                     withdrawDest === 'lisk'
                       ? destTokenLabel
@@ -1040,22 +979,22 @@ export function DepositWithdraw({
 
                         <div className=''>
                           <div className="w-18 h-full rounded-xl border border-border flex items-center justify-center flex-shrink-0">
-                          <svg
-                            width="20"
-                            height="20"
-                            viewBox="0 0 20 20"
-                            fill="none"
-                            className="text-muted-foreground"
-                          >
-                            <path
-                              d="M4 10H16M16 10L10 4M16 10L10 16"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        </div>
+                            <svg
+                              width="20"
+                              height="20"
+                              viewBox="0 0 20 20"
+                              fill="none"
+                              className="text-muted-foreground"
+                            >
+                              <path
+                                d="M4 10H16M16 10L10 4M16 10L10 16"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </div>
                         </div>
 
                         <div className="flex-1 bg-muted rounded-xl px-4 py-3.5">
