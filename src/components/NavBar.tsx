@@ -24,7 +24,7 @@ const CHAIN_META: Record<
     key: 'optimism' | 'base' | 'lisk'
     label: string
     badge: string
-    icon: string
+    icon: any
     bg: string
     ring: string
   }
@@ -55,7 +55,6 @@ const CHAIN_META: Record<
   },
 }
 
-
 function shortAddr(a?: string) {
   return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : ''
 }
@@ -65,7 +64,10 @@ function NetworkBadge({ chainId }: { chainId?: number }) {
   const m = CHAIN_META[chainId]
 
   return (
-    <div className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white p-1" title={m.label}>
+    <div
+      className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white p-1"
+      title={m.label}
+    >
       <span className="relative inline-flex h-5 w-5 items-center justify-center rounded-md overflow-hidden">
         <Image
           src={m.icon}
@@ -79,15 +81,17 @@ function NetworkBadge({ chainId }: { chainId?: number }) {
   )
 }
 
-
 function ActiveLink({ href, children }: { href: string; children: React.ReactNode }) {
   const pathname = usePathname()
   const active = pathname === href || (href !== '/' && pathname.startsWith(href))
   return (
     <Link
       href={href}
-      className={`rounded-xl px-3 py-2 text-sm transition ${active ? 'bg-[#F3F4F6] text-black font-semibold' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-        }`}
+      className={`rounded-xl px-3 py-2 text-sm transition ${
+        active
+          ? 'bg-[#F3F4F6] text-black font-semibold'
+          : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+      }`}
     >
       {children}
     </Link>
@@ -130,7 +134,9 @@ export function Navbar() {
     if (mobileOpen) {
       const prev = body.style.overflow
       body.style.overflow = 'hidden'
-      return () => { body.style.overflow = prev }
+      return () => {
+        body.style.overflow = prev
+      }
     }
   }, [mobileOpen])
 
@@ -142,11 +148,17 @@ export function Navbar() {
       if (mobileRef.current && !mobileRef.current.contains(t) && mobileOpen) setMobileOpen(false)
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') { setMenuOpen(false); setMobileOpen(false) }
+      if (e.key === 'Escape') {
+        setMenuOpen(false)
+        setMobileOpen(false)
+      }
     }
     document.addEventListener('mousedown', onClick)
     document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onClick); document.removeEventListener('keydown', onKey) }
+    return () => {
+      document.removeEventListener('mousedown', onClick)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [mobileOpen])
 
   const currentChain = useMemo(() => (chainId ? CHAIN_META[chainId] : undefined), [chainId])
@@ -157,7 +169,7 @@ export function Navbar() {
       await navigator.clipboard.writeText(address)
       setCopied(true)
       setTimeout(() => setCopied(false), 1200)
-    } catch { }
+    } catch {}
   }
 
   async function quickSwitch(id: number) {
@@ -169,11 +181,9 @@ export function Navbar() {
   }
 
   return (
-    <div className='mt-[12px]'>
+    <div className="mt-[12px]">
       {/* Top App Bar */}
-      <header
-        className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-6xl mx-auto rounded-xl`}
-      >
+      <header className="sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-6xl mx-auto rounded-xl">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-3 sm:px-4">
           {/* Brand */}
           <div className="flex items-center gap-3 min-w-0">
@@ -204,11 +214,42 @@ export function Navbar() {
               aria-expanded={mobileOpen}
               title="Menu"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" className="opacity-80"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" className="opacity-80">
+                <path
+                  d="M4 6h16M4 12h16M4 18h16"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
             </button>
 
-            {/* Network badge (if connected) */}
-            {address && <NetworkBadge chainId={chainId} />}
+            {/* Network control (if connected) */}
+            {address &&
+              (chainId === 10 ? (
+                // On OP → show small chain badge
+                <NetworkBadge chainId={chainId} />
+              ) : (
+                // Not on OP → show "Switch to OP Mainnet" pill
+                <button
+                  type="button"
+                  onClick={() => quickSwitch(10)}
+                  disabled={isSwitching}
+                  className="hidden md:inline-flex h-9 items-center gap-2 rounded-xl border border-[#FACC6B] bg-[#FFFAEB] px-4 text-sm font-semibold text-black shadow-sm disabled:opacity-60"
+                  title="Switch network to Optimism"
+                >
+                  <span>Switch to OP Mainnet</span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#F04438]">
+                    <Image
+                      src="/networks/op-icon.png"
+                      alt="OP Mainnet"
+                      width={18}
+                      height={18}
+                      className="h-4 w-4"
+                    />
+                  </span>
+                </button>
+              ))}
 
             {/* Wallet area */}
             {!address ? (
@@ -223,7 +264,7 @@ export function Navbar() {
               <div className="relative" ref={accountMenuRef}>
                 <button
                   onClick={() => setMenuOpen((v) => !v)}
-                  className="inline-flex items-center gap-2 rounded-lg  border border-gray-200 bg-background/60 px-3 py-1.5 text-sm font-semibold hover:bg-background active:scale-[.98]"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-background/60 px-3 text-sm font-semibold hover:bg-background active:scale-[.98]"
                   title="Wallet menu"
                   aria-expanded={menuOpen}
                   aria-haspopup="menu"
@@ -233,17 +274,22 @@ export function Navbar() {
                 </button>
 
                 {menuOpen && (
-                  <div className="absolute flex flex-col justify-between right-0 mt-2 w-64  overflow-hidden rounded-2xl border border-border/60 bg-white shadow-xl focus:outline-none" role="menu">
+                  <div
+                    className="absolute flex flex-col justify-between right-0 mt-2 w-64 overflow-hidden rounded-2xl border border-border/60 bg-white shadow-xl focus:outline-none"
+                    role="menu"
+                  >
                     {/* header */}
                     <div className="flex items-center justify-between border-b px-3 py-2">
-                      <div className='flex flex-col justify-between w-full'>
-                        <div className='w-full flex justify-center'>
+                      <div className="flex flex-col justify-between w-full">
+                        <div className="w-full flex justify-center">
                           <div className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5" />
                         </div>
 
                         <div className="flex justify-center items-center p-2 gap-2 min-w-0">
                           <div className="flex min-w-0 flex-col">
-                            <span className="truncate text-xs font-semibold" title={address}>{shortAddr(address)}</span>
+                            <span className="truncate text-xs font-semibold" title={address}>
+                              {shortAddr(address)}
+                            </span>
                           </div>
                           <Image src={CopyIconSvg} width={14} height={14} onClick={copyAddress} alt="" />
                           <Image src={ShareIconSvg} onClick={copyAddress} width={14} height={14} alt="" />
@@ -255,11 +301,16 @@ export function Navbar() {
                     <div className="p-2 text-sm">
                       <button
                         className="mt-2 flex w-full items-center justify-start rounded-md px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
-                        onClick={() => { setMenuOpen(false); disconnect() }}
+                        onClick={() => {
+                          setMenuOpen(false)
+                          disconnect()
+                        }}
                         title="Disconnect"
                       >
-                        <span className="text-xs"><Image src={ExitIconSvg} alt="" /></span>
-                        <span className='mx-2'>Disconnect</span>
+                        <span className="text-xs">
+                          <Image src={ExitIconSvg} alt="" />
+                        </span>
+                        <span className="mx-2">Disconnect</span>
                       </button>
                     </div>
                   </div>
@@ -277,7 +328,9 @@ export function Navbar() {
       >
         {/* overlay */}
         <div
-          className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity ${mobileOpen ? 'opacity-100' : 'opacity-0'}`}
+          className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity ${
+            mobileOpen ? 'opacity-100' : 'opacity-0'
+          }`}
           onClick={() => setMobileOpen(false)}
         />
 
@@ -286,8 +339,9 @@ export function Navbar() {
           ref={mobileRef}
           role="dialog"
           aria-modal="true"
-          className={`absolute right-0 top-0 h-full w-[86%] max-w-sm bg-background shadow-2xl ring-1 ring-border/60 transition-transform duration-200 ease-out ${mobileOpen ? 'translate-x-0' : 'translate-x-full'
-            }`}
+          className={`absolute right-0 top-0 h-full w-[86%] max-w-sm bg-background shadow-2xl ring-1 ring-border/60 transition-transform duration-200 ease-out ${
+            mobileOpen ? 'translate-x-0' : 'translate-x-full'
+          }`}
         >
           <div className="flex h-14 items-center justify-between border-b px-3">
             <div className="inline-flex items-center gap-2">
@@ -306,7 +360,14 @@ export function Navbar() {
               aria-label="Close menu"
               title="Close"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" className="opacity-80"><path d="M6 6l12 12M6 18L18 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" className="opacity-80">
+                <path
+                  d="M6 6l12 12M6 18L18 6"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
             </button>
           </div>
 
@@ -319,7 +380,9 @@ export function Navbar() {
                     <div className="mb-2 text-sm">You&rsquo;re not connected</div>
                     <Button
                       onClick={() => open({ view: 'Connect' })}
-                      className="w-full bg-[#376FFF] text-white rounded-lg" title={''}                    >
+                      className="w-full bg-[#376FFF] text-white rounded-lg"
+                      title={''}
+                    >
                       Connect Wallet
                     </Button>
                     <div className="mt-2 text-[11px] text-muted-foreground">
@@ -336,13 +399,31 @@ export function Navbar() {
                       <NetworkBadge chainId={chainId} />
                     </div>
                     <div className="mt-2 grid grid-cols-2 gap-2">
-                      <Button variant="secondary" className="w-full" onClick={copyAddress} title={copied ? 'Copied' : 'Copy'}>
+                      <Button
+                        variant="secondary"
+                        className="w-full"
+                        onClick={copyAddress}
+                        title={copied ? 'Copied' : 'Copy'}
+                      >
                         {copied ? 'Copied' : 'Copy'}
                       </Button>
-                      <Button variant="secondary" className="w-full" onClick={() => open({ view: 'Connect' })} title={'Switch'}>
+                      <Button
+                        variant="secondary"
+                        className="w-full"
+                        onClick={() => open({ view: 'Connect' })}
+                        title={'Switch'}
+                      >
                         Switch
                       </Button>
-                      <Button variant="destructive" className="col-span-2" onClick={() => { disconnect(); setMobileOpen(false) }} title={'Disconnect'}>
+                      <Button
+                        variant="destructive"
+                        className="col-span-2"
+                        onClick={() => {
+                          disconnect()
+                          setMobileOpen(false)
+                        }}
+                        title={'Disconnect'}
+                      >
                         Disconnect
                       </Button>
                     </div>
@@ -359,7 +440,9 @@ export function Navbar() {
 
               {/* quick network switch */}
               <div className="mt-4 rounded-2xl border p-3">
-                <div className="mb-2 text-[11px] font-semibold uppercase text-muted-foreground">Networks</div>
+                <div className="mb-2 text-[11px] font-semibold uppercase text-muted-foreground">
+                  Networks
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   {[10, 8453, 1135].map((id) => {
                     const meta = CHAIN_META[id]
@@ -369,7 +452,11 @@ export function Navbar() {
                         key={id}
                         onClick={() => quickSwitch(id)}
                         disabled={isSwitching || active}
-                        className={`h-9 rounded-xl text-[12px] font-semibold ring-1 ${active ? `${meta.bg} text-white ring-transparent` : 'bg-muted/60 hover:bg-muted ring-border/60'} disabled:opacity-60`}
+                        className={`h-9 rounded-xl text-[12px] font-semibold ring-1 ${
+                          active
+                            ? `${meta.bg} text-white ring-transparent`
+                            : 'bg-muted/60 hover:bg-muted ring-border/60'
+                        } disabled:opacity-60`}
                         title={meta.label}
                       >
                         {meta.badge}
@@ -377,15 +464,14 @@ export function Navbar() {
                     )
                   })}
                 </div>
-                {isSwitching && <div className="mt-2 text-[11px] text-muted-foreground">Switching…</div>}
+                {isSwitching && (
+                  <div className="mt-2 text-[11px] text-muted-foreground">Switching…</div>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
-
-
     </div>
   )
 }
-
