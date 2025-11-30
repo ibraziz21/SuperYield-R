@@ -61,12 +61,6 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     routeLabel,
     bridgeFeeDisplay,
     receiveAmountDisplay,
-    liBal,
-    liBalUSDT0,
-    opUsdcBal,
-    baUsdcBal,
-    opUsdtBal,
-    baUsdtBal,
   } = props
 
   const { open: openConnect } = useAppKit()
@@ -100,13 +94,6 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     [receiveAmountDisplay],
   )
   const amountNumber = Number(amount || 0)
-
-  // if we are depositing using Lisk-native balance (USDCe / USDT0), the parent
-  // sets routeLabel="On-chain" and fee=0. In that case, we **hide** the bridge row.
-  const isOnChainDeposit = useMemo(
-    () => routeLabel === 'On-chain' || bridgeFeeDisplay === 0,
-    [routeLabel, bridgeFeeDisplay],
-  )
 
   /** Ensure wallet on Lisk and return a **fresh** wallet client after switch */
   const ensureLiskWalletClient = useCallback(async () => {
@@ -223,41 +210,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       setDestAddr(_destAddr)
       setCachedInputAmt(inputAmt)
 
-      // ── NEW: only skip bridge when user explicitly chose Lisk-native asset ──
-      const isLiskSource =
-        sourceSymbol === 'USDCe' ||
-        sourceSymbol === 'USDT0'
-
-
-      if (isLiskSource) {
-        // Pure on-chain deposit from Lisk balance
-        const wc = await ensureLiskWalletClient()
-        const liskUser = wc.account!.address as `0x${string}`
-
-        const balOnLisk = await readWalletBalance(
-          'lisk',
-          _destAddr,
-          liskUser,
-        ).catch(() => 0n)
-
-        if (balOnLisk < inputAmt) {
-          throw new Error('Insufficient balance on Lisk for this deposit')
-        }
-
-        setBridgeOk(true)
-        setCachedMinOut(inputAmt)
-        setStep('depositing')
-
-        await depositMorphoOnLiskAfterBridge(snap, inputAmt, wc)
-
-        setStep('success')
-        setShowSuccess(true)
-        return
-      }
-
-      // ── From here on we ALWAYS bridge from OP (no auto-using random Lisk balance) ──
-
-      // We ONLY support Optimism as the source now (no Base)
+      // ── All deposits now bridge from OP → Lisk ──
       const srcToken: 'USDC' | 'USDT' | 'USDT0' | 'USDCe' = sourceSymbol
       const srcChain = 'optimism' as const
 
@@ -351,17 +304,18 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   // ---------- UI state mapping ----------
   const approveState: 'idle' | 'working' | 'done' | 'error' =
     step === 'idle' ? 'idle' : step === 'error' ? 'error' : 'done'
-  const bridgeState: 'idle' | 'working' | 'done' | 'error' = isOnChainDeposit
-    ? 'done'
-    : step === 'bridging'
-    ? 'working'
-    : step === 'depositing' ||
-      step === 'success' ||
-      (step === 'error' && bridgeOk)
-    ? 'done'
-    : step === 'error'
-    ? 'error'
-    : 'idle'
+
+  const bridgeState: 'idle' | 'working' | 'done' | 'error' =
+    step === 'bridging'
+      ? 'working'
+      : step === 'depositing' ||
+        step === 'success' ||
+        (step === 'error' && bridgeOk)
+      ? 'done'
+      : step === 'error'
+      ? 'error'
+      : 'idle'
+
   const depositState: 'idle' | 'working' | 'done' | 'error' =
     step === 'depositing'
       ? 'working'
@@ -408,28 +362,21 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     }
   }
 
-  // ---------- Source row visuals (OP USDT0-aware, no Base in UI) ----------
-  const sourceIcon = isOnChainDeposit
-    ? destTokenLabel === 'USDT0'
+  // ---------- Source row visuals (always OP source) ----------
+  const sourceIcon =
+    sourceSymbol === 'USDT'
+      ? '/tokens/usdt-icon.png'
+      : sourceSymbol === 'USDT0'
       ? '/tokens/usdt0-icon.png'
-      : destTokenLabel === 'USDCe'
-      ? '/tokens/usdc-icon.png'
-      : '/tokens/weth.png'
-    : sourceSymbol === 'USDT'
-    ? '/tokens/usdt-icon.png'
-    : sourceSymbol === 'USDT0'
-    ? '/tokens/usdt0-icon.png'
-    : '/tokens/usdc-icon.png'
+      : '/tokens/usdc-icon.png'
 
-  const sourceTokenLabel = isOnChainDeposit ? destTokenLabel : sourceSymbol
-  const sourceChainLabel = isOnChainDeposit ? 'Lisk' : 'OP Mainnet'
+  const sourceTokenLabel = sourceSymbol
+  const sourceChainLabel = 'OP Mainnet'
 
   // ---------- Step hint (intermediate status copy) ----------
   const stepHint = (() => {
     if (step === 'bridging') {
-      return isOnChainDeposit
-        ? 'Depositing directly on Lisk – no bridge needed.'
-        : 'Bridge in progress. This can take a few minutes depending on network congestion.'
+      return 'Bridge in progress. This can take a few minutes depending on network congestion.'
     }
     if (step === 'depositing') {
       return 'Your funds have arrived on Lisk. Depositing into the vault…'
@@ -484,7 +431,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                 {/* Square network badge */}
                 <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
                   <Image
-                    src={sourceChainLabel === 'Lisk' ? '/networks/lisk.png' : '/networks/op-icon.png'}
+                    src="/networks/op-icon.png"
                     alt={sourceChainLabel}
                     width={16}
                     height={16}
@@ -508,42 +455,40 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                 <AlertCircle className="text-red-600" size={18} />
               )}
             </div>
-            
-            {/* bridge – hidden for pure Lisk deposits */}
-            {!isOnChainDeposit && (
-              <div className="flex items-start gap-3">
-                <div className="relative mt-0.5">
-                  <Image
-                    src={lifilogo.src}
-                    alt="bridge"
-                    width={40}
-                    height={40}
-                    className="rounded-full"
-                  />
-                </div>
-                <div className="flex-1">
-                  <div className="text-lg font-semibold">Bridging via LI.FI</div>
-                  <div className="text-xs text-muted-foreground">
-                    Bridge Fee: {feeDisplay.toFixed(4)} {sourceSymbol}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {routeLabel}
-                  </div>
-                </div>
-                {bridgeState === 'done' && (
-                  <a
-                    href="#"
-                    className="text-muted-foreground hover:text-foreground"
-                    onClick={(e) => e.preventDefault()}
-                  >
-                    <ExternalLink size={16} />
-                  </a>
-                )}
-                {bridgeState === 'error' && (
-                  <AlertCircle className="text-red-600" size={18} />
-                )}
+
+            {/* bridge – always shown now */}
+            <div className="flex items-start gap-3">
+              <div className="relative mt-0.5">
+                <Image
+                  src={lifilogo.src}
+                  alt="bridge"
+                  width={40}
+                  height={40}
+                  className="rounded-full"
+                />
               </div>
-            )}
+              <div className="flex-1">
+                <div className="text-lg font-semibold">Bridging via LI.FI</div>
+                <div className="text-xs text-muted-foreground">
+                  Bridge Fee: {feeDisplay.toFixed(4)} {sourceSymbol}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {routeLabel}
+                </div>
+              </div>
+              {bridgeState === 'done' && (
+                <a
+                  href="#"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={(e) => e.preventDefault()}
+                >
+                  <ExternalLink size={16} />
+                </a>
+              )}
+              {bridgeState === 'error' && (
+                <AlertCircle className="text-red-600" size={18} />
+              )}
+            </div>
 
             {/* destination */}
             <div className="flex items-start gap-3">

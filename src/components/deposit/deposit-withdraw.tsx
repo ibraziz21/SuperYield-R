@@ -25,12 +25,7 @@ import {
 } from './helpers';
 
 type EvmChain = 'optimism' | 'lisk';
-type TokenId =
-  | 'usdc'
-  | 'usdt'
-  | 'usdce_lisk'
-  | 'usdt0_lisk'
-  | 'usdt0_op';
+type TokenId = 'usdc' | 'usdt' | 'usdt0_op';
 
 interface Token {
   id: TokenId;
@@ -46,7 +41,6 @@ interface DepositWithdrawProps {
   snap?: YieldSnapshot;
 }
 
-
 function normalizeRouteLabel(raw?: string | null) {
   if (!raw) return raw ?? null;
   return raw
@@ -55,7 +49,6 @@ function normalizeRouteLabel(raw?: string | null) {
     .replace(/OPTIMISM/gi, 'OP Mainnet')
     .replace(/OP mainnet/gi, 'OP Mainnet'); // just in case
 }
-
 
 function formatAmountBigint(n: bigint, decimals: number): string {
   const neg = n < 0n;
@@ -103,7 +96,7 @@ export function DepositWithdraw({
 
   const [showWithdrawReview, setShowWithdrawReview] = useState(false);
   const [withdrawDest, setWithdrawDest] =
-    useState<'lisk' | 'optimism' | 'base'>('optimism'); // NOTE: type kept to avoid touching other components; we just never actually use 'base'
+    useState<'lisk' | 'optimism' | 'base'>('optimism'); // type kept; we just don't use 'base'
   const [showWithdrawMenu, setShowWithdrawMenu] = useState(false);
 
   // Disclaimer state for deposits over $1000
@@ -129,7 +122,7 @@ export function DepositWithdraw({
   const [opUsdcBal, setOpUsdcBal] = useState<bigint | null>(null);
   const [opUsdtBal, setOpUsdtBal] = useState<bigint | null>(null);
 
-  // These are kept for DepositModal prop compatibility, but no longer populated from Base.
+  // Kept for DepositModal compatibility; no Base usage now.
   const [baBal] = useState<bigint | null>(null);
   const [baUsdcBal] = useState<bigint | null>(null);
   const [baUsdtBal] = useState<bigint | null>(null);
@@ -181,10 +174,6 @@ export function DepositWithdraw({
     const toNum6 = (x: bigint | null | undefined) => Number(x ?? 0n) / 1e6;
 
     switch (selectedToken.id) {
-      case 'usdce_lisk':
-        return availableTokenBalances.USDCe_Lisk;
-      case 'usdt0_lisk':
-        return availableTokenBalances.USDT0_Lisk;
       case 'usdt0_op':
         return availableTokenBalances.USDT0_OP;
       case 'usdc': {
@@ -198,14 +187,9 @@ export function DepositWithdraw({
       default:
         return 0;
     }
-  }, [
-    selectedToken.id,
-    availableTokenBalances,
-    opUsdcBal,
-    opUsdtBal,
-  ]);
+  }, [selectedToken.id, availableTokenBalances, opUsdcBal, opUsdtBal]);
 
-  // Fetch OP + Lisk balances (no Base)
+  // Fetch OP + Lisk balances (Lisk balances are still useful for display/withdraw)
   useEffect(() => {
     if (!walletClient) {
       setAvailableTokenBalances({
@@ -329,7 +313,7 @@ export function DepositWithdraw({
     });
   }, [walletClient, snap, isUsdtFamily]);
 
-  // Quote logic – OP + Lisk only
+  // Quote logic – deposits always from OP now
   useEffect(() => {
     if (!walletClient || !amount || !snap) {
       setRoute(null);
@@ -348,83 +332,45 @@ export function DepositWithdraw({
 
     const amt = parseUnits(amount, tokenDecimals);
 
-    const forcedSrc: 'optimism' | 'base' | null = null;
+// We always use Optimism as the source now
+const src = 'optimism' as const;
 
-    const pickSrcBy = (
-      o?: bigint | null,
-      _b?: bigint | null,
-    ): 'optimism' => {
-      const op = o ?? 0n;
-      if (op >= amt) return 'optimism';
-      return 'optimism';
-    };
-
-    if (selectedToken.id === 'usdce_lisk' || selectedToken.id === 'usdt0_lisk') {
-      if (selectedToken.id === 'usdce_lisk' && destTokenLabel !== 'USDCe') {
-        setRoute(null);
-        setFee(0n);
-        setReceived(0n);
-        setQuoteError('Select USDT0 (Lisk) for this vault.');
-        return;
-      }
-      if (selectedToken.id === 'usdt0_lisk' && destTokenLabel !== 'USDT0') {
-        setRoute(null);
-        setFee(0n);
-        setReceived(0n);
-        setQuoteError('Select USDCe (Lisk) for this vault.');
-        return;
-      }
-      setRoute('On-chain');
-      setFee(0n);
-      setReceived(amt);
-      setQuoteError(null);
-      return;
-    }
 
     if (destTokenLabel === 'USDT0') {
-      const src =
-        forcedSrc ??
-        (selectedToken.symbol === 'USDC'
-          ? pickSrcBy(opUsdcBal)
-          : pickSrcBy(opUsdtBal));
+      getBridgeQuote({
+        token: 'USDT0',
+        amount: amt,
+        from: src,
+        to: 'lisk',
+        fromAddress: walletClient.account!.address as `0x${string}`,
+        fromTokenSym: selectedToken.symbol,
+      })
+        .then((q) => {
+          const minOut = BigInt(q.estimate?.toAmountMin ?? '0');
+          const f = BigInt(q.bridgeFeeTotal ?? '0');
 
-    // USDT0 branch
-getBridgeQuote({
-  token: 'USDT0',
-  amount: amt,
-  from: src,
-  to: 'lisk',
-  fromAddress: walletClient.account!.address as `0x${string}`,
-  fromTokenSym: selectedToken.symbol,
-})
-  .then((q) => {
-    const minOut = BigInt(q.estimate?.toAmountMin ?? '0');
-    const f = BigInt(q.bridgeFeeTotal ?? '0');
-
-    setRoute(
-      normalizeRouteLabel(q.route) ??
-        `Bridge ${selectedToken.symbol} → USDT0`,
-    );
-    setFee(f);
-    setReceived(minOut);
-    setQuoteError(null);
-  })
+          setRoute(
+            normalizeRouteLabel(q.route) ??
+              `Bridge ${selectedToken.symbol} → USDT0`,
+          );
+          setFee(f);
+          setReceived(minOut);
+          setQuoteError(null);
+        })
+        .catch(() => {
+          setRoute(null);
+          setFee(0n);
+          setReceived(0n);
+          setQuoteError('Could not fetch bridge quote');
+        });
 
       return;
     }
 
     if (destTokenLabel === 'USDCe') {
-      if ((liBal ?? 0n) >= amt) {
-        setRoute('On-chain');
-        setFee(0n);
-        setReceived(amt);
-        setQuoteError(null);
-        return;
-      }
-    
       const opBalForQuote = opBal ?? 0n;
-      const baBalForQuote = 0n; // no Base, but function still expects a value
-    
+      const baBalForQuote = 0n; // no Base now
+
       quoteUsdceOnLisk({
         amountIn: amt,
         opBal: opBalForQuote,
@@ -433,8 +379,8 @@ getBridgeQuote({
       })
         .then((q) => {
           setRoute(
-            normalizeRouteLabel(q.route) ?? 'Bridge → USDCe'
-          );                       // 👈 normalize here
+            normalizeRouteLabel(q.route) ?? 'Bridge → USDCe',
+          );
           setFee(q.bridgeFee ?? 0n);
           setReceived(q.bridgeOutUSDCe ?? 0n);
           setQuoteError(null);
@@ -447,12 +393,34 @@ getBridgeQuote({
         });
       return;
     }
-    
 
-    setRoute('On-chain');
-    setFee(0n);
-    setReceived(amt);
-    setQuoteError(null);
+    // Fallback (e.g. WETH vaults) – treat as bridged via LI.FI as well
+    getBridgeQuote({
+      token: destTokenLabel,
+      amount: amt,
+      from: src,
+      to: 'lisk',
+      fromAddress: walletClient.account!.address as `0x${string}`,
+      fromTokenSym: selectedToken.symbol,
+    })
+      .then((q) => {
+        const minOut = BigInt(q.estimate?.toAmountMin ?? '0');
+        const f = BigInt(q.bridgeFeeTotal ?? '0');
+
+        setRoute(
+          normalizeRouteLabel(q.route) ??
+            `Bridge ${selectedToken.symbol} → ${destTokenLabel}`,
+        );
+        setFee(f);
+        setReceived(minOut);
+        setQuoteError(null);
+      })
+      .catch(() => {
+        setRoute(null);
+        setFee(0n);
+        setReceived(0n);
+        setQuoteError('Could not fetch bridge quote');
+      });
   }, [
     amount,
     walletClient,
@@ -462,10 +430,7 @@ getBridgeQuote({
     opBal,
     liBal,
     liBalUSDT0,
-    selectedToken.id,
     selectedToken.symbol,
-    opUsdcBal,
-    opUsdtBal,
   ]);
 
   const amountNum = Number.parseFloat(amount) || 0;
@@ -514,7 +479,7 @@ getBridgeQuote({
     },
     {
       id: 'usdt0_op',
-      name: 'USDT0 ',
+      name: 'USDT0',
       symbol: 'USDT0',
       icon: '/tokens/usdt0-icon.png',
       balance: availableTokenBalances.USDT0_OP,
@@ -522,35 +487,30 @@ getBridgeQuote({
     },
   ];
 
-  const withdrawChoices = useMemo(
-    () => {
-      const isUSDT = destTokenLabel === 'USDT0';
-      const stableSymbol = isUSDT ? 'USDT' : 'USDC';
-      return [
-        {
-          id: 'optimism' as const,
-          chainLabel: 'OP Mainnet',
-          symbol: stableSymbol,
-          icon: '/networks/op-icon.png',
-          description: `Bridge to OP ${stableSymbol}`,
-        },
-        // NOTE: no Base option anymore
-      ];
-    },
-    [destTokenLabel],
-  );
+  const withdrawChoices = useMemo(() => {
+    const isUSDT = destTokenLabel === 'USDT0';
+    const stableSymbol = isUSDT ? 'USDT' : 'USDC';
+    return [
+      {
+        id: 'optimism' as const,
+        chainLabel: 'OP Mainnet',
+        symbol: stableSymbol,
+        icon: '/networks/op-icon.png',
+        description: `Bridge to OP ${stableSymbol}`,
+      },
+      // no Base option anymore
+    ];
+  }, [destTokenLabel]);
 
   const currentWithdrawChoice =
     withdrawChoices.find((c) => c.id === withdrawDest) ?? withdrawChoices[0];
 
   const sourceSymbolForModal: 'USDC' | 'USDT' | 'USDCe' | 'USDT0' =
-    selectedToken.id === 'usdce_lisk'
-      ? 'USDCe'
-      : selectedToken.id === 'usdt0_lisk' || selectedToken.id === 'usdt0_op'
-        ? 'USDT0'
-        : selectedToken.id === 'usdt'
-          ? 'USDT'
-          : 'USDC';
+    selectedToken.id === 'usdt0_op'
+      ? 'USDT0'
+      : selectedToken.id === 'usdt'
+      ? 'USDT'
+      : 'USDC';
 
   // Check if deposit requires disclaimer (over $1000)
   const requiresDisclaimer = activeTab === 'deposit' && amountNum >= 1000;
@@ -560,8 +520,6 @@ getBridgeQuote({
     !(amountNum > 0) ||
     Boolean(quoteError) ||
     !snap ||
-    (selectedToken.id === 'usdce_lisk' && destTokenLabel !== 'USDCe') ||
-    (selectedToken.id === 'usdt0_lisk' && destTokenLabel !== 'USDT0') ||
     (activeTab === 'deposit' && !canProceedWithDeposit);
 
   const onDepositClick = () => {
@@ -700,15 +658,11 @@ getBridgeQuote({
                       height={28}
                       className="rounded-full"
                     />
-                    {/* Square network badge */}
+                    {/* Network badge: always OP for deposits */}
                     <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
                       <Image
-                        src={
-                          selectedToken.id === 'usdce_lisk' || selectedToken.id === 'usdt0_lisk'
-                            ? '/networks/lisk.png'
-                            : '/networks/op-icon.png'
-                        }
-                        alt="network"
+                        src="/networks/op-icon.png"
+                        alt="OP Mainnet"
                         width={16}
                         height={16}
                         className="rounded-sm"
@@ -733,7 +687,7 @@ getBridgeQuote({
                         height={28}
                         className="rounded-full"
                       />
-                      {/* Square network badge */}
+                      {/* Network badge */}
                       <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
                         <Image
                           src={'/networks/op-icon.png'}
@@ -744,7 +698,9 @@ getBridgeQuote({
                         />
                       </div>
                     </div>
-                    <span className="font-semibold text-base">{currentWithdrawChoice.symbol}</span>
+                    <span className="font-semibold text-base">
+                      {currentWithdrawChoice.symbol}
+                    </span>
                     <ChevronDown size={18} className="text-muted-foreground" />
                   </button>
 
@@ -869,7 +825,9 @@ getBridgeQuote({
                   onClick={() => setRouteExpanded(!routeExpanded)}
                   className="w-full px-5 py-4 flex items-center justify-center hover:bg-muted/30 transition-colors"
                 >
-                  <span className="font-semibold text-foreground text-base text-center">Route & fees</span>
+                  <span className="font-semibold text-foreground text-base text-center">
+                    Route & fees
+                  </span>
                   <ChevronDown
                     size={20}
                     className={`text-muted-foreground transition-transform ${
@@ -881,14 +839,8 @@ getBridgeQuote({
                 {routeExpanded && (() => {
                   const isDeposit = activeTab === 'deposit';
 
-                  const depSrcChainName =
-                    selectedToken.id === 'usdce_lisk' || selectedToken.id === 'usdt0_lisk'
-                      ? 'Lisk'
-                      : 'OP Mainnet';
-                  const depSrcIcon =
-                    selectedToken.id === 'usdce_lisk' || selectedToken.id === 'usdt0_lisk'
-                      ? '/networks/lisk.png'
-                      : '/networks/op-icon.png';
+                  const depSrcChainName = 'OP Mainnet';
+                  const depSrcIcon = '/networks/op-icon.png';
                   const depSrcToken = selectedToken.symbol;
                   const depDstChainName = 'Lisk';
                   const depDstIcon = '/networks/lisk.png';
@@ -919,10 +871,10 @@ getBridgeQuote({
 
                   const bridgingOnDeposit =
                     isDeposit &&
-                    !(selectedToken.id === 'usdce_lisk' || selectedToken.id === 'usdt0_lisk') &&
                     (destTokenLabel === 'USDT0' || destTokenLabel === 'USDCe');
 
-                  const bridgingOnWithdraw = !isDeposit && withdrawDest !== 'lisk';
+                  const bridgingOnWithdraw =
+                    !isDeposit && withdrawDest !== 'lisk';
 
                   const protocolFee =
                     !isDeposit && amountNum > 0 ? amountNum * 0.005 : 0;
@@ -957,7 +909,7 @@ getBridgeQuote({
                   })();
 
                   return (
-                    <div className="border-t border-border px-5 py-5  ">
+                    <div className="border-t border-border px-5 py-5">
                       {/* Chain Route Visualization */}
                       <div className="flex justify-between gap-3 mb-5">
                         <div className="flex-1 bg-muted rounded-xl px-4 py-3.5">
@@ -978,7 +930,13 @@ getBridgeQuote({
                           <div className="flex items-center gap-2.5 mt-1.5 bg-white p-2 rounded-full">
                             <div className="w-6 h-6 relative">
                               <Image
-                                src={isDeposit ? selectedToken.icon : (destTokenLabel === 'USDCe' ? '/tokens/usdc-icon.png' : '/tokens/usdt0-icon.png')}
+                                src={
+                                  isDeposit
+                                    ? selectedToken.icon
+                                    : (destTokenLabel === 'USDCe'
+                                        ? '/tokens/usdc-icon.png'
+                                        : '/tokens/usdt0-icon.png')
+                                }
                                 alt={isDeposit ? depSrcToken : wSrcToken}
                                 width={24}
                                 height={24}
@@ -991,7 +949,7 @@ getBridgeQuote({
                           </div>
                         </div>
 
-                        <div className=''>
+                        <div className="">
                           <div className="w-18 h-full rounded-xl border border-border flex items-center justify-center flex-shrink-0">
                             <svg
                               width="20"
@@ -1029,7 +987,11 @@ getBridgeQuote({
                           <div className="flex items-center gap-2.5 mt-1.5 bg-white p-2 rounded-full">
                             <div className="w-6 h-6 relative">
                               <Image
-                                src={destTokenLabel === 'USDCe' ? '/tokens/usdc-icon.png' : '/tokens/usdt0-icon.png'}
+                                src={
+                                  destTokenLabel === 'USDCe'
+                                    ? '/tokens/usdc-icon.png'
+                                    : '/tokens/usdt0-icon.png'
+                                }
                                 alt={isDeposit ? depDstToken : wDstToken}
                                 width={24}
                                 height={24}
@@ -1058,7 +1020,8 @@ getBridgeQuote({
                                 height={16}
                                 className="object-contain"
                                 onError={(e) => {
-                                  (e.target as HTMLImageElement).src = '/protocols/morpho-icon.png';
+                                  (e.target as HTMLImageElement).src =
+                                    '/protocols/morpho-icon.png';
                                 }}
                               />
                             </div>
@@ -1127,15 +1090,8 @@ getBridgeQuote({
           amount={amount}
           sourceSymbol={sourceSymbolForModal}
           destTokenLabel={destTokenLabel}
-          routeLabel={
-            route ??
-            (selectedToken.id.includes('_lisk')
-              ? 'On-chain'
-              : 'Routing via LI.FI')
-          }
-          bridgeFeeDisplay={
-            selectedToken.id.includes('_lisk') ? 0 : bridgeFeeDisplay
-          }
+          routeLabel={route ?? 'Routing via LI.FI'}
+          bridgeFeeDisplay={bridgeFeeDisplay}
           receiveAmountDisplay={receiveAmountDisplay}
           opBal={opBal}
           baBal={baBal}
