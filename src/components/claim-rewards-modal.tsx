@@ -180,7 +180,6 @@ export function ClaimRewardsModal({
                         }}
                       />
                     </div>
-                    <span className="text-sm text-foreground font-normal">{reward.amount}</span>
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm text-foreground">
                         {reward.amount.toFixed(2)} {reward.token}
