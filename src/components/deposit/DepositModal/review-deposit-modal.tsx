@@ -300,12 +300,13 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
 
       await depositMorphoOnLiskAfterBridge(snap, toDeposit, wc)
 
-       // 🔁 Optional: switch back to OP Mainnet
-    try {
-      await switchOrAddChain(wc, srcViem)
-    } catch (switchErr) {
-      console.warn(TAG, 'Failed to switch back to OP, ignoring', switchErr)
-    }
+      // 🔁 Optional: switch back to OP Mainnet
+      try {
+        await switchOrAddChain(wc, srcViem)
+      } catch (switchErr) {
+        console.warn(TAG, 'Failed to switch back to OP, ignoring', switchErr)
+      }
+
       setStep('success')
       setShowSuccess(true)
     } catch (e: any) {
@@ -337,6 +338,8 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       : step === 'error' && bridgeState === 'done'
       ? 'error'
       : 'idle'
+
+      
 
   // ---------- Retry semantics ----------
   const primaryCta =
@@ -385,6 +388,25 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
 
   const sourceTokenLabel = sourceSymbol
   const sourceChainLabel = 'OP Mainnet'
+
+  // ---------- Bridge dots (UI only) ----------
+  const bridgeFailedBeforeLanding = step === 'error' && !bridgeOk
+  const depositFailedAfterBridge = step === 'error' && bridgeState === 'done'
+
+  type DotState = 'pending' | 'idle' | 'active' | 'done' | 'error'
+
+  // Dot 1: Approve spending [token]
+  const dot1: DotState = step === 'idle' ? 'pending' : 'done'
+
+  // Dot 2: Bridge tx signature / confirmation
+  const dot2: DotState =
+    step === 'bridging' && !bridgeOk
+      ? 'active'
+      : bridgeFailedBeforeLanding
+      ? 'error'
+      : step === 'depositing' || step === 'success' || depositFailedAfterBridge
+      ? 'done'
+      : 'idle'
 
   // ---------- Step hint (intermediate status copy) ----------
   const stepHint = (() => {
@@ -461,90 +483,148 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                   {sourceChainLabel}
                 </div>
               </div>
-              {approveState === 'done' && (
-                <Check className="text-green-600" size={18} />
-              )}
-              {approveState === 'error' && (
-                <AlertCircle className="text-red-600" size={18} />
-              )}
+              {/* No status icon here anymore – handled in dots */}
             </div>
 
-            {/* bridge – always shown now */}
-            <div className="flex items-start gap-3">
-              <div className="relative mt-0.5">
-                <Image
-                  src={lifilogo.src}
-                  alt="bridge"
-                  width={40}
-                  height={40}
-                  className="rounded-full"
-                />
-              </div>
-              <div className="flex-1">
-                <div className="text-lg font-semibold">Bridging via LI.FI</div>
-                <div className="text-xs text-muted-foreground">
-                  Bridge Fee: {feeDisplay.toFixed(4)} {sourceSymbol}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {routeLabel}
-                </div>
-              </div>
-              {bridgeState === 'done' && (
-                <a
-                  href="#"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={(e) => e.preventDefault()}
-                >
-                  <ExternalLink size={16} />
-                </a>
-              )}
-              {bridgeState === 'error' && (
-                <AlertCircle className="text-red-600" size={18} />
-              )}
-            </div>
+           {/* bridge – always shown now */}
+<div className="space-y-2">
+  {/* Main LI.FI row */}
+  <div className="flex items-start gap-3">
+    {/* LI.FI icon (column 1) */}
+    <div className="relative mt-0.5">
+      <Image
+        src={lifilogo.src}
+        alt="bridge"
+        width={40}
+        height={40}
+        className="rounded-full"
+      />
+    </div>
 
-            {/* destination */}
-            <div className="flex items-start gap-3">
-              <div className="relative mt-0.5">
-                <Image
-                  src={
-                    destTokenLabel === 'USDT0'
-                      ? '/tokens/usdt0-icon.png'
-                      : destTokenLabel === 'USDCe'
-                      ? '/tokens/usdc-icon.png'
-                      : '/tokens/weth.png'
-                  }
-                  alt={destTokenLabel}
-                  width={40}
-                  height={40}
-                  className="rounded-full"
-                />
-                {/* Square network badge */}
-                <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
-                  <Image
-                    src="/networks/lisk.png"
-                    alt="Lisk"
-                    width={16}
-                    height={16}
-                    className="rounded-sm"
-                  />
-                </div>
-              </div>
-              <div className="flex-1">
-                <div className="text-2xl font-bold">
-                  {(receiveDisplay ?? 0).toFixed(4)}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  ≈ ${amountNumber.toFixed(2)} • {destTokenLabel} on Lisk
-                </div>
-              </div>
-              {depositState === 'done' && (
-                <Check className="text-green-600" size={18} />
-              )}
-              {depositState === 'error' && (
-                <AlertCircle className="text-red-600" size={18} />
-              )}
-            </div>
+    {/* Main text (column 2) */}
+    <div className="flex-1">
+      <div className="text-lg font-semibold">Bridging via LI.FI</div>
+      <div className="text-xs text-muted-foreground">
+        Bridge Fee: {feeDisplay.toFixed(4)} {sourceSymbol}
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {routeLabel}
+      </div>
+    </div>
+
+    {/* Explorer link when bridge is done */}
+    {bridgeState === 'done' && (
+      <a
+        href="#"
+        className="text-muted-foreground hover:text-foreground"
+        onClick={(e) => e.preventDefault()}
+      >
+        <ExternalLink size={16} />
+      </a>
+    )}
+  </div>
+
+ {/* Step 1: Approve spending */}
+<div className="flex items-center gap-3 text-xs">
+  {/* Icon column: same width as main token/Li.Fi icons */}
+  <div className="flex h-10 w-10 items-center justify-center">
+    {dot1 === 'done' ? (
+      <Check className="h-3 w-3 text-emerald-500" />
+    ) : (
+      <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/40" />
+    )}
+  </div>
+
+  {/* Text column */}
+  <div className="flex-1">
+    {dot1 === 'done'
+      ? `${sourceTokenLabel} spending approved`
+      : `Approve ${sourceTokenLabel} spending`}
+  </div>
+</div>
+
+{/* Step 2: Bridge tx – only visible once user is signing / has signed */}
+{(step === 'bridging' ||
+  step === 'depositing' ||
+  step === 'success' ||
+  bridgeFailedBeforeLanding ||
+  depositFailedAfterBridge) && (
+  <div className="flex items-center gap-3 text-xs">
+    {/* Icon column: same width, centered */}
+    <div className="flex h-10 w-10 items-center justify-center">
+      {dot2 === 'error' ? (
+        <AlertCircle className="h-3 w-3 text-red-500" />
+      ) : dot2 === 'done' ? (
+        <Check className="h-3 w-3 text-emerald-500" />
+      ) : dot2 === 'active' ? (
+        <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+      ) : (
+        <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/40" />
+      )}
+    </div>
+
+    {/* Text column */}
+    <div className="flex-1">
+      {dot2 === 'error'
+        ? 'Signature required'
+        : dot2 === 'done'
+        ? 'Bridge transaction confirmed'
+        : 'Sign bridge transaction'}
+    </div>
+  </div>
+)}
+</div>
+
+          {/* destination */}
+<div className="flex items-start gap-3">
+  <div className="relative mt-0.5">
+    <Image
+      src={
+        destTokenLabel === 'USDT0'
+          ? '/tokens/usdt0-icon.png'
+          : destTokenLabel === 'USDCe'
+          ? '/tokens/usdc-icon.png'
+          : '/tokens/weth.png'
+      }
+      alt={destTokenLabel}
+      width={40}
+      height={40}
+      className="rounded-full"
+    />
+    {/* Square network badge */}
+    <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+      <Image
+        src="/networks/lisk.png"
+        alt="Lisk"
+        width={16}
+        height={16}
+        className="rounded-sm"
+      />
+    </div>
+  </div>
+  <div className="flex-1">
+    <div className="text-2xl font-bold">
+      {(receiveDisplay ?? 0).toFixed(4)}
+    </div>
+    <div className="text-xs text-muted-foreground">
+      ≈ ${amountNumber.toFixed(2)} • {destTokenLabel} on Lisk
+    </div>
+
+    {/* Deposit failed status – only when bridge succeeded but deposit errored */}
+    {depositFailedAfterBridge && (
+      <div className="mt-2 flex items-center gap-3 text-xs">
+        {/* icon column, centered & same width as other icons */}
+        <div className="flex h-10 w-10 items-center justify-center">
+          <AlertCircle className="h-3 w-3 text-red-500" />
+        </div>
+        {/* text column */}
+        <div className="flex-1">
+          Deposit failed
+        </div>
+      </div>
+    )}
+  </div>
+</div>
 
             {/* vault */}
             <div className="flex items-start gap-3">
