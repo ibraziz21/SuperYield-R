@@ -56,8 +56,11 @@ const CHAIN_META: Record<
 }
 
 function shortAddr(a?: string) {
-  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : ''
+  if (!a) return ''
+  if (a.length <= 10) return a
+  return `${a.slice(0, 6)}…${a.slice(-4)}`
 }
+
 
 function NetworkBadge({ chainId }: { chainId?: number }) {
   if (!chainId || !CHAIN_META[chainId]) return null
@@ -88,8 +91,8 @@ function ActiveLink({ href, children }: { href: string; children: React.ReactNod
     <Link
       href={href}
       className={`rounded-xl px-3 py-2 text-sm transition ${active
-          ? 'bg-[#F3F4F6] text-black font-semibold'
-          : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+        ? 'bg-[#F3F4F6] text-black font-semibold'
+        : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
         }`}
     >
       {children}
@@ -276,7 +279,10 @@ export function Navbar() {
                   aria-haspopup="menu"
                 >
                   <div className="h-5 w-5 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5" />
-                  <span className="max-w-[92px] truncate">{shortAddr(address)}</span>
+                  <span className="max-w-[92px] whitespace-nowrap">
+                    {shortAddr(address)}
+                  </span>
+
                 </button>
 
                 {menuOpen && (
