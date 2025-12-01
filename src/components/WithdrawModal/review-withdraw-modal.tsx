@@ -15,6 +15,7 @@ import { publicLisk } from '@/lib/clients'
 import { erc20Abi } from 'viem'
 import { CHAINS } from '@/lib/wallet'
 import { switchOrAddChainStrict } from '@/lib/switch'
+import { switchOrAddChain } from '@/lib/wallet'
 import lifi from '@/public/logo_lifi_light_vertical.png'
 import { WithdrawSuccessModal } from './withdraw-success-modal'
 
@@ -198,10 +199,10 @@ export const ReviewWithdrawModal: FC<Props> = ({
         setState('success')
         return
       }
-
+      const srcViem = CHAINS.optimism
       // 2) Bridge
       await doBridge(delta)
-      await switchOrAddChainStrict(walletClient, CHAINS.optimism)
+      await switchOrAddChain(walletClient, srcViem)
 
     } catch (e: any) {
       const code = e?.code ?? e?.error?.code
