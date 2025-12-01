@@ -300,6 +300,12 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
 
       await depositMorphoOnLiskAfterBridge(snap, toDeposit, wc)
 
+       // 🔁 Optional: switch back to OP Mainnet
+    try {
+      await switchOrAddChain(wc, srcViem)
+    } catch (switchErr) {
+      console.warn(TAG, 'Failed to switch back to OP, ignoring', switchErr)
+    }
       setStep('success')
       setShowSuccess(true)
     } catch (e: any) {

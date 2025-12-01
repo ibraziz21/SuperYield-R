@@ -201,6 +201,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
 
       // 2) Bridge
       await doBridge(delta)
+      await switchOrAddChainStrict(walletClient, CHAINS.optimism)
 
     } catch (e: any) {
       const code = e?.code ?? e?.error?.code

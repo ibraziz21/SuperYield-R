@@ -87,11 +87,10 @@ function ActiveLink({ href, children }: { href: string; children: React.ReactNod
   return (
     <Link
       href={href}
-      className={`rounded-xl px-3 py-2 text-sm transition ${
-        active
+      className={`rounded-xl px-3 py-2 text-sm transition ${active
           ? 'bg-[#F3F4F6] text-black font-semibold'
           : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-      }`}
+        }`}
     >
       {children}
     </Link>
@@ -169,8 +168,15 @@ export function Navbar() {
       await navigator.clipboard.writeText(address)
       setCopied(true)
       setTimeout(() => setCopied(false), 1200)
-    } catch {}
+    } catch { }
   }
+
+  function openOnOptimismExplorer() {
+    if (!address) return
+    const url = `https://optimistic.etherscan.io/address/${address}`
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
 
   async function quickSwitch(id: number) {
     try {
@@ -291,8 +297,23 @@ export function Navbar() {
                               {shortAddr(address)}
                             </span>
                           </div>
-                          <Image src={CopyIconSvg} width={14} height={14} onClick={copyAddress} alt="" />
-                          <Image src={ShareIconSvg} onClick={copyAddress} width={14} height={14} alt="" />
+                          <Image
+                            src={CopyIconSvg}
+                            width={14}
+                            height={14}
+                            alt="Copy address"
+                            onClick={copyAddress}
+                            className="cursor-pointer"
+                          />
+                          <Image
+                            src={ShareIconSvg}
+                            width={14}
+                            height={14}
+                            alt="View on Optimism explorer"
+                            onClick={openOnOptimismExplorer}
+                            className="cursor-pointer"
+                          />
+
                         </div>
                       </div>
                     </div>
@@ -328,9 +349,8 @@ export function Navbar() {
       >
         {/* overlay */}
         <div
-          className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity ${
-            mobileOpen ? 'opacity-100' : 'opacity-0'
-          }`}
+          className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity ${mobileOpen ? 'opacity-100' : 'opacity-0'
+            }`}
           onClick={() => setMobileOpen(false)}
         />
 
@@ -339,9 +359,8 @@ export function Navbar() {
           ref={mobileRef}
           role="dialog"
           aria-modal="true"
-          className={`absolute right-0 top-0 h-full w-[86%] max-w-sm bg-background shadow-2xl ring-1 ring-border/60 transition-transform duration-200 ease-out ${
-            mobileOpen ? 'translate-x-0' : 'translate-x-full'
-          }`}
+          className={`absolute right-0 top-0 h-full w-[86%] max-w-sm bg-background shadow-2xl ring-1 ring-border/60 transition-transform duration-200 ease-out ${mobileOpen ? 'translate-x-0' : 'translate-x-full'
+            }`}
         >
           <div className="flex h-14 items-center justify-between border-b px-3">
             <div className="inline-flex items-center gap-2">
@@ -452,11 +471,10 @@ export function Navbar() {
                         key={id}
                         onClick={() => quickSwitch(id)}
                         disabled={isSwitching || active}
-                        className={`h-9 rounded-xl text-[12px] font-semibold ring-1 ${
-                          active
+                        className={`h-9 rounded-xl text-[12px] font-semibold ring-1 ${active
                             ? `${meta.bg} text-white ring-transparent`
                             : 'bg-muted/60 hover:bg-muted ring-border/60'
-                        } disabled:opacity-60`}
+                          } disabled:opacity-60`}
                         title={meta.label}
                       >
                         {meta.badge}
