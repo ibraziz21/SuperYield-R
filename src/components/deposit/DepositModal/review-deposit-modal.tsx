@@ -278,20 +278,27 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         )
       }
 
-      // ---- Deposit what landed (cap to current balance), on Lisk ----
       setBridgeOk(true)
       setCachedMinOut(landed)
       setStep('depositing')
 
-      await switchOrAddChainStrict(walletClient, CHAINS.lisk)
+      // 🔐 Use the strict helper so we get a fresh Lisk client
+      const wc = await ensureLiskWalletClient()
+      const userLisk = wc.account!.address as `0x${string}`
 
-      const balNow = await readWalletBalance('lisk', _destAddr, user).catch(
+      const balNow = await readWalletBalance('lisk', _destAddr, userLisk).catch(
         () => 0n,
       )
+
       const toDeposit = landed <= balNow ? landed : balNow
       if (toDeposit <= 0n) throw new Error('Nothing to deposit on Lisk')
 
-      await depositMorphoOnLiskAfterBridge(snap, toDeposit, walletClient)
+      console.info(TAG, '[handleConfirm] deposit', {
+        toDeposit: toDeposit.toString(),
+        chainId: wc.chain?.id,
+      })
+
+      await depositMorphoOnLiskAfterBridge(snap, toDeposit, wc)
 
       setStep('success')
       setShowSuccess(true)
