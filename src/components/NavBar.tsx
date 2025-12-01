@@ -454,38 +454,7 @@ export function Navbar() {
               <nav className="mt-3 grid gap-1">
                 <ActiveLink href="/">Dashboard</ActiveLink>
                 <ActiveLink href="/vaults">Vaults</ActiveLink>
-                <ActiveLink href="/docs">Docs</ActiveLink>
               </nav>
-
-              {/* quick network switch */}
-              <div className="mt-4 rounded-2xl border p-3">
-                <div className="mb-2 text-[11px] font-semibold uppercase text-muted-foreground">
-                  Networks
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[10, 8453, 1135].map((id) => {
-                    const meta = CHAIN_META[id]
-                    const active = chainId === id
-                    return (
-                      <button
-                        key={id}
-                        onClick={() => quickSwitch(id)}
-                        disabled={isSwitching || active}
-                        className={`h-9 rounded-xl text-[12px] font-semibold ring-1 ${active
-                            ? `${meta.bg} text-white ring-transparent`
-                            : 'bg-muted/60 hover:bg-muted ring-border/60'
-                          } disabled:opacity-60`}
-                        title={meta.label}
-                      >
-                        {meta.badge}
-                      </button>
-                    )
-                  })}
-                </div>
-                {isSwitching && (
-                  <div className="mt-2 text-[11px] text-muted-foreground">Switching…</div>
-                )}
-              </div>
             </div>
           </div>
         </div>
