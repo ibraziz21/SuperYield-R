@@ -5,6 +5,7 @@ import aggregatorRouterAbi from './abi/AggregatorRouter.json'
 import { ROUTERS } from './constants'
 import { ensureAllowanceForRouterOnLisk } from './depositor'
 import { publicLisk } from './clients'
+import { CHAINS } from './wallet'
 
 type TokenLisk = 'USDCe' | 'USDT0'
 
@@ -49,13 +50,19 @@ export async function withdrawMorphoOnLisk(opts: {
 
   const { request } = await publicLisk.simulateContract({
     address: router,
-    abi: aggregatorRouterAbi as any,
+    abi: aggregatorRouterAbi,
     functionName: 'withdraw',
     args: [key, shareToken, shares, to, data],
     account: owner,
+    chain: CHAINS.lisk,     // 🔥 FORCE SIMULATION ON LISK
   })
-
-  const tx = await wallet.writeContract(request)
+  
+  // 🔥 IMPORTANT — force write on Lisk!
+  const tx = await wallet.writeContract({
+    ...request,
+    chain: CHAINS.lisk,     // <<<< THIS FIXES EVERYTHING
+  })
+  
   const withdrawTx = await publicLisk.waitForTransactionReceipt({ hash: tx })
   
   const minedAt = BigInt(withdrawTx.blockNumber ?? 0)

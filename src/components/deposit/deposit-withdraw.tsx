@@ -96,7 +96,7 @@ export function DepositWithdraw({
 
   const [showWithdrawReview, setShowWithdrawReview] = useState(false);
   const [withdrawDest, setWithdrawDest] =
-    useState<'lisk' | 'optimism' | 'base'>('optimism'); // type kept; we just don't use 'base'
+    useState<'optimism' >('optimism'); // type kept; we just don't use 'base'
   const [showWithdrawMenu, setShowWithdrawMenu] = useState(false);
 
   // Disclaimer state for deposits over $1000
@@ -121,6 +121,8 @@ export function DepositWithdraw({
   const [liBalUSDT0, setLiBalUSDT0] = useState<bigint | null>(null);
   const [opUsdcBal, setOpUsdcBal] = useState<bigint | null>(null);
   const [opUsdtBal, setOpUsdtBal] = useState<bigint | null>(null);
+  const [stableUser, setStableUser] = useState<`0x${string}` | null>(null)
+
 
   // Kept for DepositModal compatibility; no Base usage now.
   const [baBal] = useState<bigint | null>(null);
@@ -239,6 +241,13 @@ export function DepositWithdraw({
       }
     })();
   }, [walletClient]);
+
+  useEffect(() => {
+    if (showWithdrawReview && walletClient?.account?.address) {
+      setStableUser(walletClient.account.address as `0x${string}`)
+    }
+  }, [showWithdrawReview, walletClient])
+  
 
   useEffect(() => {
     if (!snap) return;
@@ -857,14 +866,7 @@ const src = 'optimism' as const;
                     withdrawDest === 'optimism'
                       ? '/networks/op-icon.png'
                       : '/networks/lisk.png';
-                  const wDstToken =
-                    withdrawDest === 'lisk'
-                      ? destTokenLabel
-                      : destTokenLabel === 'USDT0'
-                        ? 'USDT'
-                        : destTokenLabel === 'USDCe'
-                          ? 'USDC'
-                          : 'WETH';
+                  const wDstToken ='USDT'
 
                   const feeToken = isDeposit ? selectedToken.symbol : wDstToken;
                   const receiveToken = isDeposit ? destTokenLabel : wDstToken;
@@ -874,7 +876,7 @@ const src = 'optimism' as const;
                     (destTokenLabel === 'USDT0' || destTokenLabel === 'USDCe');
 
                   const bridgingOnWithdraw =
-                    !isDeposit && withdrawDest !== 'lisk';
+                    !isDeposit;
 
                   const protocolFee =
                     !isDeposit && amountNum > 0 ? amountNum * 0.005 : 0;
@@ -1104,30 +1106,31 @@ const src = 'optimism' as const;
         />
       )}
 
-      {showWithdrawReview &&
-        activeTab === 'withdraw' &&
-        snap &&
-        walletClient?.account?.address && (
-          <ReviewWithdrawModal
-            open={showWithdrawReview}
-            onClose={() => setShowWithdrawReview(false)}
-            snap={{
-              token: snap.token as 'USDC' | 'USDT',
-              chain: 'lisk',
-              poolAddress: (snap as any).poolAddress,
-            }}
-            shares={withdrawSharesBigint}
-            amountOnLiskDisplay={amountNum}
-            bridgeFeeDisplay={
-              withdrawDest === 'lisk' ? 0 : withdrawBridgeFeeDisplay
-            }
-            receiveOnDestDisplay={
-              withdrawDest === 'lisk' ? amountNum : withdrawReceiveDisplay
-            }
-            dest={withdrawDest}
-            user={walletClient.account!.address as `0x${string}`}
-          />
-        )}
+{showWithdrawReview &&
+  activeTab === 'withdraw' &&
+  snap &&
+  stableUser && (
+    <ReviewWithdrawModal
+      open={showWithdrawReview}
+      onClose={() => setShowWithdrawReview(false)}
+      snap={{
+        token: snap.token as 'USDC' | 'USDT',
+        chain: 'lisk',
+        poolAddress: (snap as any).poolAddress,
+      }}
+      shares={withdrawSharesBigint}
+      amountOnLiskDisplay={amountNum}
+      bridgeFeeDisplay={
+         withdrawBridgeFeeDisplay
+      }
+      receiveOnDestDisplay={
+         withdrawReceiveDisplay
+      }
+      dest={withdrawDest}
+      user={stableUser}
+    />
+)}
+
     </>
   );
 }
