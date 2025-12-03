@@ -27,9 +27,19 @@ import AlertIconModal from "../../../public/alert-icon-modal.svg"
 
 type FlowStep = 'idle' | 'withdrawing' | 'sign-bridge' | 'bridging' | 'success' | 'error'
 
+interface WithdrawSuccessData {
+  liskAmount: number
+  liskToken: 'USDCe' | 'USDT0' | 'WETH'
+  destAmount?: number
+  destToken?: 'USDC' | 'USDT' | 'WETH'
+  destChain?: 'optimism' | 'base' | 'lisk'
+  vault: string
+}
+
 interface Props {
   open: boolean
   onClose: () => void
+  onSuccess: (data: WithdrawSuccessData) => void
   snap: Pick<YieldSnapshot, 'token' | 'chain'> & { poolAddress: `0x${string}` }
   shares: bigint
   amountOnLiskDisplay: number
@@ -72,6 +82,7 @@ async function readLiskBalance(token: `0x${string}`, user: `0x${string}`): Promi
 export const ReviewWithdrawModal: FC<Props> = ({
   open,
   onClose,
+  onSuccess,
   snap,
   shares,
   amountOnLiskDisplay,
@@ -83,7 +94,6 @@ export const ReviewWithdrawModal: FC<Props> = ({
 
   const [step, setStep] = useState<FlowStep>('idle')
   const [err, setErr] = useState<string | null>(null)
-  const [showSuccess, setShowSuccess] = useState(false)
 
   const [withdrawOk, setWithdrawOk] = useState(false)
   const [bridgableAmount, setBridgableAmount] = useState<bigint | null>(null)
@@ -190,7 +200,15 @@ export const ReviewWithdrawModal: FC<Props> = ({
       await switchOrAddChain(wc, CHAINS.optimism)
 
       setStep("success")
-      setShowSuccess(true)
+      onSuccess({
+        liskAmount: netOnLisk,
+        liskToken,
+        destAmount: netOnDest,
+        destToken: destSymbol,
+        destChain: dest,
+        vault: `Re7 ${snap.token} Vault (Morpho Blue)`,
+      })
+      onClose()
     } catch (e: any) {
       console.error("WITHDRAW FLOW FAILED:", e)
       const code = e?.code ?? e?.error?.code
@@ -232,7 +250,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
       await switchOrAddChain(walletClient, CHAINS.optimism)
 
       setStep('success')
-      setShowSuccess(true)
+
     } catch (e: any) {
       const code = e?.code ?? e?.error?.code
       if (code === 4001) {
@@ -251,7 +269,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
 
   function onPrimary() {
     if (step === 'success') {
-      setShowSuccess(true)
+
       return
     }
 
@@ -315,9 +333,9 @@ export const ReviewWithdrawModal: FC<Props> = ({
           className={`w-full max-w-[400px] my-8 rounded-2xl bg-background border border-border shadow-xl overflow-hidden transform transition-all ${open ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
             }`}
         >
-          {/* Header */}
+          {/* Header - Updated with ETA */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <h3 className="text-xl font-semibold">
+            <h3 className="text-xl font-semibold flex items-center gap-2">
               {step === 'error' ? 'Withdrawal failed' : "You're withdrawing"}
             </h3>
             <button onClick={onClose} className="p-2 hover:bg-muted rounded-full">
@@ -331,6 +349,12 @@ export const ReviewWithdrawModal: FC<Props> = ({
               <div className="text-xs text-muted-foreground pt-4">
                 {stepHint}
               </div>
+            )}
+            {/* ETA Badge */}
+            {(step === 'withdrawing' || step === 'sign-bridge' || step === 'bridging') && (
+              <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-md">
+                ≈ 3-7 mins
+              </span>
             )}
           </div>
 
@@ -398,20 +422,6 @@ export const ReviewWithdrawModal: FC<Props> = ({
               </div>
             )}
 
-            {/* Sub-step 2: Bridge transaction status */}
-            {(bridgeStepActive || bridgeStepDone || step === 'error') && (
-              <div className="flex items-start gap-3 pb-5 relative">
-                {/* ... similar fixed logic ... */}
-                <div className="text-xs">
-                  {bridgeStepError
-                    ? 'Signature required'
-                    : bridgeStepDone
-                      ? 'Bridge transaction confirmed'
-                      : 'Sign bridge transaction…'}
-                </div>
-              </div>
-            )}
-
             {/* Step 2: Amount on Lisk (before fees) */}
             <div className="flex items-start gap-3 pb-5 relative">
               {/* Flow line connector */}
@@ -463,7 +473,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
                 />
               </div>
 
-              {/* Content */}
+              {/* Content - REMOVED Explorer link */}
               <div className="flex-1 space-y-0">
                 <div className="flex items-start gap-2">
                   <div className="flex-1">
@@ -472,16 +482,6 @@ export const ReviewWithdrawModal: FC<Props> = ({
                       Bridge Fee (est.): {bridgeFeeAmount.toFixed(6)} {destSymbol}
                     </div>
                   </div>
-                  {/* Explorer link when bridge is done */}
-                  {(step === 'bridging' || step === 'success') && (
-                    <a
-                      href="#"
-                      onClick={(e) => e.preventDefault()}
-                      className="text-muted-foreground hover:text-foreground mt-0.5"
-                    >
-                      <ExternalLink size={16} />
-                    </a>
-                  )}
                 </div>
               </div>
             </div>
@@ -511,14 +511,27 @@ export const ReviewWithdrawModal: FC<Props> = ({
                   </div>
                 </div>
 
-                {/* Content */}
+                {/* Content - WITH justify-between and Explorer link */}
                 <div className="flex-1 mt-3">
-                  <div className="text-xs">
-                    {bridgeStepError
-                      ? 'Signature required'
-                      : bridgeStepDone
-                        ? 'Bridge transaction confirmed'
-                        : 'Sign bridge transaction…'}
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs">
+                      {bridgeStepError
+                        ? 'Signature required'
+                        : bridgeStepDone
+                          ? 'Bridge transaction confirmed'
+                          : 'Sign bridge transaction…'}
+                    </div>
+                    {/* Explorer link moved here */}
+                    {bridgeStepDone && (
+                      <a
+                        href="#"
+                        onClick={(e) => e.preventDefault()}
+                        className="text-muted-foreground hover:text-foreground"
+                        title="View on explorer"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
                   </div>
                 </div>
               </div>
@@ -587,20 +600,6 @@ export const ReviewWithdrawModal: FC<Props> = ({
         </div>
       </div>
 
-      {showSuccess && (
-        <WithdrawSuccessModal
-          liskAmount={netOnLisk}
-          liskToken={liskToken}
-          destAmount={netOnDest}
-          destToken={destSymbol}
-          destChain={dest}
-          vault={`Re7 ${snap.token} Vault (Morpho Blue)`}
-          onClose={() => {
-            setShowSuccess(false)
-            onClose()
-          }}
-        />
-      )}
     </div>
   )
 }

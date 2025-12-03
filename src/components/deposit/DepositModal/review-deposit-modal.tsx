@@ -24,9 +24,18 @@ import AlertIconModal from "../../../../public/alert-icon-modal.svg"
 
 type FlowStep = 'idle' | 'bridging' | 'depositing' | 'success' | 'error'
 
+interface DepositSuccessData {
+  amount: number
+  sourceToken: string
+  destinationAmount: number
+  destinationToken: string
+  vault: string
+}
+
 interface ReviewDepositModalProps {
   open: boolean
   onClose: () => void
+  onSuccess: (data: DepositSuccessData) => void
   snap: YieldSnapshot
 
   amount: string
@@ -89,7 +98,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   // success modal
   const [showSuccess, setShowSuccess] = useState(false)
 
-  // NEW: Track actual approval completion
+  // Track actual approval completion
   const [approvalDone, setApprovalDone] = useState(false)
 
   const canStart = open && !!walletClient && Number(amount) > 0
@@ -195,7 +204,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     }
     setError(null)
     setBridgeOk(false)
-    // NEW: Reset approval state when starting new flow
+    // Reset approval state when starting new flow
     setApprovalDone(false)
 
     try {
@@ -257,7 +266,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         },
       )
 
-      // NEW: Mark approval as done only after bridgeTokens succeeds
+      // Mark approval as done only after bridgeTokens succeeds
       setApprovalDone(true)
 
       // ---- Grace wait (≈60s), then poll until landing or timeout ----
@@ -293,7 +302,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       setCachedMinOut(landed)
       setStep('depositing')
 
-      // 🔐 Use the strict helper so we get a fresh Lisk client
+      // Use the strict helper so we get a fresh Lisk client
       const wc = await ensureLiskWalletClient()
       const userLisk = wc.account!.address as `0x${string}`
 
@@ -311,7 +320,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
 
       await depositMorphoOnLiskAfterBridge(snap, toDeposit, wc)
 
-      // 🔁 Optional: switch back to OP Mainnet
+      // Optional: switch back to OP Mainnet
       try {
         await switchOrAddChain(wc, srcViem)
       } catch (switchErr) {
@@ -319,7 +328,6 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       }
 
       setStep('success')
-      setShowSuccess(true)
     } catch (e: any) {
       setError(e?.message ?? String(e))
       setStep('error')
@@ -374,7 +382,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       }
       setError(null)
       setStep('idle')
-      // NEW: Reset approval state on retry
+      // Reset approval state on retry
       setApprovalDone(false)
       void handleConfirm()
       return
@@ -406,7 +414,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
 
   type DotState = 'pending' | 'idle' | 'active' | 'done' | 'error'
 
-  // UPDATED: Dot 1 now depends on actual approval completion
+  // Dot 1: Approve spending
   const dot1: DotState = approvalDone ? 'done' : 'pending'
 
   // Dot 2: Bridge tx signature / confirmation
@@ -459,9 +467,9 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
           className={`w-full max-w-[400px] my-8 rounded-2xl bg-background border border-border shadow-xl overflow-hidden transform transition-all ${open ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
             }`}
         >
-          {/* Header - Updated to "You're depositing" as per Figma */}
+          {/* Header - Updated with ETA */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <h3 className="text-xl font-semibold">
+            <h3 className="text-xl font-semibold flex items-center gap-2">
               {step === 'error' ? 'Deposit failed' : "You're depositing"}
             </h3>
             <button
@@ -478,6 +486,12 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
               <div className="text-xs text-muted-foreground pt-4">
                 {stepHint}
               </div>
+            )}
+            {/* ETA Badge */}
+            {(step === 'bridging' || step === 'depositing') && (
+              <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-md">
+                ≈ 2-5 mins
+              </span>
             )}
           </div>
           <div className="px-5 py-5 space-y-0">
@@ -515,6 +529,35 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                 <div className="text-xs text-muted-foreground">
                   ${amountNumber.toFixed(2)} • {sourceTokenLabel} on {' '}
                   {sourceChainLabel}
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2: Bridge */}
+            <div className="flex items-start gap-3 pb-5 relative">
+              {/* Flow line connector */}
+              <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
+
+              {/* LI.FI icon */}
+              <div className="relative mt-0.5 shrink-0">
+                <Image
+                  src={lifilogo.src}
+                  alt="bridge"
+                  width={40}
+                  height={40}
+                  className="rounded-full"
+                />
+              </div>
+
+              {/* Content - REMOVED Explorer link */}
+              <div className="flex-1 space-y-0">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <div className="text-lg font-semibold">Bridging via LI.FI</div>
+                    <div className="text-xs text-muted-foreground">
+                      Bridge Fee: {feeDisplay.toFixed(4)} {sourceSymbol}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -596,57 +639,31 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                   </div>
                 </div>
 
-                {/* Content */}
+                {/* Content - WITH justify-between and Explorer link */}
                 <div className="flex-1 mt-3">
-                  <div className="text-xs">
-                    {dot2 === 'error'
-                      ? 'Signature required'
-                      : dot2 === 'done'
-                        ? 'Bridge transaction confirmed'
-                        : 'Sign bridge transaction'}
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs">
+                      {dot2 === 'error'
+                        ? 'Signature required'
+                        : dot2 === 'done'
+                          ? 'Bridge transaction confirmed'
+                          : 'Sign bridge transaction'}
+                    </div>
+                    {/* Explorer link moved here */}
+                    {dot2 === 'done' && (
+                      <a
+                        href="#"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={(e) => e.preventDefault()}
+                        title="View on explorer"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
                   </div>
                 </div>
               </div>
             )}
-
-            {/* Step 2: Bridge */}
-            <div className="flex items-start gap-3 pb-5 relative">
-              {/* Flow line connector */}
-              <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
-
-              {/* LI.FI icon */}
-              <div className="relative mt-0.5 shrink-0">
-                <Image
-                  src={lifilogo.src}
-                  alt="bridge"
-                  width={40}
-                  height={40}
-                  className="rounded-full"
-                />
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 space-y-0">
-                <div className="flex items-start gap-2">
-                  <div className="flex-1">
-                    <div className="text-lg font-semibold">Bridging via LI.FI</div>
-                    <div className="text-xs text-muted-foreground">
-                      Bridge Fee: {feeDisplay.toFixed(4)} {sourceSymbol}
-                    </div>
-                  </div>
-                  {/* Explorer link when bridge is done */}
-                  {bridgeState === 'done' && (
-                    <a
-                      href="#"
-                      className="text-muted-foreground hover:text-foreground mt-0.5"
-                      onClick={(e) => e.preventDefault()}
-                    >
-                      <ExternalLink size={16} />
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
 
             {/* Step 3: Destination */}
             <div className="flex items-start gap-3 pb-5 relative">
@@ -791,23 +808,6 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
           </div>
         </div>
       </div>
-
-      {/* TODO: Update DepositSuccessModal to match Figma designs */}
-      {showSuccess && (
-        <DepositSuccessModal
-          amount={Number(amount || 0)}
-          sourceToken={
-            sourceTokenLabel as 'USDC' | 'USDT' | 'USDCe' | 'USDT0'
-          }
-          destinationAmount={Number(receiveDisplay ?? 0)}
-          destinationToken={destTokenLabel}
-          vault={`Re7 ${snap.token} Vault (Morpho Blue)`}
-          onClose={() => {
-            setShowSuccess(false)
-            onClose()
-          }}
-        />
-      )}
     </div>
   )
 }

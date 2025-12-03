@@ -23,6 +23,8 @@ import {
   symbolForWalletDisplay,
   tokenAddrFor,
 } from './helpers';
+import { DepositSuccessModal } from './DepositModal/deposit-success-modal';
+import { WithdrawSuccessModal } from '../WithdrawModal/withdraw-success-modal';
 
 type EvmChain = 'optimism' | 'lisk';
 type TokenId = 'usdc' | 'usdt' | 'usdt0_op';
@@ -96,7 +98,7 @@ export function DepositWithdraw({
 
   const [showWithdrawReview, setShowWithdrawReview] = useState(false);
   const [withdrawDest, setWithdrawDest] =
-    useState<'optimism' >('optimism'); // type kept; we just don't use 'base'
+    useState<'optimism'>('optimism'); // type kept; we just don't use 'base'
   const [showWithdrawMenu, setShowWithdrawMenu] = useState(false);
 
   // Disclaimer state for deposits over $1000
@@ -122,6 +124,11 @@ export function DepositWithdraw({
   const [opUsdcBal, setOpUsdcBal] = useState<bigint | null>(null);
   const [opUsdtBal, setOpUsdtBal] = useState<bigint | null>(null);
   const [stableUser, setStableUser] = useState<`0x${string}` | null>(null)
+  const [showDepositSuccess, setShowDepositSuccess] = useState(false)
+  const [depositSuccessData, setDepositSuccessData] = useState<any>(null)
+
+  const [showWithdrawSuccess, setShowWithdrawSuccess] = useState(false)
+  const [withdrawSuccessData, setWithdrawSuccessData] = useState<any>(null)
 
 
   // Kept for DepositModal compatibility; no Base usage now.
@@ -247,7 +254,7 @@ export function DepositWithdraw({
       setStableUser(walletClient.account.address as `0x${string}`)
     }
   }, [showWithdrawReview, walletClient])
-  
+
 
   useEffect(() => {
     if (!snap) return;
@@ -341,8 +348,8 @@ export function DepositWithdraw({
 
     const amt = parseUnits(amount, tokenDecimals);
 
-// We always use Optimism as the source now
-const src = 'optimism' as const;
+    // We always use Optimism as the source now
+    const src = 'optimism' as const;
 
 
     if (destTokenLabel === 'USDT0') {
@@ -360,7 +367,7 @@ const src = 'optimism' as const;
 
           setRoute(
             normalizeRouteLabel(q.route) ??
-              `Bridge ${selectedToken.symbol} → USDT0`,
+            `Bridge ${selectedToken.symbol} → USDT0`,
           );
           setFee(f);
           setReceived(minOut);
@@ -418,7 +425,7 @@ const src = 'optimism' as const;
 
         setRoute(
           normalizeRouteLabel(q.route) ??
-            `Bridge ${selectedToken.symbol} → ${destTokenLabel}`,
+          `Bridge ${selectedToken.symbol} → ${destTokenLabel}`,
         );
         setFee(f);
         setReceived(minOut);
@@ -443,6 +450,17 @@ const src = 'optimism' as const;
   ]);
 
   const amountNum = Number.parseFloat(amount) || 0;
+  const handleDepositSuccess = (data: any) => {
+    setDepositSuccessData(data)
+    setShowReview(false) // Close review modal first
+    setTimeout(() => setShowDepositSuccess(true), 300) // Wait for animation
+  }
+
+  const handleWithdrawSuccess = (data: any) => {
+    setWithdrawSuccessData(data)
+    setShowWithdrawReview(false) // Close review modal first
+    setTimeout(() => setShowWithdrawSuccess(true), 300) // Wait for animation
+  }
 
   const bridgeFeeDisplay = useMemo(() => {
     if (!amount || Number(amount) <= 0) return 0;
@@ -518,8 +536,8 @@ const src = 'optimism' as const;
     selectedToken.id === 'usdt0_op'
       ? 'USDT0'
       : selectedToken.id === 'usdt'
-      ? 'USDT'
-      : 'USDC';
+        ? 'USDT'
+        : 'USDC';
 
   // Check if deposit requires disclaimer (over $1000)
   const requiresDisclaimer = activeTab === 'deposit' && amountNum >= 1000;
@@ -567,11 +585,10 @@ const src = 'optimism' as const;
         <div className="flex items-center gap-8 mb-6 border-b">
           <button
             onClick={() => setActiveTab('deposit')}
-            className={`pb-3 text-[16px] font-medium transition-colors relative ${
-              activeTab === 'deposit'
-                ? 'text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
+            className={`pb-3 text-[16px] font-medium transition-colors relative ${activeTab === 'deposit'
+              ? 'text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+              }`}
           >
             Deposit
             {activeTab === 'deposit' && (
@@ -580,11 +597,10 @@ const src = 'optimism' as const;
           </button>
           <button
             onClick={() => setActiveTab('withdraw')}
-            className={`pb-3 text-[16px] font-medium transition-colors relative ${
-              activeTab === 'withdraw'
-                ? 'text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
+            className={`pb-3 text-[16px] font-medium transition-colors relative ${activeTab === 'withdraw'
+              ? 'text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+              }`}
           >
             Withdraw
             {activeTab === 'withdraw' && (
@@ -692,17 +708,17 @@ const src = 'optimism' as const;
                       <Image
                         src={currentWithdrawChoice.icon}
                         alt={currentWithdrawChoice.symbol}
-                          width={24}
-                          height={24}
+                        width={24}
+                        height={24}
                         className="rounded-full"
                       />
                       {/* Network badge */}
-                        <div className="absolute -bottom-0.5 -right-2 rounded-sm border-2 border-background">
+                      <div className="absolute -bottom-0.5 -right-2 rounded-sm border-2 border-background">
                         <Image
                           src={'/networks/op-icon.png'}
                           alt="network"
-                            width={12}
-                            height={12}
+                          width={12}
+                          height={12}
                           className="rounded-sm"
                         />
                       </div>
@@ -723,9 +739,8 @@ const src = 'optimism' as const;
                             setWithdrawDest(choice.id);
                             setShowWithdrawMenu(false);
                           }}
-                          className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted transition-colors ${
-                            choice.id === withdrawDest ? 'bg-muted' : 'bg-popover'
-                          }`}
+                          className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted transition-colors ${choice.id === withdrawDest ? 'bg-muted' : 'bg-popover'
+                            }`}
                         >
                           <div className="w-6 h-6 relative">
                             <Image
@@ -839,9 +854,8 @@ const src = 'optimism' as const;
                   </span>
                   <ChevronDown
                     size={20}
-                    className={`text-muted-foreground transition-transform ${
-                      routeExpanded ? 'rotate-180' : ''
-                    }`}
+                    className={`text-muted-foreground transition-transform ${routeExpanded ? 'rotate-180' : ''
+                      }`}
                   />
                 </button>
 
@@ -866,7 +880,7 @@ const src = 'optimism' as const;
                     withdrawDest === 'optimism'
                       ? '/networks/op-icon.png'
                       : '/networks/lisk.png';
-                  const wDstToken ='USDT'
+                  const wDstToken = 'USDT'
 
                   const feeToken = isDeposit ? selectedToken.symbol : wDstToken;
                   const receiveToken = isDeposit ? destTokenLabel : wDstToken;
@@ -936,8 +950,8 @@ const src = 'optimism' as const;
                                   isDeposit
                                     ? selectedToken.icon
                                     : (destTokenLabel === 'USDCe'
-                                        ? '/tokens/usdc-icon.png'
-                                        : '/tokens/usdt0-icon.png')
+                                      ? '/tokens/usdc-icon.png'
+                                      : '/tokens/usdt0-icon.png')
                                 }
                                 alt={isDeposit ? depSrcToken : wSrcToken}
                                 width={24}
@@ -1088,6 +1102,7 @@ const src = 'optimism' as const;
         <DepositModal
           open={showReview}
           onClose={() => setShowReview(false)}
+          onSuccess={handleDepositSuccess} // ✅ ADD THIS PROP
           snap={snap}
           amount={amount}
           sourceSymbol={sourceSymbolForModal}
@@ -1106,30 +1121,43 @@ const src = 'optimism' as const;
         />
       )}
 
-{showWithdrawReview &&
-  activeTab === 'withdraw' &&
-  snap &&
-  stableUser && (
-    <ReviewWithdrawModal
-      open={showWithdrawReview}
-      onClose={() => setShowWithdrawReview(false)}
-      snap={{
-        token: snap.token as 'USDC' | 'USDT',
-        chain: 'lisk',
-        poolAddress: (snap as any).poolAddress,
-      }}
-      shares={withdrawSharesBigint}
-      amountOnLiskDisplay={amountNum}
-      bridgeFeeDisplay={
-         withdrawBridgeFeeDisplay
-      }
-      receiveOnDestDisplay={
-         withdrawReceiveDisplay
-      }
-      dest={withdrawDest}
-      user={stableUser}
-    />
-)}
+      {showDepositSuccess && (
+        <DepositSuccessModal
+          open={showDepositSuccess}
+          onClose={() => setShowDepositSuccess(false)}
+          {...depositSuccessData}
+        />
+      )}
+
+      {showWithdrawReview &&
+        activeTab === 'withdraw' &&
+        snap &&
+        stableUser && (
+          <ReviewWithdrawModal
+            open={showWithdrawReview}
+            onClose={() => setShowWithdrawReview(false)}
+            onSuccess={handleWithdrawSuccess} // ✅ ADD THIS PROP
+            snap={{
+              token: snap.token as 'USDC' | 'USDT',
+              chain: 'lisk',
+              poolAddress: (snap as any).poolAddress,
+            }}
+            shares={withdrawSharesBigint}
+            amountOnLiskDisplay={amountNum}
+            bridgeFeeDisplay={withdrawBridgeFeeDisplay}
+            receiveOnDestDisplay={withdrawReceiveDisplay}
+            dest={withdrawDest}
+            user={stableUser}
+          />
+        )}
+
+      {showWithdrawSuccess && (
+        <WithdrawSuccessModal
+          open={showWithdrawSuccess}
+          onClose={() => setShowWithdrawSuccess(false)}
+          {...withdrawSuccessData}
+        />
+      )}
 
     </>
   );
