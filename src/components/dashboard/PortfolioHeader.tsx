@@ -6,13 +6,14 @@ import { usePositions } from '@/hooks/usePositions'
 import { usePortfolioApy } from '@/hooks/usePortfolioApy'
 import { rewardForecast } from '@/lib/rewardForecast'
 import { formatAmountBigint } from '@/components/tables/MyPositionsTable/MyPositions'
-import { InfoIcon } from '@phosphor-icons/react'
+import InfoIcon from "../../../public/info-icon.svg"
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import Image from 'next/image'
 
 export const PortfolioHeader: FC = () => {
   const { data: positions } = usePositions()
@@ -45,7 +46,7 @@ export const PortfolioHeader: FC = () => {
 
   return (
     <TooltipProvider>
-      <div className="bg-white my-4 rounded-xl max-w-6xl mx-auto min-h-[216px] p-5 flex flex-col justify-around">
+      <div className="bg-white my-4 rounded-xl max-w-[1392px] mx-auto min-h-[216px] p-5 flex flex-col justify-around">
         <h3 className='font-semibold text-base md:text-lg'>Overview</h3>
         <div className="mx-auto grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Kpi title="My Deposits" value={
@@ -67,12 +68,13 @@ export const PortfolioHeader: FC = () => {
 const Kpi = ({ title, value, sub }: { title: string; value: string; sub?: string }) => (
   <Card className="rounded-2xl border-[1.5px] border-[#E5E7EB] bg-white shadow-none">
     <CardContent className="space-y-1 p-4 md:p-5 flex flex-col justify-around max-h-[132px]">
-      <p className="text-[14px] font-normal text-[#4B5563] flex items-center">
+      <p className="text-[14px] font-normal text-[#4B5563] flex items-center mb-[40px]">
         {title}
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="ml-2">
-              <InfoIcon weight='bold' size={16} />
+              {/* <InfoIcon weight='bold' size={16} /> */}
+              <Image src={InfoIcon} alt="" />
             </span>
           </TooltipTrigger>
           <TooltipContent>

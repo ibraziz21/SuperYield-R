@@ -51,7 +51,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const iconPath = networkIcons[network] || "/networks/default.svg";
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="relative h-6 w-6 rounded-md overflow-hidden">
+          <div className="relative h-5 w-5 rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={network}
@@ -75,7 +75,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const iconPath = sourceIcons[source] || "/protocols/default.svg";
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="relative h-6 w-6 rounded-md overflow-hidden">
+          <div className="relative h-5 w-5 rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={source}
@@ -122,7 +122,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const iconPath = tokenIcons[token] || "/tokens/default.svg";
       return (
         <div className="flex items-center justify-center gap-2">
-          <div className="relative h-6 w-6 rounded-md overflow-hidden">
+          <div className="relative h-5 w-5 rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={token}

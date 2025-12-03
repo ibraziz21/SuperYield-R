@@ -2,7 +2,7 @@
 import '@/app/globals.css'
 import { ReactNode } from 'react'
 import { headers } from 'next/headers'
-import type { Metadata } from 'next'              // ⬅️ NEW
+import type { Metadata } from 'next'           
 import ContextProvider from '@/config/appkit'
 import AppShell from '@/components/AppShell'
 import { Toaster } from '@/components/ui/sonner'
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
       'Earn, track and manage your EcoVaults positions across supported networks.',
     images: [
       {
-        url: '/opengraph_dark.jpg', // ⬅️ new OG image
+        url: '/opengraph_dark.jpg', 
         width: 1200,
         height: 630,
         alt: 'EcoVaults',

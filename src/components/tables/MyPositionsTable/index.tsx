@@ -65,7 +65,7 @@ export default function MyPositionsTable<TData, TValue>({
   };
 
   return (
-    <DataTable showExploreVaultsButton={false} table={table} columns={columns} data={data} onRowClick={handleRowClick} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage}>
+    <DataTable showExploreVaultsButton={true} table={table} columns={columns} data={data} onRowClick={handleRowClick} emptyMessage={emptyMessage} emptySubMessage={emptySubMessage}>
       <div className="flex justify-between items-center mx-5">
         {filterUI}
         <div className="flex items-center bg-[#F3F4F6] rounded-full px-2 h-full">

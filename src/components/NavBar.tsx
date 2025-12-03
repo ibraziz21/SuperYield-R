@@ -192,8 +192,8 @@ export function Navbar() {
   return (
     <div className="mt-[12px]">
       {/* Top App Bar */}
-      <header className="sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-6xl mx-auto rounded-xl">
-        <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-3 sm:px-4">
+      <header className="sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-[1392px] mx-auto rounded-xl">
+        <div className="mx-auto flex h-14 w-full max-w-[1392px] items-center justify-between px-3 sm:px-4">
           {/* Brand */}
           <div className="flex items-center gap-3 min-w-0">
             <Link href="/" className="group inline-flex items-center gap-2 min-w-0">
@@ -244,17 +244,17 @@ export function Navbar() {
                   type="button"
                   onClick={() => quickSwitch(10)}
                   disabled={isSwitching}
-                  className="hidden md:inline-flex h-9 items-center gap-2 rounded-xl border border-[#FACC6B] bg-[#FFFAEB] px-4 text-sm font-semibold text-black shadow-sm disabled:opacity-60"
+                  className="hidden md:inline-flex h-9 items-center gap-2 rounded-[12px] border border-[#FAB55A] bg-[#FEF4E6] px-4 text-sm font-semibold text-black disabled:opacity-60"
                   title="Switch network to Optimism"
                 >
                   <span>Switch to OP Mainnet</span>
-                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#F04438]">
+                  <span className="flex h-7 w-7 items-center justify-center relative rounded-sm overflow-hidden">
                     <Image
                       src="/networks/op-icon.png"
                       alt="OP Mainnet"
-                      width={18}
-                      height={18}
-                      className="h-4 w-4"
+                      width={28}
+                      height={28}
+                      className="h-7 w-7 rounded-none"
                     />
                   </span>
                 </button>
@@ -292,29 +292,29 @@ export function Navbar() {
                   >
                     {/* header */}
                     <div className="flex items-center justify-between border-b px-3 py-2">
-                      <div className="flex flex-col justify-between w-full">
+                        <div className="flex flex-col justify-around w-full h-[94px] bg-[#F9FAFB] rounded-[12px]">
                         <div className="w-full flex justify-center">
                           <div className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5" />
                         </div>
 
                         <div className="flex justify-center items-center p-2 gap-2 min-w-0">
                           <div className="flex min-w-0 flex-col">
-                            <span className="truncate text-xs font-semibold" title={address}>
+                              <span className="truncate text-[13px] font-semibold" title={address}>
                               {shortAddr(address)}
                             </span>
                           </div>
                           <Image
                             src={CopyIconSvg}
-                            width={14}
-                            height={14}
+                              width={18}
+                              height={18}
                             alt="Copy address"
                             onClick={copyAddress}
                             className="cursor-pointer"
                           />
                           <Image
                             src={ShareIconSvg}
-                            width={14}
-                            height={14}
+                              width={18}
+                              height={18}
                             alt="View on Optimism explorer"
                             onClick={openOnOptimismExplorer}
                             className="cursor-pointer"
@@ -327,7 +327,7 @@ export function Navbar() {
                     {/* actions */}
                     <div className="p-2 text-sm">
                       <button
-                        className="mt-2 flex w-full items-center justify-start rounded-md px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                          className="mt-2 flex w-full items-center justify-start rounded-md px-3 py-2 font-medium text-red-600"
                         onClick={() => {
                           setMenuOpen(false)
                           disconnect()

@@ -130,7 +130,7 @@ export default function Dashboard() {
           )}
 
           {/* Claimable Rewards */}
-          <section className="bg-white p-5 rounded-[20px] max-w-6xl mx-auto">
+          <section className="bg-white p-5 rounded-[20px] max-w-[1392px] mx-auto">
             <div className="mb-3 flex justify-start items-center gap-2 ">
               <h2 className="text-base md:text-lg font-semibold tracking-tight text-center">
                 Claimable Rewards
@@ -148,7 +148,7 @@ export default function Dashboard() {
           </section>
 
           {/* My Positions */}
-          <section className="bg-white my-4 p-4 md:p-6 rounded-xl max-w-6xl mx-auto">
+          <section className="bg-white my-4 p-4 md:p-6 rounded-xl max-w-[1392px] mx-auto">
             <div className="mb-4 flex items-center justify-between flex-wrap gap-3">
               <h2 className="text-base md:text-lg font-semibold tracking-tight">
                 My Positions

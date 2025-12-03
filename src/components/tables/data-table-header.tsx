@@ -22,7 +22,7 @@ export function DataTableColumnHeader<TData, TValue>({
   className,
 }: DataTableColumnHeaderProps<TData, TValue>) {
   if (!column.getCanSort()) {
-    return <div className={cn("flex items-center justify-center", className)}>
+    return <div className={cn("flex items-center justify-start", className)}>
       <Button
         variant="ghost"
         size="sm"
@@ -34,7 +34,7 @@ export function DataTableColumnHeader<TData, TValue>({
   }
 
   return (
-    <div className={cn("flex items-center justify-center", className)}>
+    <div className={cn("flex items-center justify-start", className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
