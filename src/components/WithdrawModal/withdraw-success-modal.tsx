@@ -3,6 +3,7 @@
 import { Check, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
+import CheckIconModal from "../../../public/check-icon-modal.svg";
 
 interface WithdrawSuccessModalProps {
   open: boolean; // <-- ADDED: controlled by parent
@@ -47,82 +48,82 @@ export function WithdrawSuccessModal({
   return (
     <div className={`fixed inset-0 z-[110] ${open ? "" : "pointer-events-none"}`}>
       <div
-        className={`absolute inset-0 bg-black/50 transition-opacity ${
-          open ? "opacity-100" : "opacity-0"
-        }`}
+        className={`absolute inset-0 bg-black/50 transition-opacity ${open ? "opacity-100" : "opacity-0"
+          }`}
       />
       <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
         <div
-          className={`w-full max-w-[400px] my-8 rounded-2xl bg-background border border-border shadow-xl overflow-hidden transform transition-all ${
-            open ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
-          }`}
+          className={`w-full max-w-[400px] my-8 rounded-2xl bg-background border border-border shadow-xl overflow-hidden transform transition-all ${open ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+            }`}
         >
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-border">
-            <h2 className="text-xl sm:text-2xl font-bold text-green-700 dark:text-green-300">
+            <h2 className="text-[18px] font-medium text-black">
               Withdrawal successful
             </h2>
-            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30">
-              <Check size={28} className="text-green-600 dark:text-green-400" strokeWidth={3} />
+            <div className='bg-[#E7F8F0] rounded-[8px] p-1'>
+              <Image src={CheckIconModal} alt="" className='w-4 h-4' />
             </div>
           </div>
 
           <div className="p-6 space-y-6">
-            <h3 className="text-sm text-muted-foreground font-semibold mb-2">Withdrawal summary</h3>
+            <h3 className="text-sm text-muted-foreground font-normal mb-2">Withdrawal summary</h3>
 
-            {/* Withdrawn from vault */}
-            <div className="bg-muted rounded-xl p-4 mb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 relative flex-shrink-0">
-                  <Image
-                    src="/protocols/morpho-icon.png"
-                    alt="Morpho"
-                    width={40}
-                    height={40}
-                    className="rounded-lg"
-                  />
-                </div>
-                <div>
-                  <div className="font-semibold">Withdrawn from Vault</div>
-                  <div className="text-xs text-muted-foreground">{vault}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Lisk amount */}
-            <div className="bg-muted rounded-xl p-4 mb-3 flex items-center gap-3">
-              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white border border-gray-200 dark:border-gray-700 flex-shrink-0">
-                <div className="w-8 h-8 relative">
-                  <Image
-                    src={liskIcon}
-                    alt={liskToken}
-                    width={32}
-                    height={32}
-                    className="rounded-full"
-                  />
-                  <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+            <div className="border border-border rounded-xl">
+              {/* Withdrawn from vault */}
+              <div className="rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 relative flex-shrink-0">
                     <Image
-                      src="/networks/lisk.png"
-                      alt="Lisk"
-                      width={16}
-                      height={16}
-                      className="rounded-sm"
+                      src="/protocols/morpho-icon.png"
+                      alt="Morpho"
+                      width={40}
+                      height={40}
+                      className="rounded-[6px]"
                     />
+                  </div>
+                  <div>
+                    <div className="font-semibold">Withdrawn from Vault</div>
+                    <div className="text-xs text-muted-foreground">{vault}</div>
                   </div>
                 </div>
               </div>
-              <div className="flex-1">
-                <p className="text-2xl font-bold text-foreground">{liskAmount.toFixed(4)}</p>
-                <p className="text-sm text-muted-foreground">
-                  ${liskAmount.toFixed(4)} • {liskToken} on Lisk
-                </p>
+
+              {/* Lisk amount */}
+              <div className="bg-muted rounded-b-xl p-4 flex items-center gap-3">
+                <div className="flex items-center justify-center  rounded-full bg-white border border-gray-200 dark:border-gray-700 flex-shrink-0">
+                  <div className="w-10 h-10 relative">
+                    <Image
+                      src={liskIcon}
+                      alt={liskToken}
+                      width={40}
+                      height={40}
+                      className="rounded-full"
+                    />
+                    <div className="absolute -bottom-0.5 -right-2 rounded-sm border-2 border-background">
+                      <Image
+                        src="/networks/lisk.png"
+                        alt="Lisk"
+                        width={16}
+                        height={16}
+                        className="rounded-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <p className="text-2xl font-bold text-foreground">{liskAmount.toFixed(4)}</p>
+                  <p className="text-sm text-muted-foreground">
+                    ${liskAmount.toFixed(4)} • {liskToken} on Lisk
+                  </p>
+                </div>
               </div>
             </div>
 
             {/* Arrow */}
             {bridged && (
-              <div className="flex justify-center py-1">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted">
+              <div className="flex justify-center py-3 border border-border rounded-[12px]">
+                <div className="flex items-center justify-center w-8 h-8 ">
                   <ArrowDown size={20} className="text-muted-foreground" />
                 </div>
               </div>
@@ -130,17 +131,17 @@ export function WithdrawSuccessModal({
 
             {/* Destination */}
             {bridged && (
-              <div className="bg-muted rounded-xl p-4 mb-3 flex items-center gap-3">
-                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white border border-gray-200 dark:border-gray-700 flex-shrink-0">
-                  <div className="w-8 h-8 relative">
+              <div className="bg-muted rounded-xl p-4 flex items-center gap-3">
+                <div className="flex items-center justify-center rounded-full bg-white border border-gray-200 dark:border-gray-700 flex-shrink-0">
+                  <div className="w-10 h-10 relative">
                     <Image
                       src={destIcon!}
                       alt={destToken!}
-                      width={32}
-                      height={32}
+                      width={40}
+                      height={40}
                       className="rounded-full"
                     />
-                    <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+                    <div className="absolute -bottom-0.5 -right-2 rounded-sm border-2 border-background">
                       <Image
                         src={
                           destChain === "optimism"
@@ -169,7 +170,7 @@ export function WithdrawSuccessModal({
             <Button
               onClick={onClose}
               size="lg"
-              className="w-full text-white bg-blue-600 hover:bg-blue-700 text-lg font-semibold py-6"
+              className="w-full rounded-[12px] text-white bg-[#376FFF] hover:bg-blue-700 text-lg font-normal py-6"
             >
               Done
             </Button>

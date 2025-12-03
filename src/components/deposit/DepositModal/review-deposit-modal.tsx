@@ -66,6 +66,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   const {
     open,
     onClose,
+    onSuccess,
     snap,
     amount,
     sourceSymbol,
@@ -94,9 +95,6 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   // destination token (for polling/deposit)
   const [destAddr, setDestAddr] = useState<`0x${string}` | null>(null)
   const [preBal, setPreBal] = useState<bigint>(0n)
-
-  // success modal
-  const [showSuccess, setShowSuccess] = useState(false)
 
   // Track actual approval completion
   const [approvalDone, setApprovalDone] = useState(false)
@@ -150,7 +148,6 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
           })
           await depositMorphoOnLiskAfterBridge(snap, toDeposit, wc)
           setStep('success')
-          setShowSuccess(true)
         }
       } catch (e) {
         console.error(TAG, '[focus] failed', e)
@@ -189,7 +186,14 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       await depositMorphoOnLiskAfterBridge(snap, amt, wc)
       console.info(TAG, '✅ deposit complete (retry)')
       setStep('success')
-      setShowSuccess(true)
+      onSuccess({
+        amount: Number(amount || 0),
+        sourceToken: sourceTokenLabel,
+        destinationAmount: Number(receiveDisplay ?? 0),
+        destinationToken: destTokenLabel,
+        vault: `Re7 ${snap.token} Vault (Morpho Blue)`,
+      })
+      onClose()
     } catch (e: any) {
       console.error(TAG, 'retry deposit error', e)
       setError(e?.message ?? String(e))
@@ -328,6 +332,14 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       }
 
       setStep('success')
+      onSuccess({
+        amount: Number(amount || 0),
+        sourceToken: sourceTokenLabel,
+        destinationAmount: Number(receiveDisplay ?? 0),
+        destinationToken: destTokenLabel,
+        vault: `Re7 ${snap.token} Vault (Morpho Blue)`,
+      })
+      onClose()
     } catch (e: any) {
       setError(e?.message ?? String(e))
       setStep('error')
@@ -388,7 +400,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       return
     }
     if (step === 'success') {
-      setShowSuccess(true)
+      onClose()
       return
     }
     if (step === 'idle') {
