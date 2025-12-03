@@ -78,7 +78,7 @@ function NetworkBadge({ chainId, size = 'sm' }: { chainId?: number; size?: 'sm' 
           alt={m.label}
           width={iconSize}
           height={iconSize}
-          className={`${size === 'sm' ? 'h-5 w-5' : 'h-7 w-7'} rounded-md`}
+          className={`${size === 'sm' ? 'h-5 w-5' : 'h-7 w-7'} rounded`} 
         />
       </span>
     </div>
@@ -178,7 +178,7 @@ export function Navbar() {
 
   function openOnOptimismExplorer() {
     if (!address) return
-    const url = `https://optimistic.etherscan.io/address/${address}`
+    const url = `https://optimistic.etherscan.io/address/${address}` 
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
@@ -195,8 +195,8 @@ export function Navbar() {
   return (
     <div className="mt-3 md:mt-[12px] px-3 sm:px-4 max-w-[1392px] mx-auto">
       {/* Top App Bar */}
-      <header className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 rounded-xl transition-shadow ${elevated ? 'shadow-md' : 'shadow-sm'}`}>
-        <div className="mx-auto flex h-14 w-full items-center justify-between px-3 sm:px-4">
+      <header className={`sticky top-0 z-50 w-full bg-background border-b border-border/60 rounded-xl transition-shadow ${elevated ? 'shadow-md' : 'shadow-sm'}`}> 
+        <div className="mx-auto flex h-14 w-full items-center justify-between px-2.5"> 
           {/* Brand */}
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <Link href="/" className="group inline-flex items-center gap-2 min-w-0">
@@ -301,7 +301,7 @@ export function Navbar() {
 
                         <div className="flex justify-center items-center p-2 gap-2 min-w-0">
                           <div className="flex min-w-0 flex-col flex-1">
-                            <span className="truncate text-[13px] font-semibold" title={address}>
+                            <span className="truncate text-[13px] font-semibold text-center" title={address}>
                               {shortAddr(address)}
                             </span>
                           </div>
@@ -430,7 +430,7 @@ export function Navbar() {
                         </div>
                         <div className="flex justify-center items-center p-2 gap-2 min-w-0">
                           <div className="flex min-w-0 flex-col flex-1">
-                            <span className="truncate text-[13px] font-semibold" title={address}>
+                            <span className="truncate text-[13px] font-semibold items-center" title={address}>
                               {shortAddr(address)}
                             </span>
                           </div>
