@@ -10,7 +10,7 @@ import { usePositions } from '@/hooks/usePositions';
 import { SelectTokenModal } from './select-token-modal';
 import { DepositModal } from './DepositModal/review-deposit-modal';
 import { ReviewWithdrawModal } from '../WithdrawModal/review-withdraw-modal';
-import logolifi from '@/public/logo_lifi_light.png';
+import logolifi from '@/public/lifi.png';
 import { useWalletClient } from 'wagmi';
 import { parseUnits } from 'viem';
 
@@ -134,7 +134,7 @@ export function DepositWithdraw({
   const [received, setReceived] = useState<bigint>(0n);
   const [quoteError, setQuoteError] = useState<string | null>(null);
 
-  // Route & fees expanded state
+  // Routing via LI.FI bridge expanded state
   const [routeExpanded, setRouteExpanded] = useState(false);
 
   const vaultToken: 'USDC' | 'USDT' | 'WETH' = (snap?.token as any) ?? 'USDC';
@@ -567,7 +567,7 @@ const src = 'optimism' as const;
         <div className="flex items-center gap-8 mb-6 border-b">
           <button
             onClick={() => setActiveTab('deposit')}
-            className={`pb-3 text-[16px] font-semibold transition-colors relative ${
+            className={`pb-3 text-[16px] font-medium transition-colors relative ${
               activeTab === 'deposit'
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -575,12 +575,12 @@ const src = 'optimism' as const;
           >
             Deposit
             {activeTab === 'deposit' && (
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-foreground rounded-t" />
+              <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground" />
             )}
           </button>
           <button
             onClick={() => setActiveTab('withdraw')}
-            className={`pb-3 text-[16px] font-semibold transition-colors relative ${
+            className={`pb-3 text-[16px] font-medium transition-colors relative ${
               activeTab === 'withdraw'
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -588,7 +588,7 @@ const src = 'optimism' as const;
           >
             Withdraw
             {activeTab === 'withdraw' && (
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-foreground rounded-t" />
+              <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-foreground" />
             )}
           </button>
         </div>
@@ -663,17 +663,17 @@ const src = 'optimism' as const;
                     <Image
                       src={selectedToken.icon}
                       alt={selectedToken.symbol}
-                      width={28}
-                      height={28}
+                      width={24}
+                      height={24}
                       className="rounded-full"
                     />
                     {/* Network badge: always OP for deposits */}
-                    <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+                    <div className="absolute -bottom-0.5 -right-2 rounded-sm border-2 border-background">
                       <Image
                         src="/networks/op-icon.png"
                         alt="OP Mainnet"
-                        width={16}
-                        height={16}
+                        width={12}
+                        height={12}
                         className="rounded-sm"
                       />
                     </div>
@@ -692,17 +692,17 @@ const src = 'optimism' as const;
                       <Image
                         src={currentWithdrawChoice.icon}
                         alt={currentWithdrawChoice.symbol}
-                        width={28}
-                        height={28}
+                          width={24}
+                          height={24}
                         className="rounded-full"
                       />
                       {/* Network badge */}
-                      <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+                        <div className="absolute -bottom-0.5 -right-2 rounded-sm border-2 border-background">
                         <Image
                           src={'/networks/op-icon.png'}
                           alt="network"
-                          width={16}
-                          height={16}
+                            width={12}
+                            height={12}
                           className="rounded-sm"
                         />
                       </div>
@@ -828,14 +828,14 @@ const src = 'optimism' as const;
                 {activeTab === 'deposit' ? 'Deposit' : 'Withdraw'}
               </Button>
 
-              {/* Route & Fees Section */}
+              {/* Routing via LI.FI bridge Section */}
               <div className="border border-border rounded-xl overflow-hidden">
                 <button
                   onClick={() => setRouteExpanded(!routeExpanded)}
                   className="w-full px-5 py-4 flex items-center justify-center hover:bg-muted/30 transition-colors"
                 >
                   <span className="font-semibold text-foreground text-base text-center">
-                    Route & fees
+                    Routing via LI.FI bridge
                   </span>
                   <ChevronDown
                     size={20}

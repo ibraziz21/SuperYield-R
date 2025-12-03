@@ -81,7 +81,7 @@ export default function PositionsPage() {
       <section className="bg-[#FFFFFF] my-4 p-4 md:p-6 rounded-xl max-w-[1392px] mx-auto">
         <Tabs defaultValue="vaults" className="w-full">
           <TabsList className="mb-4 bg-white ">
-            <TabsTrigger className={`font-normal ${positionsRaw!.length <= 0 ? "hidden" : "block"}`} value="positions">
+            <TabsTrigger className={`font-normal ${positionsRaw && positionsRaw!.length <= 0 ? "hidden" : "block"}`} value="positions">
               Your Positions
               <div className="bg-[#E5E7EB] mx-1 px-2 py-1 rounded-full flex items-center justify-center min-w-[28px] h-7 text-sm font-medium leading-none">
                 {positionsRaw?.length ?? 0}

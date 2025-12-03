@@ -46,8 +46,8 @@ const Vaults: React.FC<VaultsProps> = ({ networkFilter, protocolFilter, filterUI
         snap.token === "USDC"
           ? "USDCe"
           : snap.token === "USDT"
-          ? "USDT0"
-          : snap.token;
+            ? "USDT0"
+            : snap.token;
 
       return {
         vault: vaultDisplay,
@@ -62,12 +62,12 @@ const Vaults: React.FC<VaultsProps> = ({ networkFilter, protocolFilter, filterUI
     });
 
     // Apply network filter
-    if (networkFilter && !networkFilter.includes("all")) {
+    if (networkFilter && networkFilter.length > 0 && !networkFilter.includes("all")) {
       mapped = mapped.filter((row) => networkFilter.includes(row.network));
     }
 
     // Apply protocol filter
-    if (protocolFilter && !protocolFilter.includes("all")) {
+    if (protocolFilter && protocolFilter.length > 0 && !protocolFilter.includes("all")) {
       mapped = mapped.filter((row) => protocolFilter.includes(row.protocol));
     }
 

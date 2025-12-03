@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { useAppKit } from '@reown/appkit/react' // keep only useAppKit
+import { useAppKit } from '@reown/appkit/react'
 import { useAccount, useDisconnect, useChainId, useSwitchChain } from 'wagmi'
 import { Button } from '@/components/ui/button'
 import socialImg from '@/public/logo_horizontal.svg'
@@ -61,35 +61,37 @@ function shortAddr(a?: string) {
   return `${a.slice(0, 6)}…${a.slice(-4)}`
 }
 
-
-function NetworkBadge({ chainId }: { chainId?: number }) {
+function NetworkBadge({ chainId, size = 'sm' }: { chainId?: number; size?: 'sm' | 'md' }) {
   if (!chainId || !CHAIN_META[chainId]) return null
   const m = CHAIN_META[chainId]
+  const iconSize = size === 'sm' ? 20 : 28
+  const containerSize = size === 'sm' ? 'h-5 w-5' : 'h-7 w-7'
 
   return (
     <div
       className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white p-1"
       title={m.label}
     >
-      <span className="relative inline-flex h-5 w-5 items-center justify-center rounded-md overflow-hidden">
+      <span className={`relative inline-flex ${containerSize} items-center justify-center rounded-md overflow-hidden`}>
         <Image
           src={m.icon}
           alt={m.label}
-          width={20}
-          height={20}
-          className="h-5 w-5 rounded-md"
+          width={iconSize}
+          height={iconSize}
+          className={`${size === 'sm' ? 'h-5 w-5' : 'h-7 w-7'} rounded-md`}
         />
       </span>
     </div>
   )
 }
 
-function ActiveLink({ href, children }: { href: string; children: React.ReactNode }) {
+function ActiveLink({ href, children, onClick }: { href: string; children: React.ReactNode; onClick?: () => void }) {
   const pathname = usePathname()
   const active = pathname === href || (href !== '/' && pathname.startsWith(href))
   return (
     <Link
       href={href}
+      onClick={onClick}
       className={`rounded-xl px-3 py-2 text-sm transition ${active
         ? 'bg-[#F3F4F6] text-black font-semibold'
         : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
@@ -180,7 +182,6 @@ export function Navbar() {
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
-
   async function quickSwitch(id: number) {
     try {
       await switchChainAsync?.({ chainId: id })
@@ -189,41 +190,43 @@ export function Navbar() {
     }
   }
 
+  const closeMobile = () => setMobileOpen(false)
+
   return (
-    <div className="mt-[12px]">
+    <div className="mt-3 md:mt-[12px] px-3 sm:px-4 max-w-[1392px] mx-auto">
       {/* Top App Bar */}
-      <header className="sticky top-0 z-50 w-full bg-white border-b border-border/60 max-w-[1392px] mx-auto rounded-xl">
-        <div className="mx-auto flex h-14 w-full max-w-[1392px] items-center justify-between px-3 sm:px-4">
+      <header className={`sticky top-0 z-50 w-full bg-white border-b border-border/60 rounded-xl transition-shadow ${elevated ? 'shadow-md' : 'shadow-sm'}`}>
+        <div className="mx-auto flex h-14 w-full items-center justify-between px-3 sm:px-4">
           {/* Brand */}
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <Link href="/" className="group inline-flex items-center gap-2 min-w-0">
               <Image
                 src={ecovaults}
                 alt="ecovaults"
-                width={0}
-                height={0}
+                width={120}
+                height={24}
                 priority
-                className="h-auto w-auto"
+                className="h-6 w-auto sm:h-7 sm:w-auto object-contain"
               />
             </Link>
             {/* Desktop nav */}
-            <nav className="ml-2 hidden items-center gap-1 md:flex">
+            <nav className="ml-2 hidden items-center gap-1 md:flex flex-1">
               <ActiveLink href="/">Dashboard</ActiveLink>
               <ActiveLink href="/vaults">Vaults</ActiveLink>
             </nav>
           </div>
 
           {/* Right side */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {/* Mobile: hamburger */}
             <button
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border/60 md:hidden active:scale-95"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/60 md:hidden active:scale-95 transition"
               onClick={() => setMobileOpen((v) => !v)}
               aria-label="Open menu"
               aria-expanded={mobileOpen}
               title="Menu"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" className="opacity-80">
+              <svg width="20" height="20" viewBox="0 0 24 24" className="opacity-80">
                 <path
                   d="M4 6h16M4 12h16M4 18h16"
                   stroke="currentColor"
@@ -237,17 +240,17 @@ export function Navbar() {
             {address &&
               (chainId === 10 ? (
                 // On OP → show small chain badge
-                <NetworkBadge chainId={chainId} />
+                <NetworkBadge chainId={chainId} size="sm" />
               ) : (
                 // Not on OP → show "Switch to OP Mainnet" pill
                 <button
                   type="button"
                   onClick={() => quickSwitch(10)}
                   disabled={isSwitching}
-                  className="hidden md:inline-flex h-9 items-center gap-2 rounded-[12px] border border-[#FAB55A] bg-[#FEF4E6] px-4 text-sm font-semibold text-black disabled:opacity-60"
+                  className="hidden md:inline-flex h-9 items-center gap-2 rounded-[12px] border border-[#FAB55A] bg-[#FEF4E6] px-4 text-sm font-semibold text-black disabled:opacity-60 hover:bg-[#FDE7CD] transition"
                   title="Switch network to Optimism"
                 >
-                  <span>Switch to OP Mainnet</span>
+                  <span className="whitespace-nowrap">Switch to OP</span>
                   <span className="flex h-7 w-7 items-center justify-center relative rounded-sm overflow-hidden">
                     <Image
                       src="/networks/op-icon.png"
@@ -264,7 +267,7 @@ export function Navbar() {
             {!address ? (
               <Button
                 onClick={() => open({ view: 'Connect' })}
-                className="hidden md:flex bg-[#376FFF] p-5 rounded-lg"
+                className="hidden md:flex bg-[#376FFF] px-5 py-2 rounded-lg text-white hover:bg-[#2A5FCC] transition h-9"
                 title="Connect Wallet"
               >
                 Connect Wallet
@@ -273,53 +276,51 @@ export function Navbar() {
               <div className="relative" ref={accountMenuRef}>
                 <button
                   onClick={() => setMenuOpen((v) => !v)}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-background/60 px-3 text-sm font-semibold hover:bg-background active:scale-[.98]"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-background/60 px-3 text-sm font-semibold hover:bg-muted active:scale-[.98] transition min-w-0"
                   title="Wallet menu"
                   aria-expanded={menuOpen}
                   aria-haspopup="menu"
                 >
-                  <div className="h-5 w-5 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5" />
-                  <span className="max-w-[92px] whitespace-nowrap">
+                  <div className="h-5 w-5 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5 flex-shrink-0" />
+                  <span className="max-w-[92px] truncate">
                     {shortAddr(address)}
                   </span>
-
                 </button>
 
                 {menuOpen && (
                   <div
-                    className="absolute flex flex-col justify-between right-0 mt-2 w-64 overflow-hidden rounded-2xl border border-border/60 bg-white shadow-xl focus:outline-none"
+                    className="absolute right-0 mt-2 w-64 overflow-hidden rounded-2xl border border-border/60 bg-white shadow-xl focus:outline-none z-[70]"
                     role="menu"
                   >
                     {/* header */}
-                    <div className="flex items-center justify-between border-b px-3 py-2">
-                        <div className="flex flex-col justify-around w-full h-[94px] bg-[#F9FAFB] rounded-[12px]">
+                    <div className="flex items-center justify-between border-b px-3 py-3">
+                      <div className="flex flex-col justify-around w-full h-[94px] bg-[#F9FAFB] rounded-[12px] p-3">
                         <div className="w-full flex justify-center">
                           <div className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5" />
                         </div>
 
                         <div className="flex justify-center items-center p-2 gap-2 min-w-0">
-                          <div className="flex min-w-0 flex-col">
-                              <span className="truncate text-[13px] font-semibold" title={address}>
+                          <div className="flex min-w-0 flex-col flex-1">
+                            <span className="truncate text-[13px] font-semibold" title={address}>
                               {shortAddr(address)}
                             </span>
                           </div>
                           <Image
                             src={CopyIconSvg}
-                              width={18}
-                              height={18}
+                            width={18}
+                            height={18}
                             alt="Copy address"
                             onClick={copyAddress}
-                            className="cursor-pointer"
+                            className="cursor-pointer hover:opacity-70 transition flex-shrink-0"
                           />
                           <Image
                             src={ShareIconSvg}
-                              width={18}
-                              height={18}
+                            width={18}
+                            height={18}
                             alt="View on Optimism explorer"
                             onClick={openOnOptimismExplorer}
-                            className="cursor-pointer"
+                            className="cursor-pointer hover:opacity-70 transition flex-shrink-0"
                           />
-
                         </div>
                       </div>
                     </div>
@@ -327,7 +328,7 @@ export function Navbar() {
                     {/* actions */}
                     <div className="p-2 text-sm">
                       <button
-                          className="mt-2 flex w-full items-center justify-start rounded-md px-3 py-2 font-medium text-red-600"
+                        className="flex w-full items-center justify-start rounded-md px-3 py-2 font-medium text-red-600 hover:bg-red-50 transition"
                         onClick={() => {
                           setMenuOpen(false)
                           disconnect()
@@ -357,7 +358,7 @@ export function Navbar() {
         <div
           className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity ${mobileOpen ? 'opacity-100' : 'opacity-0'
             }`}
-          onClick={() => setMobileOpen(false)}
+          onClick={closeMobile}
         />
 
         {/* panel */}
@@ -365,27 +366,28 @@ export function Navbar() {
           ref={mobileRef}
           role="dialog"
           aria-modal="true"
-          className={`absolute right-0 top-0 h-full w-[86%] max-w-sm bg-background shadow-2xl ring-1 ring-border/60 transition-transform duration-200 ease-out ${mobileOpen ? 'translate-x-0' : 'translate-x-full'
+          className={`absolute right-0 top-0 h-full w-[85%] max-w-sm bg-background  ring-1 ring-border/60 transition-transform duration-200 ease-out ${mobileOpen ? 'translate-x-0' : 'translate-x-full'
             }`}
         >
+          {/* Header - Logo & Close */}
           <div className="flex h-14 items-center justify-between border-b px-3">
             <div className="inline-flex items-center gap-2">
               <Image
                 src={ecovaults}
                 alt="ecovaults"
-                width={140}
+                width={120}
                 height={24}
-                className="h-6 w-auto"
+                className="h-6 w-auto object-contain"
                 priority
               />
             </div>
             <button
-              onClick={() => setMobileOpen(false)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border/60 active:scale-95"
+              onClick={closeMobile}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/60 active:scale-95 transition"
               aria-label="Close menu"
               title="Close"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" className="opacity-80">
+              <svg width="20" height="20" viewBox="0 0 24 24" className="opacity-80">
                 <path
                   d="M6 6l12 12M6 18L18 6"
                   stroke="currentColor"
@@ -396,70 +398,118 @@ export function Navbar() {
             </button>
           </div>
 
-          <div className="flex h-[calc(100%-56px)] flex-col justify-between">
+          {/* Content */}
+          <div className="flex h-[calc(100%-56px)] flex-col justify-between overflow-y-auto">
             <div className="p-3">
-              {/* wallet box */}
-              <div className="rounded-2xl border p-3">
+              {/* Wallet Section - Desktop Style */}
+              <div className="rounded-2xl border border-border/60 bg-white shadow-xl overflow-hidden">
                 {!address ? (
-                  <>
-                    <div className="mb-2 text-sm">You&rsquo;re not connected</div>
+                  <div className="p-4 space-y-3">
+                    <div className="text-sm text-muted-foreground">You're not connected</div>
                     <Button
-                      onClick={() => open({ view: 'Connect' })}
-                      className="w-full bg-[#376FFF] text-white rounded-lg"
-                      title={''}
+                      onClick={() => {
+                        open({ view: 'Connect' })
+                        closeMobile()
+                      }}
+                      className="w-full bg-[#376FFF] text-white rounded-lg hover:bg-[#2A5FCC] transition h-10 font-semibold"
+                      title="Connect Wallet"
                     >
                       Connect Wallet
                     </Button>
-                    <div className="mt-2 text-[11px] text-muted-foreground">
+                    <div className="text-[11px] text-muted-foreground text-center">
                       Works with WalletConnect & injected wallets
                     </div>
-                  </>
+                  </div>
                 ) : (
                   <>
-                    <div className="flex items-center justify-between">
-                      <div className="inline-flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5" />
-                        <div className="text-sm font-semibold">{shortAddr(address)}</div>
+                    {/* Header - Desktop Style */}
+                    <div className="flex items-center justify-between border-b px-3 py-3">
+                      <div className="flex flex-col justify-around w-full h-[94px] bg-[#F9FAFB] rounded-[12px] p-3">
+                        <div className="w-full flex justify-center">
+                          <div className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5" />
+                        </div>
+                        <div className="flex justify-center items-center p-2 gap-2 min-w-0">
+                          <div className="flex min-w-0 flex-col flex-1">
+                            <span className="truncate text-[13px] font-semibold" title={address}>
+                              {shortAddr(address)}
+                            </span>
+                          </div>
+                          <Image
+                            src={CopyIconSvg}
+                            width={18}
+                            height={18}
+                            alt="Copy address"
+                            onClick={() => {
+                              copyAddress()
+                              closeMobile()
+                            }}
+                            className="cursor-pointer hover:opacity-70 transition flex-shrink-0"
+                          />
+                          <Image
+                            src={ShareIconSvg}
+                            width={18}
+                            height={18}
+                            alt="View on Optimism explorer"
+                            onClick={() => {
+                              openOnOptimismExplorer()
+                              closeMobile()
+                            }}
+                            className="cursor-pointer hover:opacity-70 transition flex-shrink-0"
+                          />
+                        </div>
                       </div>
-                      <NetworkBadge chainId={chainId} />
                     </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <Button
-                        variant="secondary"
-                        className="w-full"
-                        onClick={copyAddress}
-                        title={copied ? 'Copied' : 'Copy'}
-                      >
-                        {copied ? 'Copied' : 'Copy'}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        className="w-full"
-                        onClick={() => open({ view: 'Connect' })}
-                        title={'Switch'}
-                      >
-                        Switch
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        className="col-span-2"
+
+                    {/* Actions - Desktop Style */}
+                    <div className="p-2 text-sm">
+                      {/* Network Switch - Desktop Style Pill */}
+                      {chainId !== 10 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            quickSwitch(10)
+                            closeMobile()
+                          }}
+                          disabled={isSwitching}
+                          className="w-full mb-2 flex h-9 items-center justify-center gap-2 rounded-[12px] border border-[#FAB55A] bg-[#FEF4E6] px-4 text-sm font-semibold text-black disabled:opacity-60 hover:bg-[#FDE7CD] transition"
+                          title="Switch network to Optimism"
+                        >
+                          <span>Switch to OP Mainnet</span>
+                          <span className="flex h-7 w-7 items-center justify-center relative rounded-sm overflow-hidden flex-shrink-0">
+                            <Image
+                              src="/networks/op-icon.png"
+                              alt="OP Mainnet"
+                              width={28}
+                              height={28}
+                              className="h-7 w-7 rounded-none"
+                            />
+                          </span>
+                        </button>
+                      )}
+
+                      {/* Disconnect - Desktop Style */}
+                      <button
+                        className="mt-2 flex w-full items-center justify-start rounded-md px-3 py-2 font-medium text-red-600 hover:bg-red-50 transition"
                         onClick={() => {
                           disconnect()
-                          setMobileOpen(false)
+                          closeMobile()
                         }}
-                        title={'Disconnect'}
+                        title="Disconnect"
                       >
-                        Disconnect
-                      </Button>
+                        <span className="text-xs">
+                          <Image src={ExitIconSvg} alt="" width={16} height={16} />
+                        </span>
+                        <span className="mx-2">Disconnect</span>
+                      </button>
                     </div>
                   </>
                 )}
               </div>
 
-              {/* nav links */}
-              <nav className="mt-3 grid gap-1">
-                <ActiveLink href="/">Dashboard</ActiveLink>
-                <ActiveLink href="/vaults">Vaults</ActiveLink>
+              {/* Navigation Links */}
+              <nav className="mt-4 grid gap-1">
+                <ActiveLink href="/" onClick={closeMobile}>Dashboard</ActiveLink>
+                <ActiveLink href="/vaults" onClick={closeMobile}>Vaults</ActiveLink>
               </nav>
             </div>
           </div>

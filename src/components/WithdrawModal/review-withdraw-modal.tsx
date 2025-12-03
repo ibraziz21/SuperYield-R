@@ -1,9 +1,9 @@
 // src/components/WithdrawModal/review-withdraw-modal.tsx
 'use client'
 
-import { FC, useCallback, useMemo, useState } from 'react'
+import { FC, useMemo, useState } from 'react'
 import Image from 'next/image'
-import { X, Check, ExternalLink, AlertCircle, Loader2 } from 'lucide-react'
+import { X, ExternalLink, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWalletClient } from 'wagmi'
 import type { Address } from 'viem'
@@ -15,35 +15,27 @@ import { publicLisk } from '@/lib/clients'
 import { erc20Abi } from 'viem'
 import { CHAINS } from '@/lib/wallet'
 import { switchOrAddChain } from '@/lib/wallet'
-import lifi from '@/public/logo_lifi_light_vertical.png'
+import lifilogo from '@/public/lifi.png'
 import { WithdrawSuccessModal } from './withdraw-success-modal'
+import InfoIconModal from "../../../public/info-icon-modal.svg"
+import CheckIconModal from "../../../public/check-icon-modal.svg"
+import AlertIconModal from "../../../public/alert-icon-modal.svg"
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
 /* -------------------------------------------------------------------------- */
 
-type ChainSel = 'optimism'
-
-type FlowStep =
-  | 'idle'
-  | 'withdrawing'   // withdrawing from vault on Lisk
-  | 'sign-bridge'   // user should sign bridge tx
-  | 'bridging'      // bridge in flight
-  | 'success'
-  | 'error'
+type FlowStep = 'idle' | 'withdrawing' | 'sign-bridge' | 'bridging' | 'success' | 'error'
 
 interface Props {
   open: boolean
   onClose: () => void
-  snap: Pick<YieldSnapshot, 'token' | 'chain'> & { poolAddress: `0x${string}` } // token: 'USDC' | 'USDT', chain: 'lisk'
+  snap: Pick<YieldSnapshot, 'token' | 'chain'> & { poolAddress: `0x${string}` }
   shares: bigint
-  // amount user typed (approximate pre-fee amount on Lisk, in token units)
   amountOnLiskDisplay: number
-  // estimated bridge fee in dest token units
   bridgeFeeDisplay: number
-  // (old prop – now superseded by internal net calculation, but kept for compatibility)
   receiveOnDestDisplay: number
-  dest: ChainSel
+  dest: 'optimism'
   user: `0x${string}`
 }
 
@@ -53,17 +45,14 @@ function tokenLabelOnLisk(src: 'USDC' | 'USDT'): 'USDCe' | 'USDT0' {
 
 const ICON = {
   mor: '/protocols/morpho-icon.png',
-  bridge: lifi,
+  bridge: lifilogo,
   USDC: '/tokens/usdc-icon.png',
   USDT: '/tokens/usdt-icon.png',
   USDCe: '/tokens/usdc-icon.png',
   USDT0: '/tokens/usdt0-icon.png',
 } as const
 
-async function readLiskBalance(
-  token: `0x${string}`,
-  user: `0x${string}`,
-): Promise<bigint> {
+async function readLiskBalance(token: `0x${string}`, user: `0x${string}`): Promise<bigint> {
   try {
     return (await publicLisk.readContract({
       address: token,
@@ -87,7 +76,6 @@ export const ReviewWithdrawModal: FC<Props> = ({
   shares,
   amountOnLiskDisplay,
   bridgeFeeDisplay,
-  receiveOnDestDisplay, // not used in new math, kept for compat
   dest,
   user,
 }) => {
@@ -97,13 +85,10 @@ export const ReviewWithdrawModal: FC<Props> = ({
   const [err, setErr] = useState<string | null>(null)
   const [showSuccess, setShowSuccess] = useState(false)
 
-  // remember whether withdraw succeeded, and how much to bridge
   const [withdrawOk, setWithdrawOk] = useState(false)
   const [bridgableAmount, setBridgableAmount] = useState<bigint | null>(null)
 
-  const liskToken: 'USDCe' | 'USDT0' = tokenLabelOnLisk(
-    snap.token as 'USDC' | 'USDT',
-  )
+  const liskToken: 'USDCe' | 'USDT0' = tokenLabelOnLisk(snap.token as 'USDC' | 'USDT')
   const destSymbol: 'USDC' | 'USDT' = liskToken === 'USDT0' ? 'USDT' : 'USDC'
 
   const liskTokenAddr = useMemo(
@@ -114,139 +99,53 @@ export const ReviewWithdrawModal: FC<Props> = ({
     [liskToken],
   )
 
-  // ----- Fee math (UI-only, estimates) ---------------------------------------
+  // Fee math
   const grossAmount = amountOnLiskDisplay || 0
-  const protocolFeePct = 0.005 // 0.5% vault withdraw fee
+  const protocolFeePct = 0.005
   const protocolFeeAmount = grossAmount > 0 ? grossAmount * protocolFeePct : 0
   const bridgeFeeAmount = bridgeFeeDisplay || 0
-
-  // Net amounts (approximate)
   const netOnLisk = Math.max(grossAmount - protocolFeeAmount, 0)
   const netOnDest = Math.max(grossAmount - protocolFeeAmount - bridgeFeeAmount, 0)
 
-  // Visual helpers (for step rows)
-  const trigger1Done =
-    withdrawOk ||
-    step === 'sign-bridge' ||
-    step === 'bridging' ||
-    step === 'success'
-
-  const trigger2InError = step === 'error' && err?.toLowerCase().includes('signature')
-  const trigger3InError = step === 'error' && !trigger2InError && withdrawOk
-
+  // Button label
   const primaryLabel =
     step === 'success'
       ? 'Done'
       : step === 'withdrawing'
-      ? 'Withdrawing…'
-      : step === 'sign-bridge'
-      ? 'Sign bridge transaction…'
-      : step === 'bridging'
-      ? 'Bridging…'
-      : step === 'error' && withdrawOk
-      ? 'Try bridge again'
-      : step === 'error'
-      ? 'Try again'
-      : 'Withdraw now'
+        ? 'Withdrawing…'
+        : step === 'sign-bridge'
+          ? 'Sign bridge transaction…'
+          : step === 'bridging'
+            ? 'Bridging…'
+            : step === 'error' && withdrawOk
+              ? 'Try bridge again'
+              : step === 'error'
+                ? 'Try again'
+                : 'Withdraw now'
 
   /* ------------------------------------------------------------------------ */
-  /* Flow pieces                                                              */
-  /* ------------------------------------------------------------------------ */
-
-  async function performWithdraw(): Promise<bigint> {
-    if (!walletClient) throw new Error('Wallet not connected')
-  
-    // 1) switch to Lisk
-    await switchOrAddChain(walletClient, CHAINS.lisk)
-  
-    // 2) IMPORTANT: refetch the walletClient because provider changed!
-    const { data: freshClient } = await refetchWalletClient()
-    const wc = freshClient ?? walletClient
-  
-    // measure delta
-    const pre = await readLiskBalance(liskTokenAddr as `0x${string}`, user)
-  
-    await withdrawMorphoOnLisk({
-      token: liskToken,
-      shares,
-      shareToken: snap.poolAddress,
-      underlying: liskTokenAddr as `0x${string}`,
-      to: user,
-      wallet: wc,        // 👈 corrected wallet instance
-    })
-  
-    // poll for arrival
-    let tries = 0
-    while (tries++ < 40) {
-      const cur = await readLiskBalance(liskTokenAddr as `0x${string}`, user)
-      if (cur > pre) return cur - pre
-      await new Promise((r) => setTimeout(r, 1500))
-    }
-  
-    const cur = await readLiskBalance(liskTokenAddr as `0x${string}`, user)
-    if (cur <= pre) throw new Error('Withdrawal did not arrive on Lisk')
-    return cur - pre
-  }
-  
-
-  async function performBridge(amount: bigint) {
-    if (!walletClient) throw new Error('Wallet not connected')
-
-    setStep('sign-bridge')
-    await new Promise((r) => setTimeout(r, 80)) // small UX pause
-    setStep('bridging')
-
-    const toChain ='optimism'
-
-    await bridgeWithdrawal({
-      srcVaultToken: liskToken, // 'USDCe' | 'USDT0'
-      destToken: destSymbol, // 'USDC' | 'USDT'
-      amount,
-      to: toChain,
-      walletClient,
-    })
-
-    // Switch user back to OP when done
-    await switchOrAddChain(walletClient, CHAINS.optimism)
-
-    setStep('success')
-    setShowSuccess(true)
-  }
-
-  /* ------------------------------------------------------------------------ */
-  /* Main confirm flow – SINGLE click like Deposit                            */
+  /* Main Flow                                                                */
   /* ------------------------------------------------------------------------ */
 
   async function handleConfirm() {
     if (!walletClient) throw new Error("Wallet not connected");
-    setStep('withdrawing') 
+    setStep('withdrawing')
     try {
-      setErr(null);
-      setWithdrawOk(false);
-      setBridgableAmount(null);
-   
-  
-      /* ------------------------------------------------------------- */
-      /* 1) SWITCH TO LISK                                              */
-      /* ------------------------------------------------------------- */
-  
-      await switchOrAddChain(walletClient, CHAINS.lisk);
-  
-      // After chain switch, get a fresh wallet client
-      const { data: freshClient } = await refetchWalletClient();
-      const wc = freshClient ?? walletClient;
-  
-      /* ------------------------------------------------------------- */
-      /* 2) PERFORM WITHDRAW                                            */
-      /* ------------------------------------------------------------- */
-  
+      setErr(null)
+      setWithdrawOk(false)
+      setBridgableAmount(null)
+
+      await switchOrAddChain(walletClient, CHAINS.lisk)
+      const { data: freshClient } = await refetchWalletClient()
+      const wc = freshClient ?? walletClient
+
       const pre = await publicLisk.readContract({
         address: liskTokenAddr,
         abi: erc20Abi,
         functionName: "balanceOf",
         args: [user],
-      });
-  
+      })
+
       await withdrawMorphoOnLisk({
         token: liskToken,
         shares,
@@ -254,86 +153,86 @@ export const ReviewWithdrawModal: FC<Props> = ({
         underlying: liskTokenAddr as `0x${string}`,
         to: user,
         wallet: wc,
-      });
-  
-      // Poll until balance increases
-      let delta = 0n;
+      })
+
+      let delta = 0n
       for (let i = 0; i < 40; i++) {
         const cur = await publicLisk.readContract({
           address: liskTokenAddr,
           abi: erc20Abi,
           functionName: "balanceOf",
           args: [user],
-        });
+        })
         if (cur > pre) {
-          delta = cur - pre;
-          break;
+          delta = cur - pre
+          break
         }
-        await new Promise((r) => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, 1500))
       }
-  
-      if (delta <= 0n) throw new Error("Withdrawal did not arrive on Lisk");
-  
-      setWithdrawOk(true);
-      setBridgableAmount(delta);
-  
-      /* ------------------------------------------------------------- */
-      /* 3) BRIDGE TO OP                                                */
-      /* ------------------------------------------------------------- */
-  
-      setStep("sign-bridge");
-      await new Promise((r) => setTimeout(r, 50));
-      setStep("bridging");
-  
+
+      if (delta <= 0n) throw new Error("Withdrawal did not arrive on Lisk")
+
+      setWithdrawOk(true)
+      setBridgableAmount(delta)
+
+      setStep("sign-bridge")
+      await new Promise((r) => setTimeout(r, 50))
+      setStep("bridging")
+
       await bridgeWithdrawal({
         srcVaultToken: liskToken,
         destToken: destSymbol,
         amount: delta,
         to: "optimism",
         walletClient: wc,
-      });
-  
-      /* ------------------------------------------------------------- */
-      /* 4) SWITCH BACK TO OP                                           */
-      /* ------------------------------------------------------------- */
-  
-      await switchOrAddChain(wc, CHAINS.optimism);
-  
-      /* ------------------------------------------------------------- */
-      /* 5) DONE                                                        */
-      /* ------------------------------------------------------------- */
-  
-      setStep("success");
-      setShowSuccess(true);
+      })
+
+      await switchOrAddChain(wc, CHAINS.optimism)
+
+      setStep("success")
+      setShowSuccess(true)
     } catch (e: any) {
-      console.error("WITHDRAW FLOW FAILED:", e);
-      const code = e?.code ?? e?.error?.code;
+      console.error("WITHDRAW FLOW FAILED:", e)
+      const code = e?.code ?? e?.error?.code
       if (code === 4001) {
-        setErr("Signature was cancelled.");
+        setErr("Signature was cancelled.")
       } else {
-        setErr(e?.message ?? String(e));
+        setErr(e?.message ?? String(e))
       }
-      setStep("error");
+      setStep("error")
     }
   }
-  
 
   /* ------------------------------------------------------------------------ */
-  /* Bridge-only retry (after successful withdraw)                            */
+  /* Bridge Retry                                                             */
   /* ------------------------------------------------------------------------ */
 
   async function resumeBridgeOnly() {
     if (!walletClient) return
     try {
       setErr(null)
-
       let amount = bridgableAmount
       if (!amount || amount <= 0n) {
         amount = await readLiskBalance(liskTokenAddr as `0x${string}`, user)
       }
       if (!amount || amount <= 0n) throw new Error('No funds available on Lisk to bridge')
 
-      await performBridge(amount)
+      setStep('sign-bridge')
+      await new Promise((r) => setTimeout(r, 80))
+      setStep('bridging')
+
+      await bridgeWithdrawal({
+        srcVaultToken: liskToken,
+        destToken: destSymbol,
+        amount,
+        to: "optimism",
+        walletClient,
+      })
+
+      await switchOrAddChain(walletClient, CHAINS.optimism)
+
+      setStep('success')
+      setShowSuccess(true)
     } catch (e: any) {
       const code = e?.code ?? e?.error?.code
       if (code === 4001) {
@@ -347,7 +246,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Button handler (mirror Deposit modal semantics)                          */
+  /* Button Handler                                                           */
   /* ------------------------------------------------------------------------ */
 
   function onPrimary() {
@@ -358,10 +257,8 @@ export const ReviewWithdrawModal: FC<Props> = ({
 
     if (step === 'error') {
       if (withdrawOk) {
-        // withdraw done, bridge failed → resume bridge only
         void resumeBridgeOnly()
       } else {
-        // withdraw failed → restart full flow
         void handleConfirm()
       }
       return
@@ -373,17 +270,19 @@ export const ReviewWithdrawModal: FC<Props> = ({
     }
   }
 
-  const isWorking =
-    step === 'withdrawing' ||
-    step === 'sign-bridge' ||
-    step === 'bridging'
-
+  const isWorking = step === 'withdrawing' || step === 'sign-bridge' || step === 'bridging'
   const disabled = !walletClient || isWorking
 
-  // Convenience for display
   const destChainLabel = 'OP Mainnet'
   const finalTokenOnDest = destSymbol
   const finalNetAmount = netOnDest
+
+  // Fixed state logic - removes withdrawStepDone
+  const bridgeStepActive = step === 'sign-bridge' || step === 'bridging'
+  const bridgeStepDone = step === 'success' || (step === 'error' && withdrawOk)
+  const bridgeStepError = step === 'error' && err?.toLowerCase().includes('signature')
+  const withdrawStepError = step === 'error' && !withdrawOk
+  const withdrawStepActive = step === 'withdrawing'
 
   // Step hint (intermediate copy)
   const stepHint = (() => {
@@ -405,57 +304,54 @@ export const ReviewWithdrawModal: FC<Props> = ({
     return 'Review the details and confirm your withdrawal.'
   })()
 
-  // If withdraw fails (step=error && !withdrawOk), we hide the bridge block entirely
-  const showBridgeBlock = !(step === 'error' && !withdrawOk)
-
-  // Show bridge step 2 only once we actually enter bridge phase / error
-  const showBridgeStep2 =
-    step === 'sign-bridge' ||
-    step === 'bridging' ||
-    step === 'success' ||
-    trigger2InError ||
-    trigger3InError
-
-  /* ------------------------------------------------------------------------ */
-  /* Render                                                                   */
-  /* ------------------------------------------------------------------------ */
-
   return (
     <div className={`fixed inset-0 z-[100] ${open ? '' : 'pointer-events-none'}`}>
       <div
-        className={`absolute inset-0 bg-black/50 transition-opacity ${
-          open ? 'opacity-100' : 'opacity-0'
-        }`}
+        className={`absolute inset-0 bg-black/50 transition-opacity ${open ? 'opacity-100' : 'opacity-0'
+          }`}
       />
       <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
         <div
-          className={`w-full max-w-md my-8 rounded-2xl bg-background border border-border shadow-xl overflow-hidden transform transition-all ${
-            open ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
-          }`}
+          className={`w-full max-w-[400px] my-8 rounded-2xl bg-background border border-border shadow-xl overflow-hidden transform transition-all ${open ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
+            }`}
         >
-          {/* header */}
+          {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <h3 className="text-lg font-semibold">
-              {step === 'error' ? 'Review withdrawal – Error' : 'Review withdrawal'}
+            <h3 className="text-xl font-semibold">
+              {step === 'error' ? 'Withdrawal failed' : "You're withdrawing"}
             </h3>
             <button onClick={onClose} className="p-2 hover:bg-muted rounded-full">
               <X size={20} />
             </button>
           </div>
 
-          {/* body */}
-          <div className="px-5 py-4 space-y-5">
-            {/* row 1: withdrawing from vault */}
-            <div className="flex items-start gap-3">
-              <div className="relative mt-0.5">
+          <div className="px-5 space-y-0">
+            {/* Step hint */}
+            {stepHint && (
+              <div className="text-xs text-muted-foreground pt-4">
+                {stepHint}
+              </div>
+            )}
+          </div>
+
+          <div className="px-5 py-5 space-y-0">
+            {/* Step 1: Withdraw from Vault */}
+            <div className="flex items-start gap-3 pb-5 relative">
+              {/* Flow line connector */}
+              <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
+
+              {/* Icon */}
+              <div className="relative mt-0.5 shrink-0">
                 <Image
                   src={ICON.mor}
                   alt="Morpho"
-                  width={28}
-                  height={28}
-                  className="rounded-lg"
+                  width={40}
+                  height={40}
+                  className="rounded-[6px]"
                 />
               </div>
+
+              {/* Content */}
               <div className="flex-1">
                 <div className="text-lg font-semibold">Withdrawing from Vault</div>
                 <div className="text-xs text-muted-foreground">
@@ -464,26 +360,74 @@ export const ReviewWithdrawModal: FC<Props> = ({
               </div>
             </div>
 
-            {/* withdrawal failed step (reverse of deposit failed) */}
-            {step === 'error' && !withdrawOk && (
-              <div className="flex items-center gap-2 text-xs text-red-600 ml-11">
-                <AlertCircle className="h-4 w-4" />
-                <span>Withdrawal failed</span>
+            {/* Sub-step 1: Withdrawal status - only show when active or complete */}
+            {(step === 'withdrawing' || step === 'success' || step === 'error') && (
+              <div className="flex items-start gap-3 pb-5 relative">
+                {/* Flow line connector */}
+                <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
+
+                {/* Icon column - status indicator */}
+                <div className="relative mt-0.5 shrink-0">
+                  <div className="flex h-10 w-10 items-center justify-center">
+                    {withdrawStepError ? (
+                      <div className='bg-[#FEECEB] rounded-full p-1'>
+                        <Image src={AlertIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    ) : withdrawOk ? (
+                      <div className='bg-[#E7F8F0] rounded-full p-1'>
+                        <Image src={CheckIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    ) : withdrawStepActive ? (
+                      <div className='bg-[#EBF1FF] rounded-full p-1'>
+                        <Image src={InfoIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 mt-3">
+                  <div className="text-xs">
+                    {withdrawStepError
+                      ? 'Withdrawal failed'
+                      : withdrawOk
+                        ? 'Withdrawal complete'
+                        : 'Withdrawing from vault…'}
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* row 2: amount on Lisk (pre-fee estimate) */}
-            <div className="flex items-start gap-3">
-              <div className="relative mt-0.5">
+            {/* Sub-step 2: Bridge transaction status */}
+            {(bridgeStepActive || bridgeStepDone || step === 'error') && (
+              <div className="flex items-start gap-3 pb-5 relative">
+                {/* ... similar fixed logic ... */}
+                <div className="text-xs">
+                  {bridgeStepError
+                    ? 'Signature required'
+                    : bridgeStepDone
+                      ? 'Bridge transaction confirmed'
+                      : 'Sign bridge transaction…'}
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Amount on Lisk (before fees) */}
+            <div className="flex items-start gap-3 pb-5 relative">
+              {/* Flow line connector */}
+              <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
+
+              {/* Icon with network badge */}
+              <div className="relative mt-0.5 shrink-0">
                 <Image
                   src={ICON[liskToken]}
                   alt={liskToken}
-                  width={28}
-                  height={28}
+                  width={40}
+                  height={40}
                   className="rounded-full"
                 />
-                {/* Square network badge */}
-                <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+                {/* Network badge - moved further right */}
+                <div className="absolute -bottom-0.5 -right-3 rounded-sm border-2 border-background">
                   <Image
                     src="/networks/lisk.png"
                     alt="Lisk"
@@ -493,93 +437,106 @@ export const ReviewWithdrawModal: FC<Props> = ({
                   />
                 </div>
               </div>
+
+              {/* Content */}
               <div className="flex-1">
                 <div className="text-2xl font-bold">{amountOnLiskDisplay}</div>
                 <div className="text-xs text-muted-foreground">
-                  ≈ ${amountOnLiskDisplay.toFixed(2)} • {liskToken} on Lisk (before fees)
+                  ${amountOnLiskDisplay.toFixed(2)} • {liskToken} on Lisk (before fees)
                 </div>
               </div>
             </div>
 
-            {/* row 3: bridging via LI.FI (hidden entirely if withdraw step failed) */}
-            {showBridgeBlock && (
-              <div className="flex items-start gap-3">
-                <div className="relative mt-0.5">
-                  <Image
-                    src={ICON.bridge}
-                    alt="LI.FI"
-                    width={28}
-                    height={28}
-                    className="rounded-full"
-                  />
-                </div>
-                <div className="flex-1">
-                  <div className="text-lg font-semibold">Bridging via LI.FI</div>
-                  <div className="text-xs text-muted-foreground">
-                    Bridge fee (est.): {bridgeFeeAmount.toFixed(6)} {destSymbol}
-                  </div>
+            {/* Step 3: Bridging via LI.FI */}
+            <div className="flex items-start gap-3 pb-5 relative">
+              {/* Flow line connector */}
+              <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
 
-                  <div className="mt-2 space-y-2 text-xs">
-                    {/* Step 1: spending approved (initial state) */}
-                    <div className="flex items-center gap-2">
-                      {trigger1Done ? (
-                        <Check className="h-4 w-4 text-emerald-500" />
-                      ) : step === 'error' && !withdrawOk ? (
-                        <AlertCircle className="h-4 w-4 text-red-500" />
-                      ) : step === 'withdrawing' ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                      ) : (
-                        <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
-                      )}
-                      <span>{destSymbol} spending approved</span>
+              {/* LI.FI icon */}
+              <div className="relative mt-0.5 shrink-0">
+                <Image
+                  src={lifilogo.src}
+                  alt="LI.FI"
+                  width={40}
+                  height={40}
+                  className="rounded-full"
+                />
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 space-y-0">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <div className="text-lg font-semibold">Bridging via LI.FI</div>
+                    <div className="text-xs text-muted-foreground">
+                      Bridge Fee (est.): {bridgeFeeAmount.toFixed(6)} {destSymbol}
                     </div>
+                  </div>
+                  {/* Explorer link when bridge is done */}
+                  {(step === 'bridging' || step === 'success') && (
+                    <a
+                      href="#"
+                      onClick={(e) => e.preventDefault()}
+                      className="text-muted-foreground hover:text-foreground mt-0.5"
+                    >
+                      <ExternalLink size={16} />
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
 
-                    {/* Step 2: bridge transaction */}
-                    {showBridgeStep2 && (
-                      <div className="flex items-center gap-2">
-                        {trigger3InError || trigger2InError ? (
-                          <AlertCircle className="h-4 w-4 text-red-500" />
-                        ) : step === 'sign-bridge' || step === 'bridging' ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                        ) : step === 'success' ? (
-                          <Check className="h-4 w-4 text-emerald-500" />
-                        ) : (
-                          <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
-                        )}
-                        <span>
-                          {trigger3InError
-                            ? 'Bridge failed'
-                            : trigger2InError
-                            ? 'Signature required'
-                            : 'Bridge transaction confirmed'}
-                        </span>
+            {/* Sub-step 2: Bridge transaction status */}
+            {(bridgeStepActive || bridgeStepDone || step === 'error') && (
+              <div className="flex items-start gap-3 pb-5 relative">
+                {/* Flow line connector */}
+                <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
+
+                {/* Icon column - status indicator */}
+                <div className="relative mt-0.5 shrink-0">
+                  <div className="flex h-10 w-10 items-center justify-center">
+                    {bridgeStepError ? (
+                      <div className='bg-[#FEECEB] rounded-full p-1'>
+                        <Image src={AlertIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    ) : bridgeStepDone ? (
+                      <div className='bg-[#E7F8F0] rounded-full p-1'>
+                        <Image src={CheckIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    ) : (
+                      <div className='bg-[#EBF1FF] rounded-full p-1'>
+                        <Image src={InfoIconModal} alt="" className='w-4 h-4' />
                       </div>
                     )}
                   </div>
                 </div>
-                {(step === 'bridging' || step === 'success') && (
-                  <a
-                    href="#"
-                    onClick={(e) => e.preventDefault()}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <ExternalLink size={16} />
-                  </a>
-                )}
+
+                {/* Content */}
+                <div className="flex-1 mt-3">
+                  <div className="text-xs">
+                    {bridgeStepError
+                      ? 'Signature required'
+                      : bridgeStepDone
+                        ? 'Bridge transaction confirmed'
+                        : 'Sign bridge transaction…'}
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* row 4: final destination amount + fee breakdown */}
+            {/* Step 4: Final Destination */}
             <div className="flex items-start gap-3">
-              <div className="relative mt-0.5">
+              {/* Icon with network badge */}
+              <div className="relative mt-0.5 shrink-0">
                 <Image
                   src={ICON[finalTokenOnDest]}
                   alt={finalTokenOnDest}
-                  width={28}
-                  height={28}
+                  width={40}
+                  height={40}
                   className="rounded-full"
                 />
-                <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+                {/* Network badge - moved further right */}
+                <div className="absolute -bottom-0.5 -right-3 rounded-sm border-2 border-background">
                   <Image
                     src="/networks/op-icon.png"
                     alt={destChainLabel}
@@ -589,12 +546,15 @@ export const ReviewWithdrawModal: FC<Props> = ({
                   />
                 </div>
               </div>
+
+              {/* Content */}
               <div className="flex-1">
                 <div className="text-2xl font-bold">{finalNetAmount}</div>
                 <div className="text-xs text-muted-foreground">
-                  ≈ ${finalNetAmount.toFixed(2)} • {finalTokenOnDest} on {destChainLabel}
+                  ${finalNetAmount.toFixed(2)} • {finalTokenOnDest} on {destChainLabel}
                 </div>
 
+                {/* Fee breakdown */}
                 <div className="mt-2 text-[11px] text-muted-foreground space-y-0.5">
                   <div>
                     • 0.5% vault withdraw fee (~{protocolFeeAmount.toFixed(6)} {liskToken})
@@ -606,19 +566,18 @@ export const ReviewWithdrawModal: FC<Props> = ({
               </div>
             </div>
 
-            {/* No big error box – states above are the UX */}
-            {stepHint && (
-              <div className="text-xs text-muted-foreground">
-                {stepHint}
+            {err && (
+              <div className="rounded-lg bg-red-50 text-red-700 text-xs p-3 mt-2">
+                {err}
               </div>
             )}
           </div>
 
-          {/* footer */}
+          {/* Action button */}
           <div className="px-5 pb-5">
             <Button
               onClick={onPrimary}
-              className="w-full h-12 text-base bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-60 inline-flex items-center justify-center gap-2"
+              className="w-full h-12 text-white bg-blue-600 hover:bg-blue-700 font-semibold disabled:opacity-60 inline-flex items-center justify-center gap-2"
               disabled={disabled}
             >
               {isWorking && <Loader2 className="h-4 w-4 animate-spin" />}

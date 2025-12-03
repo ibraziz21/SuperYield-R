@@ -215,7 +215,7 @@ export default function VaultDetailPage() {
                         </Tooltip>
                       </p>
                       <div className="flex items-center gap-3">
-                        <div className="w-[24px] h-[24px] relative rounded-md overflow-hidden">
+                        <div className="w-[24px] h-[24px] relative rounded-[6px] overflow-hidden">
                           <Image
                             src={networkIcons[primaryVariant.network] || '/networks/default.svg'}
                             alt={primaryVariant.network}
@@ -224,7 +224,7 @@ export default function VaultDetailPage() {
                             className="rounded-none"
                           />
                         </div>
-                        <p className="font-semibold">{primaryVariant.network}</p>
+                        <p className="font-semibold text-[20px]">{primaryVariant.network}</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -246,7 +246,7 @@ export default function VaultDetailPage() {
                         </Tooltip>
                       </p>
                       <div className="flex items-center gap-3">
-                        <div className="w-[24px] h-[24px] relative rounded-md overflow-hidden">
+                        <div className="w-[24px] h-[24px] relative rounded-[6px] overflow-hidden">
                           <Image
                             src={protocolIcons[primaryVariant.protocol] || '/protocols/default.svg'}
                             alt={primaryVariant.protocol}
@@ -255,7 +255,7 @@ export default function VaultDetailPage() {
                             className="rounded-none"
                           />
                         </div>
-                        <p className="font-semibold">{primaryVariant.protocol}</p>
+                        <p className="font-semibold text-[20px]">{primaryVariant.protocol}</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -276,7 +276,7 @@ export default function VaultDetailPage() {
                           </TooltipContent>
                         </Tooltip>
                       </p>
-                      <p className="text-2xl font-semibold">
+                      <p className=" text-[20px] font-semibold">
                         $
                         {vaultVariants
                           .reduce((sum, v) => sum + Number((v.tvl || '0').toString().replace(/,/g, '')), 0)
@@ -301,7 +301,7 @@ export default function VaultDetailPage() {
                           </TooltipContent>
                         </Tooltip>
                       </p>
-                      <p className="text-2xl font-semibold">
+                      <p className=" text-[20px] font-semibold">
                         {(
                           vaultVariants.reduce((sum, v) => sum + Number(v.apy || 0), 0) /
                           (vaultVariants.length || 1)
@@ -331,7 +331,7 @@ export default function VaultDetailPage() {
                         </TooltipContent>
                       </Tooltip>
                     </p>
-                    <p className="text-2xl font-semibold text-left">
+                    <p className=" text-[20px] font-semibold text-left">
                       ${' '}
                       {userSharesHuman.toLocaleString(undefined, {
                         maximumFractionDigits: 2,
