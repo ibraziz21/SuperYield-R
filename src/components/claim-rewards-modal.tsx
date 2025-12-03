@@ -176,11 +176,10 @@ export function ClaimRewardsModal({
                         height={16}
                         className="rounded-full"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = "/tokens/default.svg"
+                          (e.target as HTMLImageElement).src = "/tokens/lisk.png"
                         }}
                       />
                     </div>
-                    <span className="text-sm text-foreground font-normal">{reward.amount}</span>
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm text-foreground">
                         {reward.amount.toFixed(2)} {reward.token}
@@ -331,7 +330,7 @@ export function ClaimRewardsModal({
                           className="rounded-full"
                           onError={(e) => {
                             (e.target as HTMLImageElement).src =
-                              "/tokens/default.svg"
+                              "/tokens/lisk.png"
                           }}
                         />
                       </div>

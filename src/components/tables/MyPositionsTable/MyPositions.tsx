@@ -18,11 +18,11 @@ type MorphoToken = "USDCe" | "USDT0" | "WETH";
 type PositionLike =
   | BasePosition
   | {
-      protocol: "Morpho Blue";
-      chain: Extract<EvmChain, "lisk">;
-      token: MorphoToken;
-      amount: bigint;
-    };
+    protocol: "Morpho Blue";
+    chain: Extract<EvmChain, "lisk">;
+    token: MorphoToken;
+    amount: bigint;
+  };
 
 const CHAIN_LABEL: Record<EvmChain, string> = { lisk: "Lisk" };
 
@@ -77,9 +77,9 @@ function findSnapshotForPosition(
       y.chain === p.chain &&
       y.protocolKey === "morpho-blue" &&
       String(y.token).toLowerCase() ===
-        (normToken === "usdce"
-          ? "usdc"
-          : normToken === "usdt0"
+      (normToken === "usdce"
+        ? "usdc"
+        : normToken === "usdt0"
           ? "usdt"
           : normToken)
   );
@@ -100,8 +100,8 @@ function findSnapshotForPosition(
     p.token === "USDCe"
       ? (TokenAddresses.USDCe as any).lisk
       : p.token === "USDT0"
-      ? (TokenAddresses.USDT0 as any).lisk
-      : (TokenAddresses.WETH as any).lisk;
+        ? (TokenAddresses.USDT0 as any).lisk
+        : (TokenAddresses.WETH as any).lisk;
 
   const fallback: YieldSnapshot = {
     id: `fallback-Morpho-${p.chain}-${String(p.token)}`,
@@ -169,11 +169,11 @@ const MyPositions: React.FC<MyPositionsProps> = ({
       };
     });
 
-    if (networkFilter && !networkFilter.includes("all")) {
+    if (networkFilter && networkFilter.length > 0 && !networkFilter.includes("all")) {
       filtered = filtered.filter((row) => networkFilter.includes(row.network));
     }
 
-    if (protocolFilter && !protocolFilter.includes("all")) {
+    if (protocolFilter && protocolFilter.length > 0 && !protocolFilter.includes("all")) {
       filtered = filtered.filter((row) => protocolFilter.includes(row.protocol));
     }
 

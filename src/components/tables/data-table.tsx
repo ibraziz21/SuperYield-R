@@ -106,14 +106,14 @@ export function DataTable<TData, TValue>({
                   colSpan={columns.length}
                   className="h-[52px] text-center"
                 >
-                  <div className="flex flex-col items-center justify-center">
-                    <p className="text-sm text-muted-foreground font-medium">{emptyMessage}</p>
+                  <div className="flex flex-col items-center justify-center py-[48px]">
+                    <p className="text-sm text-black font-medium">{emptyMessage}</p>
                     {emptySubMessage && (
                       <p className="text-xs text-muted-foreground mt-1">{emptySubMessage}</p>
                     )}
                     {showExploreVaultsButton && ( // Button renders when prop is true
                       <Button 
-                        variant="outline"
+                        variant="default"
                         size="sm"
                         className="mt-4"
                         onClick={() => router.push('/vaults')}

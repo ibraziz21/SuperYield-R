@@ -50,8 +50,8 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const network = row.getValue("network") as string;
       const iconPath = networkIcons[network] || "/networks/default.svg";
       return (
-        <div className="flex items-center justify-center gap-2">
-          <div className="relative h-6 w-6 rounded-md overflow-hidden">
+        <div className="flex items-center justify-start gap-2">
+          <div className="relative h-5 w-5 rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={network}
@@ -74,8 +74,8 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const source = row.getValue("source") as string;
       const iconPath = sourceIcons[source] || "/protocols/default.svg";
       return (
-        <div className="flex items-center justify-center gap-2">
-          <div className="relative h-6 w-6 rounded-md overflow-hidden">
+        <div className="flex items-center justify-start gap-2">
+          <div className="relative h-5 w-5 rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={source}
@@ -105,8 +105,8 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const usdValue = claimable * price;
 
       return (
-        <div className="text-center">
-          <div className="text-[14px] font-normal text-muted-foreground">
+        <div className="text-start">
+          <div className="text-[14px] font-normal text-muted-foreground text-start">
             ${usdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
@@ -121,8 +121,8 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       const token = row.getValue("token") as string;
       const iconPath = tokenIcons[token] || "/tokens/default.svg";
       return (
-        <div className="flex items-center justify-center gap-2">
-          <div className="relative h-6 w-6 rounded-md overflow-hidden">
+        <div className="flex items-center justify-start gap-2">
+          <div className="relative h-5 w-5 rounded-md overflow-hidden">
             <Image
               src={iconPath}
               alt={token}

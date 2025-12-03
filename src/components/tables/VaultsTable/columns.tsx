@@ -69,8 +69,8 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
                 : tokenIcons.DAI) || "/tokens/default.svg";
 
       return (
-        <div className="flex items-center justify-center gap-2">
-          <div className="w-6 h-6 relative">
+        <div className="flex items-center justify-start gap-2">
+          <div className="w-5 h-5 relative">
             <Image
               src={iconPath}
               alt={vault}
@@ -98,8 +98,8 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
       const iconPath = networkIcons[network] || "/networks/default.svg";
 
       return (
-        <div className="flex items-center justify-center gap-2">
-          <div className="w-6 h-6 relative rounded-sm overflow-hidden">
+        <div className="flex items-center justify-start gap-2">
+          <div className="w-5 h-5 relative rounded-sm overflow-hidden">
             <Image
               src={iconPath}
               alt={network}
@@ -127,8 +127,8 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
       const iconPath = protocolIcons[protocol] || "/protocols/default.svg";
 
       return (
-        <div className="flex items-center justify-center gap-2">
-          <div className="w-6 h-6 relative rounded-sm overflow-hidden">
+        <div className="flex items-center justify-start gap-2">
+          <div className="w-5 h-5 relative rounded-sm overflow-hidden">
             <Image
               src={iconPath}
               alt={protocol}
@@ -155,7 +155,7 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
       const tvl = row.getValue("tvl") as string;
 
       return (
-        <div className="text-center">
+        <div className="text-start">
           <div className="font-medium">${tvl}</div>
         </div>
       );
@@ -171,7 +171,7 @@ export const VaultsColumns: ColumnDef<Vault>[] = [
       const apy = row.getValue("apy") as string;
 
       return (
-        <div className="text-center">
+        <div className="text-start">
           <div className="font-medium ">{apy}%</div>
         </div>
       );

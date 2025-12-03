@@ -71,8 +71,8 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
           : tokenIcons.DAI) || "/tokens/default.svg";
 
       return (
-        <div className="flex items-center justify-center gap-2">
-          <div className="w-6 h-6 relative">
+        <div className="flex items-center justify-start gap-2">
+          <div className="w-5 h-5 relative">
             <Image
               src={iconPath}
               alt={vault}
@@ -100,8 +100,8 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
       const iconPath = networkIcons[network] || "/networks/default.svg";
 
       return (
-        <div className="flex items-center justify-center gap-2">
-          <div className="w-6 h-6 relative rounded-sm overflow-hidden">
+        <div className="flex items-center justify-start gap-2">
+          <div className="w-5 h-5 relative rounded-sm overflow-hidden">
             <Image
               src={iconPath}
               alt={network}
@@ -128,7 +128,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
       const deposits = row.getValue("deposits") as string;
 
       return (
-        <div className="text-center">
+        <div className="text-start">
           <div className="font-medium ">${deposits}</div>
         </div>
       );
@@ -145,8 +145,8 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
       const iconPath = protocolIcons[protocol] || "/protocols/default.svg";
 
       return (
-        <div className="flex items-center justify-center gap-2">
-          <div className="w-6 h-6 relative rounded-sm overflow-hidden">
+        <div className="flex items-center justify-start gap-2">
+          <div className="w-5 h-5 relative rounded-sm overflow-hidden">
             <Image
               src={iconPath}
               alt={protocol}
@@ -173,7 +173,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
       const apy = row.getValue("apy") as string;
 
       return (
-        <div className="text-center">
+        <div className="text-start">
           <div className="font-medium ">{apy}%</div>
         </div>
       );

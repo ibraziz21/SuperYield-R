@@ -441,12 +441,12 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                   </div>
                 </div>
 
-                {/* Route & Fees */}
+                {/* Routing via LI.FI bridge */}
                 <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm font-medium">
                       <ShieldCheck className="h-4 w-4" />
-                      Route & Fees
+                      Routing via LI.FI bridge
                     </div>
                     {route && route !== 'On-chain' ? (
                       <span className="inline-flex items-center gap-2 text-xs text-gray-500">

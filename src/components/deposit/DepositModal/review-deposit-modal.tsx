@@ -9,7 +9,7 @@ import { useAppKit } from '@reown/appkit/react'
 import { useWalletClient } from 'wagmi'
 import { parseUnits } from 'viem'
 import type { YieldSnapshot } from '@/hooks/useYields'
-import lifilogo from '@/public/logo_lifi_light.png'
+import lifilogo from '@/public/lifi.png'
 import { getBridgeQuote } from '@/lib/quotes'
 import { switchOrAddChain, CHAINS } from '@/lib/wallet'
 import { bridgeTokens } from '@/lib/bridge'
@@ -18,12 +18,24 @@ import { readWalletBalance } from '../helpers'
 import { depositMorphoOnLiskAfterBridge } from '@/lib/depositor'
 import { switchOrAddChainStrict } from '@/lib/switch'
 import { DepositSuccessModal } from './deposit-success-modal'
+import InfoIconModal from "../../../../public/info-icon-modal.svg"
+import CheckIconModal from "../../../../public/check-icon-modal.svg"
+import AlertIconModal from "../../../../public/alert-icon-modal.svg"
 
 type FlowStep = 'idle' | 'bridging' | 'depositing' | 'success' | 'error'
+
+interface DepositSuccessData {
+  amount: number
+  sourceToken: string
+  destinationAmount: number
+  destinationToken: string
+  vault: string
+}
 
 interface ReviewDepositModalProps {
   open: boolean
   onClose: () => void
+  onSuccess: (data: DepositSuccessData) => void
   snap: YieldSnapshot
 
   amount: string
@@ -54,6 +66,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   const {
     open,
     onClose,
+    onSuccess,
     snap,
     amount,
     sourceSymbol,
@@ -83,8 +96,8 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   const [destAddr, setDestAddr] = useState<`0x${string}` | null>(null)
   const [preBal, setPreBal] = useState<bigint>(0n)
 
-  // success modal
-  const [showSuccess, setShowSuccess] = useState(false)
+  // Track actual approval completion
+  const [approvalDone, setApprovalDone] = useState(false)
 
   const canStart = open && !!walletClient && Number(amount) > 0
 
@@ -135,7 +148,6 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
           })
           await depositMorphoOnLiskAfterBridge(snap, toDeposit, wc)
           setStep('success')
-          setShowSuccess(true)
         }
       } catch (e) {
         console.error(TAG, '[focus] failed', e)
@@ -174,7 +186,14 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       await depositMorphoOnLiskAfterBridge(snap, amt, wc)
       console.info(TAG, '✅ deposit complete (retry)')
       setStep('success')
-      setShowSuccess(true)
+      onSuccess({
+        amount: Number(amount || 0),
+        sourceToken: sourceTokenLabel,
+        destinationAmount: Number(receiveDisplay ?? 0),
+        destinationToken: destTokenLabel,
+        vault: `Re7 ${snap.token} Vault (Morpho Blue)`,
+      })
+      onClose()
     } catch (e: any) {
       console.error(TAG, 'retry deposit error', e)
       setError(e?.message ?? String(e))
@@ -189,6 +208,8 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     }
     setError(null)
     setBridgeOk(false)
+    // Reset approval state when starting new flow
+    setApprovalDone(false)
 
     try {
       const inputAmt = parseUnits(
@@ -204,8 +225,8 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         destTokenLabel === 'USDCe'
           ? (TokenAddresses.USDCe.lisk as `0x${string}`)
           : destTokenLabel === 'USDT0'
-          ? (TokenAddresses.USDT0.lisk as `0x${string}`)
-          : (TokenAddresses.WETH.lisk as `0x${string}`)
+            ? (TokenAddresses.USDT0.lisk as `0x${string}`)
+            : (TokenAddresses.WETH.lisk as `0x${string}`)
 
       setDestAddr(_destAddr)
       setCachedInputAmt(inputAmt)
@@ -245,9 +266,12 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         walletClient,
         {
           sourceToken: srcToken,
-          onUpdate: () => {},
+          onUpdate: () => { },
         },
       )
+
+      // Mark approval as done only after bridgeTokens succeeds
+      setApprovalDone(true)
 
       // ---- Grace wait (≈60s), then poll until landing or timeout ----
       const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms))
@@ -282,7 +306,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       setCachedMinOut(landed)
       setStep('depositing')
 
-      // 🔐 Use the strict helper so we get a fresh Lisk client
+      // Use the strict helper so we get a fresh Lisk client
       const wc = await ensureLiskWalletClient()
       const userLisk = wc.account!.address as `0x${string}`
 
@@ -300,7 +324,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
 
       await depositMorphoOnLiskAfterBridge(snap, toDeposit, wc)
 
-      // 🔁 Optional: switch back to OP Mainnet
+      // Optional: switch back to OP Mainnet
       try {
         await switchOrAddChain(wc, srcViem)
       } catch (switchErr) {
@@ -308,7 +332,14 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       }
 
       setStep('success')
-      setShowSuccess(true)
+      onSuccess({
+        amount: Number(amount || 0),
+        sourceToken: sourceTokenLabel,
+        destinationAmount: Number(receiveDisplay ?? 0),
+        destinationToken: destTokenLabel,
+        vault: `Re7 ${snap.token} Vault (Morpho Blue)`,
+      })
+      onClose()
     } catch (e: any) {
       setError(e?.message ?? String(e))
       setStep('error')
@@ -325,21 +356,19 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       : step === 'depositing' ||
         step === 'success' ||
         (step === 'error' && bridgeOk)
-      ? 'done'
-      : step === 'error'
-      ? 'error'
-      : 'idle'
+        ? 'done'
+        : step === 'error'
+          ? 'error'
+          : 'idle'
 
   const depositState: 'idle' | 'working' | 'done' | 'error' =
     step === 'depositing'
       ? 'working'
       : step === 'success'
-      ? 'done'
-      : step === 'error' && bridgeState === 'done'
-      ? 'error'
-      : 'idle'
-
-      
+        ? 'done'
+        : step === 'error' && bridgeState === 'done'
+          ? 'error'
+          : 'idle'
 
   // ---------- Retry semantics ----------
   const primaryCta =
@@ -348,14 +377,14 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
         ? 'Retry deposit'
         : 'Try again'
       : step === 'idle'
-      ? 'Deposit'
-      : step === 'bridging'
-      ? `Sign bridge transaction…`
-      : step === 'depositing'
-      ? 'Depositing…'
-      : step === 'success'
-      ? 'Done'
-      : 'Working…'
+        ? 'Deposit'
+        : step === 'bridging'
+          ? `Sign bridge transaction…`
+          : step === 'depositing'
+            ? 'Depositing…'
+            : step === 'success'
+              ? 'Done'
+              : 'Working…'
 
   const onPrimary = () => {
     if (step === 'error') {
@@ -365,11 +394,13 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       }
       setError(null)
       setStep('idle')
+      // Reset approval state on retry
+      setApprovalDone(false)
       void handleConfirm()
       return
     }
     if (step === 'success') {
-      setShowSuccess(true)
+      onClose()
       return
     }
     if (step === 'idle') {
@@ -383,8 +414,8 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     sourceSymbol === 'USDT'
       ? '/tokens/usdt-icon.png'
       : sourceSymbol === 'USDT0'
-      ? '/tokens/usdt0-icon.png'
-      : '/tokens/usdc-icon.png'
+        ? '/tokens/usdt0-icon.png'
+        : '/tokens/usdc-icon.png'
 
   const sourceTokenLabel = sourceSymbol
   const sourceChainLabel = 'OP Mainnet'
@@ -395,18 +426,28 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
 
   type DotState = 'pending' | 'idle' | 'active' | 'done' | 'error'
 
-  // Dot 1: Approve spending [token]
-  const dot1: DotState = step === 'idle' ? 'pending' : 'done'
+  // Dot 1: Approve spending
+  const dot1: DotState = approvalDone ? 'done' : 'pending'
 
   // Dot 2: Bridge tx signature / confirmation
   const dot2: DotState =
     step === 'bridging' && !bridgeOk
       ? 'active'
       : bridgeFailedBeforeLanding
-      ? 'error'
-      : step === 'depositing' || step === 'success' || depositFailedAfterBridge
-      ? 'done'
-      : 'idle'
+        ? 'error'
+        : step === 'depositing' || step === 'success' || depositFailedAfterBridge
+          ? 'done'
+          : 'idle'
+
+  // Dot 3: Deposit in vault
+  const dot3: DotState =
+    step === 'depositing'
+      ? 'active'
+      : step === 'success'
+        ? 'done'
+        : depositFailedAfterBridge
+          ? 'error'
+          : 'idle'
 
   // ---------- Step hint (intermediate status copy) ----------
   const stepHint = (() => {
@@ -422,7 +463,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
     if (step === 'error') {
       return 'Something went wrong. Check the error below and try again.'
     }
-    return 'Review the details and confirm your deposit.'
+    return 'You’re depositing.'
   })()
 
   const isWorking = step === 'bridging' || step === 'depositing'
@@ -430,19 +471,18 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   return (
     <div className={`fixed inset-0 z-[100] ${open ? '' : 'pointer-events-none'}`}>
       <div
-        className={`absolute inset-0 bg-black/50 transition-opacity ${
-          open ? 'opacity-100' : 'opacity-0'
-        }`}
+        className={`absolute inset-0 bg-black/50 transition-opacity ${open ? 'opacity-100' : 'opacity-0'
+          }`}
       />
       <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
         <div
-          className={`w-full max-w-lg my-8 rounded-2xl bg-background border border-border shadow-xl overflow-hidden transform transition-all ${
-            open ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
-          }`}
+          className={`w-full max-w-[400px] my-8 rounded-2xl bg-background border border-border shadow-xl overflow-hidden transform transition-all ${open ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
+            }`}
         >
+          {/* Header - Updated with ETA */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <h3 className="text-xl font-semibold">
-              {step === 'error' ? 'Review deposit – Error' : 'Review deposit'}
+            <h3 className="text-xl font-semibold flex items-center gap-2">
+              {step === 'error' ? 'Deposit failed' : "You're depositing"}
             </h3>
             <button
               onClick={onClose}
@@ -452,10 +492,28 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
             </button>
           </div>
 
-          <div className="px-5 py-4 space-y-5">
-            {/* source */}
-            <div className="flex items-start gap-3">
-              <div className="relative mt-0.5">
+          <div className='px-5 space-y-0'>
+            {/* Status hint and error */}
+            {stepHint && (
+              <div className="text-xs text-muted-foreground pt-4">
+                {stepHint}
+              </div>
+            )}
+            {/* ETA Badge */}
+            {(step === 'bridging' || step === 'depositing') && (
+              <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-md">
+                ≈ 2-5 mins
+              </span>
+            )}
+          </div>
+          <div className="px-5 py-5 space-y-0">
+            {/* Step 1: Source */}
+            <div className="flex items-start gap-3 pb-5 relative">
+              {/* Flow line connector */}
+              <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
+
+              {/* Icon with adjusted network badge position */}
+              <div className="relative mt-0.5 shrink-0">
                 <Image
                   src={sourceIcon}
                   alt={sourceTokenLabel}
@@ -463,8 +521,8 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                   height={40}
                   className="rounded-full"
                 />
-                {/* Square network badge */}
-                <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
+                {/* Network badge - moved further right */}
+                <div className="absolute -bottom-0.5 -right-3 rounded-sm border-2 border-background">
                   <Image
                     src="/networks/op-icon.png"
                     alt={sourceChainLabel}
@@ -474,170 +532,267 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
                   />
                 </div>
               </div>
+
+              {/* Content */}
               <div className="flex-1">
                 <div className="text-2xl font-bold">
                   {Number(amountNumber).toString()}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  ${amountNumber.toFixed(2)} • {sourceTokenLabel} on{' '}
+                  ${amountNumber.toFixed(2)} • {sourceTokenLabel} on {' '}
                   {sourceChainLabel}
                 </div>
               </div>
-              {/* No status icon here anymore – handled in dots */}
             </div>
 
-           {/* bridge – always shown now */}
-<div className="space-y-2">
-  {/* Main LI.FI row */}
-  <div className="flex items-start gap-3">
-    {/* LI.FI icon (column 1) */}
-    <div className="relative mt-0.5">
-      <Image
-        src={lifilogo.src}
-        alt="bridge"
-        width={40}
-        height={40}
-        className="rounded-full"
-      />
-    </div>
+            {/* Step 2: Bridge */}
+            <div className="flex items-start gap-3 pb-5 relative">
+              {/* Flow line connector */}
+              <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
 
-    {/* Main text (column 2) */}
-    <div className="flex-1">
-      <div className="text-lg font-semibold">Bridging via LI.FI</div>
-      <div className="text-xs text-muted-foreground">
-        Bridge Fee: {feeDisplay.toFixed(4)} {sourceSymbol}
-      </div>
-      <div className="text-xs text-muted-foreground">
-        {routeLabel}
-      </div>
-    </div>
+              {/* LI.FI icon */}
+              <div className="relative mt-0.5 shrink-0">
+                <Image
+                  src={lifilogo.src}
+                  alt="bridge"
+                  width={40}
+                  height={40}
+                  className="rounded-full"
+                />
+              </div>
 
-    {/* Explorer link when bridge is done */}
-    {bridgeState === 'done' && (
-      <a
-        href="#"
-        className="text-muted-foreground hover:text-foreground"
-        onClick={(e) => e.preventDefault()}
-      >
-        <ExternalLink size={16} />
-      </a>
-    )}
-  </div>
+              {/* Content - REMOVED Explorer link */}
+              <div className="flex-1 space-y-0">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <div className="text-lg font-semibold">Bridging via LI.FI</div>
+                    <div className="text-xs text-muted-foreground">
+                      Bridge Fee: {feeDisplay.toFixed(4)} {sourceSymbol}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
- {/* Step 1: Approve spending */}
-<div className="flex items-center gap-3 text-xs">
-  {/* Icon column: same width as main token/Li.Fi icons */}
-  <div className="flex h-10 w-10 items-center justify-center">
-    {dot1 === 'done' ? (
-      <Check className="h-3 w-3 text-emerald-500" />
-    ) : (
-      <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/40" />
-    )}
-  </div>
+            {/* Sub-step 1: Approve spending - Show only when bridging, before approval is done */}
+            {step === 'bridging' && !approvalDone && (
+              <div className="flex items-start gap-3 pb-5 relative">
+                {/* Flow line connector */}
+                <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
 
-  {/* Text column */}
-  <div className="flex-1">
-    {dot1 === 'done'
-      ? `${sourceTokenLabel} spending approved`
-      : `Approve ${sourceTokenLabel} spending`}
-  </div>
-</div>
+                {/* Icon column - status indicator */}
+                <div className="relative mt-0.5 shrink-0">
+                  <div className="flex h-10 w-10 items-center justify-center">
+                    <div className='bg-[#EBF1FF] rounded-full p-1'>
+                      <Image src={InfoIconModal} alt="" className='w-4 h-4' />
+                    </div>
+                  </div>
+                </div>
 
-{/* Step 2: Bridge tx – only visible once user is signing / has signed */}
-{(step === 'bridging' ||
-  step === 'depositing' ||
-  step === 'success' ||
-  bridgeFailedBeforeLanding ||
-  depositFailedAfterBridge) && (
-  <div className="flex items-center gap-3 text-xs">
-    {/* Icon column: same width, centered */}
-    <div className="flex h-10 w-10 items-center justify-center">
-      {dot2 === 'error' ? (
-        <AlertCircle className="h-3 w-3 text-red-500" />
-      ) : dot2 === 'done' ? (
-        <Check className="h-3 w-3 text-emerald-500" />
-      ) : dot2 === 'active' ? (
-        <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-      ) : (
-        <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/40" />
-      )}
-    </div>
+                {/* Content */}
+                <div className="flex-1 mt-3">
+                  <div className="text-xs">
+                    Approve {sourceTokenLabel} spending
+                  </div>
+                </div>
+              </div>
+            )}
 
-    {/* Text column */}
-    <div className="flex-1">
-      {dot2 === 'error'
-        ? 'Signature required'
-        : dot2 === 'done'
-        ? 'Bridge transaction confirmed'
-        : 'Sign bridge transaction'}
-    </div>
-  </div>
-)}
-</div>
+            {/* Sub-step 1: Approval complete - Show when approval is done */}
+            {(step === 'bridging' && approvalDone) || (step !== 'idle' && step !== 'bridging') && (
+              <div className="flex items-start gap-3 pb-5 relative">
+                {/* Flow line connector */}
+                <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
 
-          {/* destination */}
-<div className="flex items-start gap-3">
-  <div className="relative mt-0.5">
-    <Image
-      src={
-        destTokenLabel === 'USDT0'
-          ? '/tokens/usdt0-icon.png'
-          : destTokenLabel === 'USDCe'
-          ? '/tokens/usdc-icon.png'
-          : '/tokens/weth.png'
-      }
-      alt={destTokenLabel}
-      width={40}
-      height={40}
-      className="rounded-full"
-    />
-    {/* Square network badge */}
-    <div className="absolute -bottom-0.5 -right-0.5 rounded-sm border-2 border-background">
-      <Image
-        src="/networks/lisk.png"
-        alt="Lisk"
-        width={16}
-        height={16}
-        className="rounded-sm"
-      />
-    </div>
-  </div>
-  <div className="flex-1">
-    <div className="text-2xl font-bold">
-      {(receiveDisplay ?? 0).toFixed(4)}
-    </div>
-    <div className="text-xs text-muted-foreground">
-      ≈ ${amountNumber.toFixed(2)} • {destTokenLabel} on Lisk
-    </div>
+                {/* Icon column - status indicator */}
+                <div className="relative mt-0.5 shrink-0">
+                  <div className="flex h-10 w-10 items-center justify-center">
+                    <div className='bg-[#E7F8F0] rounded-full p-1'>
+                      <Image src={CheckIconModal} alt="" className='w-4 h-4' />
+                    </div>
+                  </div>
+                </div>
 
-    {/* Deposit failed status – only when bridge succeeded but deposit errored */}
-    {depositFailedAfterBridge && (
-      <div className="mt-2 flex items-center gap-3 text-xs">
-        {/* icon column, centered & same width as other icons */}
-        <div className="flex h-10 w-10 items-center justify-center">
-          <AlertCircle className="h-3 w-3 text-red-500" />
-        </div>
-        {/* text column */}
-        <div className="flex-1">
-          Deposit failed
-        </div>
-      </div>
-    )}
-  </div>
-</div>
+                {/* Content */}
+                <div className="flex-1 mt-3">
+                  <div className="text-xs">
+                    {sourceTokenLabel} spending approved
+                  </div>
+                </div>
+              </div>
+            )}
 
-            {/* vault */}
+            {/* Sub-step 2: Bridge transaction - Show only when relevant, aligned like main steps */}
+            {(step === 'bridging' || step === 'depositing' || step === 'success' || step === 'error') && (
+              <div className="flex items-start gap-3 pb-5 relative">
+                {/* Flow line connector */}
+                <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
+
+                {/* Icon column - status indicator */}
+                <div className="relative mt-0.5 shrink-0">
+                  <div className="flex h-10 w-10 items-center justify-center">
+                    {dot2 === 'error' ? (
+                      <div className='bg-[#FEECEB] rounded-full p-1'>
+                        <Image src={AlertIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    ) : dot2 === 'done' ? (
+                      <div className='bg-[#E7F8F0] rounded-full p-1'>
+                        <Image src={CheckIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    ) : dot2 === 'active' ? (
+                      <div className='bg-[#EBF1FF] rounded-full p-1'>
+                        <Image src={InfoIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    ) : (
+                      <div className='bg-[#EBF1FF] rounded-full p-1'>
+                        <Image src={InfoIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Content - WITH justify-between and Explorer link */}
+                <div className="flex-1 mt-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs">
+                      {dot2 === 'error'
+                        ? 'Signature required'
+                        : dot2 === 'done'
+                          ? 'Bridge transaction confirmed'
+                          : 'Sign bridge transaction'}
+                    </div>
+                    {/* Explorer link moved here */}
+                    {dot2 === 'done' && (
+                      <a
+                        href="#"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={(e) => e.preventDefault()}
+                        title="View on explorer"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Destination */}
+            <div className="flex items-start gap-3 pb-5 relative">
+              {/* Flow line connector */}
+              <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
+
+              {/* Icon with adjusted network badge position */}
+              <div className="relative mt-0.5 shrink-0">
+                <Image
+                  src={
+                    destTokenLabel === 'USDT0'
+                      ? '/tokens/usdt0-icon.png'
+                      : destTokenLabel === 'USDCe'
+                        ? '/tokens/usdc-icon.png'
+                        : '/tokens/weth.png'
+                  }
+                  alt={destTokenLabel}
+                  width={40}
+                  height={40}
+                  className="rounded-full"
+                />
+                {/* Network badge - moved further right */}
+                <div className="absolute -bottom-0.5 -right-3 rounded-sm border-2 border-background">
+                  <Image
+                    src="/networks/lisk.png"
+                    alt="Lisk"
+                    width={16}
+                    height={16}
+                    className="rounded-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1">
+                <div className="text-2xl font-bold">
+                  {(receiveDisplay ?? 0).toFixed(4)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  ${amountNumber.toFixed(2)} • {destTokenLabel} on Lisk
+                </div>
+
+                {/* Deposit failed status */}
+                {depositFailedAfterBridge && (
+                  <div className="mt-2 flex items-center gap-3 text-xs">
+                    <div className="flex h-10 w-10 items-center justify-center shrink-0">
+                      <div className='bg-[#E7F8F0] rounded-full p-1'>
+                        <Image src={AlertIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    </div>
+                    <div className="flex-1 text-red-500">
+                      Deposit failed
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Sub-step 3: Vault deposit - Show only when relevant, aligned like main steps */}
+            {(step === 'depositing' || step === 'success' || step === 'error') && (
+              <div className="flex items-start gap-3 pb-5 relative">
+                {/* Flow line connector */}
+                <div className="absolute left-5 top-10 bottom-0 w-px bg-border" aria-hidden="true" />
+
+                {/* Icon column - status indicator */}
+                <div className="relative mt-0.5 shrink-0">
+                  <div className="flex h-10 w-10 items-center justify-center">
+                    {dot3 === 'error' ? (
+                      <div className='bg-[#FEECEB] rounded-full p-1'>
+                        <Image src={AlertIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    ) : dot3 === 'done' ? (
+                      <div className='bg-[#E7F8F0] rounded-full p-1'>
+                        <Image src={CheckIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    ) : dot3 === 'active' ? (
+                      <div className='bg-[#EBF1FF] rounded-full p-1'>
+                        <Image src={InfoIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    ) : (
+                      <div className='bg-[#EBF1FF] rounded-full p-1'>
+                        <Image src={InfoIconModal} alt="" className='w-4 h-4' />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 mt-3">
+                  <div className="text-xs">
+                    {dot3 === 'error'
+                      ? 'Vault deposit failed'
+                      : dot3 === 'done'
+                        ? 'Successfully deposited in vault'
+                        : dot3 === 'active'
+                          ? 'Depositing in vault…'
+                          : 'Waiting for deposit…'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: Vault */}
             <div className="flex items-start gap-3">
-              <div className="relative mt-0.5">
+              {/* Icon */}
+              <div className="relative mt-0.5 shrink-0">
                 <Image
                   src="/protocols/morpho-icon.png"
                   alt="Morpho"
                   width={40}
                   height={40}
-                  className="rounded-lg"
+                  className="rounded-[6px]"
                 />
               </div>
-              <div className="flex-1">
+
+              {/* Content */}
+              <div className="flex-1 space-y-0">
                 <div className="text-lg font-semibold">Depositing in Vault</div>
                 <div className="text-xs text-muted-foreground">
                   Re7 {snap.token} Vault (Morpho Blue)
@@ -645,17 +800,14 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
               </div>
             </div>
 
-            {stepHint && (
-              <div className="text-xs text-muted-foreground">{stepHint}</div>
-            )}
-
             {error && (
-              <div className="rounded-lg bg-red-50 text-red-700 text-xs p-3">
+              <div className="rounded-lg bg-red-50 text-red-700 text-xs p-3 mt-2">
                 {error}
               </div>
             )}
           </div>
 
+          {/* Action button */}
           <div className="px-5 pb-5">
             <Button
               onClick={onPrimary}
@@ -668,22 +820,6 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
           </div>
         </div>
       </div>
-
-      {showSuccess && (
-        <DepositSuccessModal
-          amount={Number(amount || 0)}
-          sourceToken={
-            sourceTokenLabel as 'USDC' | 'USDT' | 'USDCe' | 'USDT0'
-          }
-          destinationAmount={Number(receiveDisplay ?? 0)}
-          destinationToken={destTokenLabel}
-          vault={`Re7 ${snap.token} Vault (Morpho Blue)`}
-          onClose={() => {
-            setShowSuccess(false)
-            onClose()
-          }}
-        />
-      )}
     </div>
   )
 }
