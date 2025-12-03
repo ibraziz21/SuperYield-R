@@ -176,7 +176,7 @@ export function ClaimRewardsModal({
                         height={16}
                         className="rounded-full"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = "/tokens/default.svg"
+                          (e.target as HTMLImageElement).src = "/tokens/lisk.png"
                         }}
                       />
                     </div>
@@ -330,7 +330,7 @@ export function ClaimRewardsModal({
                           className="rounded-full"
                           onError={(e) => {
                             (e.target as HTMLImageElement).src =
-                              "/tokens/default.svg"
+                              "/tokens/lisk.png"
                           }}
                         />
                       </div>
