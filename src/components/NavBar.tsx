@@ -405,7 +405,7 @@ export function Navbar() {
               <div className="rounded-2xl border border-border/60 bg-white shadow-xl overflow-hidden">
                 {!address ? (
                   <div className="p-4 space-y-3">
-                    <div className="text-sm text-muted-foreground">You're not connected</div>
+                    <div className="text-sm text-muted-foreground">You&apos;re not connected</div>
                     <Button
                       onClick={() => {
                         open({ view: 'Connect' })
