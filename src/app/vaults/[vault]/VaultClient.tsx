@@ -80,6 +80,12 @@ export default function VaultDetailPage() {
   const vaultCanonical: 'USDC' | 'USDT' | undefined = CANONICAL[vaultSlugKey]
   const headerLabel = vaultSlugKey || 'Vault'
 
+    // 🔹 Human-facing label for the header
+    const headerDisplayLabel =
+    ['USDC', 'USDCE', 'USDC.E'].includes(vaultSlugKey)
+      ? 'USDC.e'
+      : headerLabel
+
   // ── Hooks must always run, regardless of connection state ──
   const { yields, isLoading, error } = useYields()
   const { data: positionsRaw } = usePositions()
@@ -183,9 +189,10 @@ export default function VaultDetailPage() {
                 className="rounded-full"
               />
               <div>
-                <h1 className="text-xl md:text-2xl  font-semibold">
-                  Re7 {headerLabel} <span className='text-[#9CA3AF]'>Vault</span>
-                </h1>
+              <h1 className="text-xl md:text-2xl font-semibold">
+  Re7 {headerDisplayLabel} <span className="text-[#9CA3AF]">Vault</span>
+</h1>
+
               </div>
             </div>
           </div>
