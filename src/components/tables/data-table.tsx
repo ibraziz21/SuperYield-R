@@ -60,7 +60,7 @@ export function DataTable<TData, TValue>({
 
   return (
     <div>
-      <div className="rounded-[20px] bg-white border my-3">
+      <div className="rounded-[20px] bg-white border my-3 overflow-hidden">
         {children}
         <Table>
           <TableHeader>

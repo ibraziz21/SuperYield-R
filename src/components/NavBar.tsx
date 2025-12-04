@@ -376,7 +376,7 @@ export function Navbar() {
                 src={ecovaults}
                 alt="ecovaults"
                 width={120}
-                height={24}
+                height={36}
                 className="h-6 w-auto object-contain"
                 priority
               />
