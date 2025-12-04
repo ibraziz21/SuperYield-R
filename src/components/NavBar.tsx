@@ -282,7 +282,7 @@ export function Navbar() {
                   aria-haspopup="menu"
                 >
                   <div className="h-5 w-5 rounded-full bg-gradient-to-br from-teal-500 to-cyan-500 ring-1 ring-black/5 flex-shrink-0" />
-                  <span className="max-w-[92px] truncate">
+                  <span className="max-w-[92px] whitespace-nowrap">
                     {shortAddr(address)}
                   </span>
                 </button>
