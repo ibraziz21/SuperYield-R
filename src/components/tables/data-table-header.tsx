@@ -1,14 +1,17 @@
 import { cn } from "@/lib/utils";
-import { Button } from "../ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
   CaretSortIcon,
-  EyeNoneIcon,
 } from "@radix-ui/react-icons";
 import { Column } from "@tanstack/react-table";
-
 
 interface DataTableColumnHeaderProps<TData, TValue>
   extends React.HTMLAttributes<HTMLDivElement> {
@@ -21,28 +24,25 @@ export function DataTableColumnHeader<TData, TValue>({
   title,
   className,
 }: DataTableColumnHeaderProps<TData, TValue>) {
+  // Non-sortable: plain label, no hover
   if (!column.getCanSort()) {
-    return <div className={cn("flex items-center justify-start", className)}>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-8 text-black hover:bg-gray-100 hover:text-black data-[state=open]:bg-gray-100"
-      >
-        <span className="text-xs text-center font-medium">{title}</span>
-      </Button>
-    </div>;
+    return (
+      <div className={cn("flex items-center justify-start", className)}>
+        <span className="text-xs font-medium text-black">{title}</span>
+      </div>
+    );
   }
 
+  // Sortable: clickable label, but no visual hover effect
   return (
     <div className={cn("flex items-center justify-start", className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 text-black hover:bg-gray-100 hover:text-black data-[state=open]:bg-gray-100"
+          <div
+            className="flex items-center text-black text-xs font-medium cursor-pointer select-none"
+            // optional: you can add focus ring if you want accessibility
           >
-            <span className="text-xs text-center font-medium">{title}</span>
+            <span>{title}</span>
             {column.getIsSorted() === "desc" ? (
               <ArrowDownIcon className="ml-2 h-4 min-w-[16px]" />
             ) : column.getIsSorted() === "asc" ? (
@@ -50,7 +50,7 @@ export function DataTableColumnHeader<TData, TValue>({
             ) : (
               <CaretSortIcon className="ml-2 h-4 min-w-[16px]" />
             )}
-          </Button>
+          </div>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
           <DropdownMenuItem onClick={() => column.toggleSorting(false)}>
@@ -62,10 +62,6 @@ export function DataTableColumnHeader<TData, TValue>({
             Desc
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => column.toggleVisibility(false)}>
-            <EyeNoneIcon className="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
-            Hide
-          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

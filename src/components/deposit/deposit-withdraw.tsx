@@ -713,9 +713,8 @@ export function DepositWithdraw({
               ) : (
                 <div className="relative">
                   <button
-                    type="button"
-                    onClick={() => setShowWithdrawMenu((v) => !v)}
-                    className="flex items-center gap-2.5 bg-background rounded-xl hover:bg-muted/50 transition-colors border border-border px-3 py-2"
+                    type="button" 
+                    className="flex items-center gap-2.5 bg-background rounded-xl transition-colors border border-border px-3 py-2"
                   >
                     <div className="relative">
                       <Image
