@@ -517,16 +517,29 @@ export function DepositWithdraw({
   const withdrawChoices = useMemo(() => {
     const isUSDT = destTokenLabel === 'USDT0';
     const stableSymbol = isUSDT ? 'USDT' : 'USDC';
+    if(stableSymbol === 'USDT') {
     return [
       {
         id: 'optimism' as const,
         chainLabel: 'OP Mainnet',
         symbol: stableSymbol,
-        icon: '/networks/op-icon.png',
+        icon: '/tokens/usdt-icon.png',
         description: `Bridge to OP ${stableSymbol}`,
       },
       // no Base option anymore
     ];
+  }
+    return [
+      {
+        id: 'optimism' as const,
+        chainLabel: 'OP Mainnet',
+        symbol: stableSymbol,
+        icon: '/tokens/usdc-icon.png',
+        description: `Bridge to OP ${stableSymbol}`,
+      },
+      // no Base option anymore
+    ];
+  
   }, [destTokenLabel]);
 
   const currentWithdrawChoice =
@@ -726,7 +739,7 @@ export function DepositWithdraw({
                     <span className="font-semibold text-base">
                       {currentWithdrawChoice.symbol}
                     </span>
-                    <ChevronDown size={18} className="text-muted-foreground" />
+                    {/* <ChevronDown size={18} className="text-muted-foreground" /> */}
                   </button>
 
                   {showWithdrawMenu && (
