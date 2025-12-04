@@ -508,12 +508,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   </div>
 )}
 
-            {/* ETA Badge */}
-            {(step === 'bridging' || step === 'depositing') && (
-              <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-md">
-                ≈ 2-5 mins
-              </span>
-            )}
+          
           </div>
           <div className="px-5 py-5 space-y-0">
             {/* Step 1: Source */}
