@@ -1055,6 +1055,14 @@ export function DepositWithdraw({
                             </div>
                           )}
                         </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">
+                            Estimated bridge time:
+                          </span>
+                          <span className="font-normal text-foreground">
+                          ~5 Minutes
+                          </span>
+                        </div>
 
                         <div className="flex items-center justify-between">
                           <span className="text-muted-foreground">

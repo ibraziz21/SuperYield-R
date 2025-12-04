@@ -3,7 +3,7 @@
 
 import { FC, useMemo, useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
-import { X, Check, ExternalLink, AlertCircle, Loader2 } from 'lucide-react'
+import { X, Check, ExternalLink, AlertCircle, Clock,Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppKit } from '@reown/appkit/react'
 import { useWalletClient } from 'wagmi'
@@ -495,10 +495,19 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
           <div className='px-5 space-y-0'>
             {/* Status hint and error */}
             {stepHint && (
-              <div className="text-xs text-muted-foreground pt-4">
-                {stepHint}
-              </div>
-            )}
+  <div className="flex items-center justify-between text-xs text-muted-foreground pt-4">
+    <span className="text-muted-foreground">
+      {stepHint}
+    </span>
+    <div className="flex items-center gap-1 text-muted-foreground">
+      <Clock className="w-4 h-4" strokeWidth={1.5} />
+      <span className="font-normal">
+        ~5 min
+      </span>
+    </div>
+  </div>
+)}
+
             {/* ETA Badge */}
             {(step === 'bridging' || step === 'depositing') && (
               <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-md">

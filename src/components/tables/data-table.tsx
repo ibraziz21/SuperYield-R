@@ -25,7 +25,7 @@ interface DataTableProps<TData, TValue> {
   onRowClick?: (row: any) => void;
   emptyMessage?: string;
   emptySubMessage?: string;
-  showExploreVaultsButton?: boolean; // New prop
+  showExploreVaultsButton?: boolean;
 }
 
 export function DataTable<TData, TValue>({
@@ -36,7 +36,7 @@ export function DataTable<TData, TValue>({
   onRowClick,
   emptyMessage = "No results.",
   emptySubMessage,
-  showExploreVaultsButton = false, // Defaults to false
+  showExploreVaultsButton = false,
 }: DataTableProps<TData, TValue>) {
   const { pageIndex } = table.getState().pagination;
   const router = useRouter();
@@ -88,7 +88,11 @@ export function DataTable<TData, TValue>({
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
                   onClick={() => onRowClick?.(row)}
-                  className={onRowClick ? "cursor-pointer hover:bg-gray-50 transition-colors" : ""}
+                  className={
+                    onRowClick
+                      ? "cursor-pointer hover:bg-gray-50 transition-colors"
+                      : ""
+                  }
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
@@ -101,22 +105,27 @@ export function DataTable<TData, TValue>({
                 </TableRow>
               ))
             ) : (
-              <TableRow>
+              <TableRow className="hover:bg-transparent cursor-default">
+                {/*              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ */}
                 <TableCell
                   colSpan={columns.length}
                   className="h-[52px] text-center"
                 >
                   <div className="flex flex-col items-center justify-center py-[48px]">
-                    <p className="text-sm text-black font-medium">{emptyMessage}</p>
+                    <p className="text-sm text-black font-medium">
+                      {emptyMessage}
+                    </p>
                     {emptySubMessage && (
-                      <p className="text-xs text-muted-foreground mt-1">{emptySubMessage}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {emptySubMessage}
+                      </p>
                     )}
-                    {showExploreVaultsButton && ( // Button renders when prop is true
-                      <Button 
+                    {showExploreVaultsButton && (
+                      <Button
                         variant="default"
                         size="sm"
                         className="mt-4"
-                        onClick={() => router.push('/vaults')}
+                        onClick={() => router.push("/vaults")}
                       >
                         Explore Vaults
                       </Button>
@@ -131,16 +140,3 @@ export function DataTable<TData, TValue>({
     </div>
   );
 }
-
-export type PaginationState = {
-  pageIndex: number;
-  pageSize: number;
-};
-
-export type PaginationTableState = {
-  pagination: PaginationState;
-};
-
-export type PaginationInitialTableState = {
-  pagination?: Partial<PaginationState>;
-};

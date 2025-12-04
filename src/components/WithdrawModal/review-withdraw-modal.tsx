@@ -3,7 +3,7 @@
 
 import { FC, useMemo, useState } from 'react'
 import Image from 'next/image'
-import { X, ExternalLink, Loader2 } from 'lucide-react'
+import { X, ExternalLink, Loader2, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWalletClient } from 'wagmi'
 import type { Address } from 'viem'
@@ -346,16 +346,18 @@ export const ReviewWithdrawModal: FC<Props> = ({
           <div className="px-5 space-y-0">
             {/* Step hint */}
             {stepHint && (
-              <div className="text-xs text-muted-foreground pt-4">
-                {stepHint}
-              </div>
-            )}
-            {/* ETA Badge */}
-            {(step === 'withdrawing' || step === 'sign-bridge' || step === 'bridging') && (
-              <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-md">
-                ≈ 3-7 mins
-              </span>
-            )}
+  <div className="flex items-center justify-between text-xs text-muted-foreground pt-4">
+    <span className="text-muted-foreground">
+      {stepHint}
+    </span>
+    <div className="flex items-center gap-1 text-muted-foreground">
+      <Clock className="w-4 h-4" strokeWidth={1.5} />
+      <span className="font-normal">
+        ~5 min
+      </span>
+    </div>
+  </div>
+)}
           </div>
 
           <div className="px-5 py-5 space-y-0">
