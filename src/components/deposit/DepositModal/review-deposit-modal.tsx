@@ -486,7 +486,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
             </h3>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-muted rounded-full"
+              className=" cursor-pointer p-2 hover:bg-muted rounded-full"
             >
               <X size={20} />
             </button>

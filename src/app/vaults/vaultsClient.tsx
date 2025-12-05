@@ -122,7 +122,7 @@ export default function PositionsPage() {
 
   return (
     <div className="min-h-[calc(100vh-3.5rem)] w-full px-4">
-      <section className="bg-[#FFFFFF] my-4 p-4 md:p-6 rounded-xl max-w-[1392px] mx-auto">
+      <section className="w-full max-w-[1392px] mx-auto bg-[#FFFFFF] my-4 p-4 md:p-6 rounded-xl">
         <Tabs defaultValue="vaults" className="w-full">
           <TabsList className="mb-4 bg-white">
             <TabsTrigger
@@ -130,7 +130,7 @@ export default function PositionsPage() {
               value="positions"
             >
               Your Positions
-              <div className="bg-[#E5E7EB] mx-1 px-2 py-1 rounded-full flex items-center justify-center min-w-[28px] h-7 text-sm font-medium leading-none">
+              <div className="bg-[#E5E7EB] mx-1 px-1 py-[2px] rounded-full flex items-center justify-center min-w-[28px] h-7 text-sm font-medium leading-none">
                 {positionsRaw?.length ?? 0}
               </div>
             </TabsTrigger>

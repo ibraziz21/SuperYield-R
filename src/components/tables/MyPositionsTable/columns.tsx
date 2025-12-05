@@ -63,12 +63,12 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
         (/^USDC/.test(key)
           ? tokenIcons.USDC
           : /^USDT0/.test(key)
-          ? tokenIcons.USDT0
-          : /^USDT/.test(key)
-          ? tokenIcons.USDT
-          : /^WETH/.test(key)
-          ? tokenIcons.WETH
-          : tokenIcons.DAI) || "/tokens/default.svg";
+            ? tokenIcons.USDT0
+            : /^USDT/.test(key)
+              ? tokenIcons.USDT
+              : /^WETH/.test(key)
+                ? tokenIcons.WETH
+                : tokenIcons.DAI) || "/tokens/default.svg";
 
       return (
         <div className="flex items-center justify-start gap-2">
@@ -129,7 +129,7 @@ export const MyPositionsColumns: ColumnDef<Position>[] = [
 
       return (
         <div className="text-start">
-          <div className="font-medium ">${deposits}</div>
+          <div className="font-medium">${Number(deposits).toFixed(2)}</div>
         </div>
       );
     },

@@ -338,7 +338,7 @@ export const ReviewWithdrawModal: FC<Props> = ({
             <h3 className="text-xl font-semibold flex items-center gap-2">
               {step === 'error' ? 'Withdrawal failed' : "You're withdrawing"}
             </h3>
-            <button onClick={onClose} className="p-2 hover:bg-muted rounded-full">
+            <button onClick={onClose} className=" cursor-pointer p-2 hover:bg-muted rounded-full">
               <X size={20} />
             </button>
           </div>

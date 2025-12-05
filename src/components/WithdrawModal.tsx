@@ -149,7 +149,7 @@ export default function WithdrawModal({ open, onClose, snap, shares }: Props) {
                 key={d}
                 type="button"
                 onClick={() => setDest(d)}
-                className={`px-3 py-1 text-xs rounded ${dest === d ? 'bg-white shadow font-medium' : 'opacity-70'}`}
+                className={` cursor-pointer px-3 py-1 text-xs rounded ${dest === d ? 'bg-white shadow font-medium' : 'opacity-70'}`}
               >
                 {d.toUpperCase()}
               </button>

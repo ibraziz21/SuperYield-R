@@ -171,7 +171,7 @@ export const MerklRewardsPanel: FC = () => {
                         <button
                             key={c.id}
                             onClick={() => toggleChain(c.id)}
-                            className={`rounded-full px-3 py-1 text-xs transition ${enabledChains[c.id]
+                            className={`rounded-full  cursor-pointer px-3 py-1 text-xs transition ${enabledChains[c.id]
                                 ? 'bg-primary text-primary-foreground'
                                 : 'text-muted-foreground hover:bg-muted'
                                 }`}
@@ -231,7 +231,7 @@ export const MerklRewardsPanel: FC = () => {
                                             <div className="flex items-center gap-3">
                                                 <button
                                                     onClick={() => toggleOne(r)}
-                                                    className={`h-4 w-4 rounded border ${checked ? 'bg-primary' : 'bg-white'
+                                                    className={`h-4 w-4  cursor-pointer rounded border ${checked ? 'bg-primary' : 'bg-white'
                                                         }`}
                                                     aria-label={checked ? 'Unselect' : 'Select'}
                                                     title="Select"
