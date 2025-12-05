@@ -59,8 +59,8 @@ export function MultiSelectComboBox({
           className={cn(
             "inline-flex items-center gap-1.5 rounded-lg justify-between text-sm font-medium h-auto px-2.5 py-1 transition-colors shadow-none",
             hasActiveFilter
-              ? "border-blue-500 bg-blue-50 text-blue-700 hover:bg-blue-50"
-              : "hover:bg-[#F3F4F6] rounded-full border-none"
+              ? "bg-white text-[#4B5563] hover:bg-[#F3F4F6]"
+              : "hover:bg-[#F3F4F6] hover:text-[#4B5563] rounded-full border-none"
           )}
         >
           <span className="flex items-center gap-1.5">

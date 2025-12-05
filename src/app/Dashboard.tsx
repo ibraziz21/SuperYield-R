@@ -181,7 +181,7 @@ export default function Dashboard() {
   )
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] bg-[#F9FAFB]">
+    <div className="min-h-[calc(100vh-3.5rem)] bg-[#F9FAFB]  max-w-[1182px]">
       {isConnected && address ? (
         <div className="w-full px-4">
           <PortfolioHeader />

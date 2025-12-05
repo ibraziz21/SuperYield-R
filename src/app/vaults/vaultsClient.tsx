@@ -121,7 +121,7 @@ export default function PositionsPage() {
   );
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] w-full px-4">
+    <div className="min-h-[calc(100vh-3.5rem)] w-full px-4 max-w-[1182px]">
       <section className="bg-[#FFFFFF] my-4 p-4 md:p-6 rounded-xl max-w-[1392px] mx-auto">
         <Tabs defaultValue="vaults" className="w-full">
           <TabsList className="mb-4 bg-white">

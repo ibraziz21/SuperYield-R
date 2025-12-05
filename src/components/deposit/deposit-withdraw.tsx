@@ -598,7 +598,7 @@ export function DepositWithdraw({
         <div className="flex items-center gap-8 mb-6 border-b">
           <button
             onClick={() => setActiveTab('deposit')}
-            className={`pb-3 text-[16px] font-medium transition-colors relative ${activeTab === 'deposit'
+            className={` cursor-pointer pb-3 text-[16px] font-medium transition-colors relative ${activeTab === 'deposit'
               ? 'text-foreground'
               : 'text-muted-foreground hover:text-foreground'
               }`}
@@ -610,7 +610,7 @@ export function DepositWithdraw({
           </button>
           <button
             onClick={() => setActiveTab('withdraw')}
-            className={`pb-3 text-[16px] font-medium transition-colors relative ${activeTab === 'withdraw'
+            className={` cursor-pointer pb-3 text-[16px] font-medium transition-colors relative ${activeTab === 'withdraw'
               ? 'text-foreground'
               : 'text-muted-foreground hover:text-foreground'
               }`}
@@ -660,7 +660,7 @@ export function DepositWithdraw({
                     setAmount(floored.toString());
                   }
                 }}
-                className="text-xs font-semibold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-md hover:bg-blue-50 transition-colors"
+                className=" cursor-pointer text-xs font-semibold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-md hover:bg-blue-50 transition-colors"
               >
                 MAX
               </button>
@@ -686,7 +686,7 @@ export function DepositWithdraw({
               {activeTab === 'deposit' ? (
                 <button
                   onClick={() => setShowTokenModal(true)}
-                  className="flex items-center gap-2.5 bg-background rounded-xl hover:bg-muted/50 transition-colors border border-border px-3 py-2"
+                  className=" cursor-pointer flex items-center gap-2.5 bg-background rounded-xl hover:bg-muted/50 transition-colors border border-border px-3 py-2"
                 >
                   <div className="relative">
                     <Image
@@ -714,7 +714,7 @@ export function DepositWithdraw({
                 <div className="relative">
                   <button
                     type="button" 
-                    className="flex items-center gap-2.5 bg-background rounded-xl transition-colors border border-border px-3 py-2"
+                    className=" cursor-pointer flex items-center gap-2.5 bg-background rounded-xl transition-colors border border-border px-3 py-2"
                   >
                     <div className="relative">
                       <Image
@@ -751,7 +751,7 @@ export function DepositWithdraw({
                             setWithdrawDest(choice.id);
                             setShowWithdrawMenu(false);
                           }}
-                          className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted transition-colors ${choice.id === withdrawDest ? 'bg-muted' : 'bg-popover'
+                          className={` cursor-pointer w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted transition-colors ${choice.id === withdrawDest ? 'bg-muted' : 'bg-popover'
                             }`}
                         >
                           <div className="w-6 h-6 relative">
@@ -859,7 +859,7 @@ export function DepositWithdraw({
               <div className="border border-border rounded-xl overflow-hidden">
                 <button
                   onClick={() => setRouteExpanded(!routeExpanded)}
-                  className="w-full px-5 py-4 flex items-center justify-center hover:bg-muted/30 transition-colors"
+                  className=" cursor-pointer w-full px-5 py-4 flex items-center justify-center hover:bg-muted/30 transition-colors"
                 >
                   <span className="font-semibold text-foreground text-base text-center">
                     Routing via LI.FI bridge

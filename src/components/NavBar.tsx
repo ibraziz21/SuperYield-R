@@ -193,9 +193,9 @@ export function Navbar() {
   const closeMobile = () => setMobileOpen(false)
 
   return (
-    <div className="mt-3 md:mt-[12px] px-3 sm:px-4 max-w-[1392px] mx-auto">
+    <div className="pt-3 px-3 sm:px-4 max-w-[1392px] mx-auto">
       {/* Top App Bar */}
-      <header className={`sticky top-0 z-50 w-full bg-background border-b border-border/60 rounded-xl transition-shadow ${elevated ? 'shadow-md' : 'shadow-sm'}`}> 
+      <header className={`sticky top-0 z-50 w-full bg-background border-b border-border/60 rounded-xl transition-shadow`}> 
         <div className="mx-auto flex h-14 w-full items-center justify-between px-2.5"> 
           {/* Brand */}
           <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -220,7 +220,7 @@ export function Navbar() {
           <div className="flex items-center gap-2 flex-shrink-0">
             {/* Mobile: hamburger */}
             <button
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/60 md:hidden active:scale-95 transition"
+              className=" cursor-pointer inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/60 md:hidden active:scale-95 transition"
               onClick={() => setMobileOpen((v) => !v)}
               aria-label="Open menu"
               aria-expanded={mobileOpen}
@@ -247,7 +247,7 @@ export function Navbar() {
                   type="button"
                   onClick={() => quickSwitch(10)}
                   disabled={isSwitching}
-                  className="hidden md:inline-flex h-9 items-center gap-2 rounded-[12px] border border-[#FAB55A] bg-[#FEF4E6] px-4 text-sm font-semibold text-black disabled:opacity-60 hover:bg-[#FDE7CD] transition"
+                  className=" cursor-pointer hidden md:inline-flex h-9 items-center gap-2 rounded-[12px] border border-[#FAB55A] bg-[#FEF4E6] px-4 text-sm font-semibold text-black disabled:opacity-60 hover:bg-[#FDE7CD] transition"
                   title="Switch network to Optimism"
                 >
                   <span className="whitespace-nowrap">Switch to OP</span>
@@ -276,7 +276,7 @@ export function Navbar() {
               <div className="relative" ref={accountMenuRef}>
                 <button
                   onClick={() => setMenuOpen((v) => !v)}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-background/60 px-3 text-sm font-semibold hover:bg-muted active:scale-[.98] transition min-w-0"
+                  className=" cursor-pointer inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-background/60 px-3 text-sm font-semibold hover:bg-muted active:scale-[.98] transition min-w-0"
                   title="Wallet menu"
                   aria-expanded={menuOpen}
                   aria-haspopup="menu"
@@ -383,7 +383,7 @@ export function Navbar() {
             </div>
             <button
               onClick={closeMobile}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/60 active:scale-95 transition"
+              className=" cursor-pointer inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/60 active:scale-95 transition"
               aria-label="Close menu"
               title="Close"
             >
@@ -471,7 +471,7 @@ export function Navbar() {
                             closeMobile()
                           }}
                           disabled={isSwitching}
-                          className="w-full mb-2 flex h-9 items-center justify-center gap-2 rounded-[12px] border border-[#FAB55A] bg-[#FEF4E6] px-4 text-sm font-semibold text-black disabled:opacity-60 hover:bg-[#FDE7CD] transition"
+                          className=" cursor-pointer w-full mb-2 flex h-9 items-center justify-center gap-2 rounded-[12px] border border-[#FAB55A] bg-[#FEF4E6] px-4 text-sm font-semibold text-black disabled:opacity-60 hover:bg-[#FDE7CD] transition"
                           title="Switch network to Optimism"
                         >
                           <span>Switch to OP Mainnet</span>
@@ -489,7 +489,7 @@ export function Navbar() {
 
                       {/* Disconnect - Desktop Style */}
                       <button
-                        className="mt-2 flex w-full items-center justify-start rounded-md px-3 py-2 font-medium text-red-600 hover:bg-red-50 transition"
+                        className=" cursor-pointer mt-2 flex w-full items-center justify-start rounded-md px-3 py-2 font-medium text-red-600 hover:bg-red-50 transition"
                         onClick={() => {
                           disconnect()
                           closeMobile()

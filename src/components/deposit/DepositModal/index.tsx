@@ -487,7 +487,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                           key={a}
                           type="button"
                           onClick={() => setSourceAsset(a)}
-                          className={`px-3 py-1 text-xs rounded ${sourceAsset === a ? 'bg-white shadow font-medium' : 'opacity-70'}`}
+                          className={` cursor-pointer px-3 py-1 text-xs rounded ${sourceAsset === a ? 'bg-white shadow font-medium' : 'opacity-70'}`}
                         >
                           {a}
                         </button>
