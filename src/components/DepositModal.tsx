@@ -524,7 +524,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                     variant="outline"
                     onClick={onClose}
                     title="Cancel"
-                    className="h-12 w-full sm:h-9 sm:w-auto"
+                    className="h-10 w-full  sm:w-auto"
                   >
                     Cancel
                   </Button>
@@ -532,7 +532,7 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                     onClick={handleConfirm}
                     disabled={confirmDisabled}
                     title="Confirm"
-                    className="h-12 w-full sm:h-9 sm:w-auto"
+                    className="h-10 w-full  sm:w-auto"
                   >
                     Confirm
                   </Button>
@@ -544,14 +544,14 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                   variant="outline"
                   onClick={onClose}
                   title="Close"
-                  className="h-12 w-full sm:h-9 sm:w-auto"
+                  className="h-10 w-full  sm:w-auto"
                 >
                   Close
                 </Button>
               )}
 
               {showSuccess && (
-                <Button onClick={onClose} title="Done" className="h-12 w-full sm:h-9 sm:w-auto">
+                <Button onClick={onClose} title="Done" className="h-10 w-full  sm:w-auto">
                   Done
                 </Button>
               )}
@@ -562,11 +562,11 @@ export const DepositModal: FC<DepositModalProps> = ({ open, onClose, snap }) => 
                     variant="outline"
                     onClick={() => setStep('idle')}
                     title="Try Again"
-                    className="h-12 w-full sm:h-9 sm:w-auto"
+                    className="h-10 w-full  sm:w-auto"
                   >
                     Try again
                   </Button>
-                  <Button onClick={onClose} title="Close" className="h-12 w-full sm:h-9 sm:w-auto">
+                  <Button onClick={onClose} title="Close" className="h-10 w-full  sm:w-auto">
                     Close
                   </Button>
                 </div>

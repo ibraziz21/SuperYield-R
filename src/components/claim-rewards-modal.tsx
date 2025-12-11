@@ -219,7 +219,7 @@ export function ClaimRewardsModal({
               <Button
                 onClick={handleExploreVaults}
                 size="lg"
-                className="w-full rounded-lg text-white bg-[#376FFF] hover:bg-blue-700 text-[13px] font-normal h-12"
+                className="w-full rounded-lg text-white bg-[#376FFF] hover:bg-blue-700 text-[13px] font-normal h-10"
               >
                 Explore vaults
               </Button>
@@ -227,7 +227,7 @@ export function ClaimRewardsModal({
                 onClick={handleBackToDashboard}
                 variant="ghost"
                 size="lg"
-                className="w-full rounded-lg text-[13px] font-medium h-12 hover:bg-muted border border-border"
+                className="w-full rounded-lg text-[13px] font-medium h-10 hover:bg-muted border border-border"
               >
                 Back to dashboard
               </Button>
@@ -361,7 +361,7 @@ export function ClaimRewardsModal({
               state === "signing"
             }
             size="lg"
-            className="w-full rounded-[12px] text-white bg-[#376FFF] hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-[13px] font-medium h-12 flex items-center justify-center gap-2"
+            className="w-full rounded-[12px] text-white bg-[#376FFF] hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-[13px] font-medium h-10 flex items-center justify-center gap-2"
           >
             {state === "signing" && (
               <>
