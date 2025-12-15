@@ -107,7 +107,8 @@ function ActiveLink({ href, children, onClick }: { href: string; children: React
 export function Navbar() {
   const pathname = usePathname()
   const { open } = useAppKit()
-  const { address } = useAccount()
+  
+  const { address, isConnected } = useAccount()
   const { disconnect } = useDisconnect()
   const chainId = useChainId()
   const { switchChainAsync, isPending: isSwitching } = useSwitchChain()
@@ -193,7 +194,8 @@ export function Navbar() {
   const closeMobile = () => setMobileOpen(false)
 
   return (
-    <div className="pt-3 px-3 sm:px-4 max-w-[1392px] mx-auto">
+    <div className='w-full pt-3 px-4'>
+      <div className="mx-auto" style={isConnected && address ? { "maxWidth":"1392px"}: {"maxWidth":"none"}}>
       {/* Top App Bar */}
       <header className={`sticky top-0 z-50 w-full bg-background border-b border-border/60 rounded-xl transition-shadow`}> 
         <div className="mx-auto flex h-14 w-full items-center justify-between px-2.5"> 
@@ -204,9 +206,9 @@ export function Navbar() {
                 src={ecovaults}
                 alt="ecovaults"
                 width={120}
-                height={24}
+                height={40}
                 priority
-                className="h-6 w-auto sm:h-7 sm:w-auto object-contain"
+                className="h-10 w-auto sm:w-auto object-contain"
               />
             </Link>
             {/* Desktop nav */}
@@ -247,17 +249,17 @@ export function Navbar() {
                   type="button"
                   onClick={() => quickSwitch(10)}
                   disabled={isSwitching}
-                  className=" cursor-pointer hidden md:inline-flex h-9 items-center gap-2 rounded-[12px] border border-[#FAB55A] bg-[#FEF4E6] px-4 text-sm font-semibold text-black disabled:opacity-60 hover:bg-[#FDE7CD] transition"
+                  className=" cursor-pointer hidden md:inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#FAB55A] bg-[#FEF4E6] px-4 text-sm font-medium text-black disabled:opacity-60 hover:bg-[#FDE7CD] transition"
                   title="Switch network to Optimism"
                 >
                   <span className="whitespace-nowrap">Switch to OP</span>
-                  <span className="flex h-7 w-7 items-center justify-center relative rounded-sm overflow-hidden">
+                  <span className="flex h-5 w-5 items-center justify-center relative rounded-[4px] overflow-hidden">
                     <Image
                       src="/networks/op-icon.png"
                       alt="OP Mainnet"
-                      width={28}
-                      height={28}
-                      className="h-7 w-7 rounded-none"
+                      width={20}
+                      height={20}
+                      className="h-5 w-5 rounded-none"
                     />
                   </span>
                 </button>
@@ -267,7 +269,7 @@ export function Navbar() {
             {!address ? (
               <Button
                 onClick={() => open({ view: 'Connect' })}
-                className="hidden md:flex bg-[#376FFF] px-5 py-2 rounded-lg text-white hover:bg-[#2A5FCC] transition h-9"
+                className="hidden md:flex bg-[#376FFF] px-5 py-2 rounded-[12px] text-white hover:bg-[#2A5FCC] transition h-10"
                 title="Connect Wallet"
               >
                 Connect Wallet
@@ -276,7 +278,7 @@ export function Navbar() {
               <div className="relative" ref={accountMenuRef}>
                 <button
                   onClick={() => setMenuOpen((v) => !v)}
-                  className=" cursor-pointer inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-background/60 px-3 text-sm font-semibold hover:bg-muted active:scale-[.98] transition min-w-0"
+                  className=" cursor-pointer inline-flex h-10 items-center gap-2 rounded-[12px] border border-gray-200 bg-background/60 px-3 text-sm font-semibold hover:bg-muted active:scale-[.98] transition min-w-0"
                   title="Wallet menu"
                   aria-expanded={menuOpen}
                   aria-haspopup="menu"
@@ -515,6 +517,7 @@ export function Navbar() {
           </div>
         </div>
       </div>
+    </div>
     </div>
   )
 }

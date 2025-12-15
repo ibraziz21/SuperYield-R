@@ -15,7 +15,7 @@ export function ConnectWalletPrompt() {
           <div>
             <Button
               onClick={() => open({ view: 'Connect' })}
-              className="flex bg-[#376FFF] p-4 py-6 rounded-xl text-base"
+              className="flex bg-[#376FFF] p-4  rounded-[12px] text-base h-10"
               title="Connect Wallet"
             >
               Connect Wallet

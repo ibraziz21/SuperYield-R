@@ -130,7 +130,7 @@ export default function PositionsPage() {
               value="positions"
             >
               Your Positions
-              <div className="bg-[#E5E7EB] mx-1 px-1 py-[2px] rounded-full flex items-center justify-center min-w-[28px] h-7 text-sm font-medium leading-none">
+              <div className="bg-[#E5E7EB] mx-1 px-1 py-[2px] rounded-full flex items-center justify-center h-[18px] w-[18px] text-[11px] font-medium leading-none">
                 {positionsRaw?.length ?? 0}
               </div>
             </TabsTrigger>

@@ -815,7 +815,7 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
           <div className="px-5 pb-5">
             <Button
               onClick={onPrimary}
-              className="w-full h-12 text-white bg-blue-600 hover:bg-blue-700 font-semibold disabled:opacity-60 inline-flex items-center justify-center gap-2"
+              className="w-full h-10 text-white bg-blue-600 hover:bg-blue-700 font-semibold disabled:opacity-60 inline-flex items-center justify-center gap-2"
               disabled={isWorking || !canStart}
             >
               {isWorking && <Loader2 className="h-4 w-4 animate-spin" />}
