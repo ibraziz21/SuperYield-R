@@ -782,7 +782,7 @@ export function DepositWithdraw({
 
           {/* Empty State */}
           {!amount && (
-            <div className="text-center p-4 text-muted-foreground text-[13px] rounded-xl bg-muted/50">
+            <div className="text-center p-4 text-muted-foreground text-[13px] rounded-xl bg-muted/50 h-12">
               Enter an amount
             </div>
           )}
@@ -846,7 +846,7 @@ export function DepositWithdraw({
                 onClick={activeTab === 'deposit' ? onDepositClick : onWithdrawClick}
                 size="lg"
                 disabled={confirmDisabled}
-                className="w-full text-white bg-blue-600 hover:bg-blue-700 text-base font-semibold h-14 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl"
+                className="w-full text-white bg-blue-600 hover:bg-blue-700 text-base font-semibold h-12 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl"
                 title={
                   quoteError ??
                   (activeTab === 'deposit' ? 'Deposit' : 'Withdraw')
@@ -859,7 +859,7 @@ export function DepositWithdraw({
               <div className="border border-border rounded-xl overflow-hidden">
                 <button
                   onClick={() => setRouteExpanded(!routeExpanded)}
-                  className=" cursor-pointer w-full px-5 py-4 flex items-center justify-center hover:bg-muted/30 transition-colors"
+                  className=" cursor-pointer w-full px-5 py-4 flex items-center justify-center h-12 hover:bg-muted/30 transition-colors"
                 >
                   <span className="font-semibold text-foreground text-base text-center">
                     Routing via LI.FI bridge

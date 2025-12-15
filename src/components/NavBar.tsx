@@ -195,7 +195,7 @@ export function Navbar() {
 
   return (
     <div className='w-full pt-3 px-4'>
-      <div className="mx-auto" style={isConnected && address ? { "maxWidth":"1392px"}: {"maxWidth":"none"}}>
+      <div className="mx-auto max-w-[1392px]" >
       {/* Top App Bar */}
       <header className={`sticky top-0 z-50 w-full bg-background border-b border-border/60 rounded-xl transition-shadow`}> 
         <div className="mx-auto flex h-14 w-full items-center justify-between px-2.5"> 

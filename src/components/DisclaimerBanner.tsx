@@ -25,7 +25,7 @@ export function DisclaimerBanner() {
 
   return (
     <div className="w-full px-4">
-      <div className="mx-auto my-2" style={isConnected && address ? { "maxWidth": "1392px" } : { "maxWidth": "none" }}>
+      <div className="mx-auto my-2 max-w-[1392px]">
         <div className="flex items-center justify-between gap-3 md:gap-4 bg-[#FEF4E6] border-2 border-[#FAB55A] rounded-[20px] p-3 md:p-4 h-[44px]">
           <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
             <WarningIcon size={24} className="text-[#AF6606] shrink-0" />

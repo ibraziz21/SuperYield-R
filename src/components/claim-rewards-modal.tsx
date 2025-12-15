@@ -166,35 +166,45 @@ export function ClaimRewardsModal({
                 </span>
               </div>
 
-              {/* Claimed Tokens */}
+              {/* Claimed Tokens - Updated to match Individual Rewards styling */}
               {selectedRewards.map((reward) => {
                 const usd = priceUsdForSymbol(reward.token) * reward.amount
                 return (
-                <div key={reward.token} className="flex justify-between items-center py-1.5">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-4 h-4 relative">
-                      <Image
-                        src={reward.icon}
-                        alt={reward.token}
-                        width={16}
-                        height={16}
-                        className="rounded-full"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = "/tokens/lisk.png"
-                        }}
-                      />
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm text-foreground">
-                        {reward.amount.toFixed(2)} {reward.token}
+                  <div
+                    key={reward.token}
+                    className="flex items-center justify-between px-4 py-3.5"
+                  >
+                    <div className="flex items-center gap-3 flex-1">
+                      <span className="text-sm font-semibold text-foreground">
+                        {reward.token}
                       </span>
+                      <div className="flex items-center gap-2.5 rounded-full bg-[#F3F4F6] py-1 px-2">
+                        <div className="w-5 h-5 relative">
+                          <Image
+                            src={reward.icon}
+                            alt={reward.token}
+                            width={20}
+                            height={20}
+                            className="rounded-full"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src =
+                                "/tokens/lisk.png"
+                            }}
+                          />
+                        </div>
+                        <span className="text-sm text-foreground">
+                          {reward.amount.toFixed(2)}
+                        </span>
+                        <span className="text-sm font-semibold text-foreground">
+                          {reward.token}
+                        </span>
+                      </div>
                     </div>
                     <span className="text-sm text-foreground font-semibold">
-                    ${usd.toFixed(2)}
-                  </span>
+                      ${usd.toFixed(2)}
+                    </span>
                   </div>
-                </div>
-              )
+                )
               })}
             </div>
 

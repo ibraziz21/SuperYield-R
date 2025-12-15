@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Check } from "lucide-react"
+import { Check, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -31,6 +31,7 @@ interface MultiSelectComboBoxProps {
   onToggle: (value: string) => void
   placeholder: string
   allLabel: string
+  onClearAll?: () => void // Optional: custom clear handler
 }
 
 export function MultiSelectComboBox({
@@ -39,6 +40,7 @@ export function MultiSelectComboBox({
   onToggle,
   placeholder,
   allLabel,
+  onClearAll,
 }: MultiSelectComboBoxProps) {
   const [open, setOpen] = React.useState(false)
 
@@ -47,6 +49,20 @@ export function MultiSelectComboBox({
     : selectedValues.join(", ")
 
   const hasActiveFilter = selectedValues.length > 0 && !selectedValues.includes("all")
+
+  const handleClearAll = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (onClearAll) {
+      onClearAll()
+    } else {
+      // Default: clear all selected values
+      selectedValues.forEach(value => {
+        if (value !== 'all') {
+          onToggle(value)
+        }
+      })
+    }
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -58,15 +74,25 @@ export function MultiSelectComboBox({
           title={`Filter by ${placeholder}`}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-lg justify-between text-sm font-medium h-auto px-2.5 py-1 transition-colors shadow-none",
+            "text-[#4B5563] hover:text-black",
             hasActiveFilter
-              ? "bg-white text-[#4B5563] hover:bg-[#F3F4F6]"
-              : "hover:bg-[#F3F4F6] hover:text-[#4B5563] rounded-full border-none"
+              ? "bg-white hover:bg-[#F3F4F6]"
+              : "hover:bg-[#F3F4F6] rounded-full border-none"
           )}
         >
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1.5 flex-1">
             <FunnelSimpleIcon size={14} weight="bold" />
             {displayValue}
           </span>
+          {hasActiveFilter && (
+            <span
+              onClick={handleClearAll}
+              className="ml-2 p-1 hover:bg-gray-200 rounded cursor-pointer"
+              title="Clear all filters"
+            >
+              <X size={14} className="text-gray-500 hover:text-gray-700" />
+            </span>
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-48 p-0">
