@@ -155,7 +155,7 @@ export const ClaimableRewardColumns: ColumnDef<ClaimableReward>[] = [
       };
 
       return (
-        <Button title="Claim" className="bg-[#376FFF] rounded-[12px] px-3" onClick={handleClaim} disabled={!onClaim || isClaiming}>
+        <Button title="Claim" className="bg-[#376FFF] hover:bg-[#2F5DD1] rounded-[12px] px-3" onClick={handleClaim} disabled={!onClaim || isClaiming}>
           {isClaiming ? "Claiming…" : "Claim"}
         </Button>
       );
