@@ -75,6 +75,11 @@ function toLiskDestLabel(
   return 'WETH';
 }
 
+function uiTokenLabel(t: string): string {
+  return t === 'USDCe' ? 'USDC.e' : t;
+}
+
+
 export function DepositWithdraw({
   initialTab = 'deposit',
   snap,
@@ -148,6 +153,9 @@ export function DepositWithdraw({
   const tokenDecimals = vaultToken === 'WETH' ? 18 : 6;
   const destTokenLabel = toLiskDestLabel(vaultToken);
   const isUsdtFamily = vaultToken === 'USDT' || destTokenLabel === 'USDT0';
+  const destTokenLabelUi = uiTokenLabel(destTokenLabel);
+const selectedTokenSymbolUi = uiTokenLabel(selectedToken.symbol);
+
 
   const { data: positionsRaw } = usePositions();
 
@@ -394,9 +402,7 @@ export function DepositWithdraw({
         fromAddress: walletClient.account!.address as `0x${string}`,
       })
         .then((q) => {
-          setRoute(
-            normalizeRouteLabel(q.route) ?? 'Bridge → USDCe',
-          );
+          setRoute(normalizeRouteLabel(q.route) ?? `Bridge → ${uiTokenLabel('USDCe')}`);
           setFee(q.bridgeFee ?? 0n);
           setReceived(q.bridgeOutUSDCe ?? 0n);
           setQuoteError(null);
@@ -628,14 +634,14 @@ export function DepositWithdraw({
             <label className="text-sm text-muted-foreground">
               {activeTab === 'deposit' ? 'Deposit' : 'Withdraw'}{' '}
               {activeTab === 'deposit'
-                ? selectedToken.symbol
-                : destTokenLabel}
+                ? selectedTokenSymbolUi
+                : destTokenLabelUi}
             </label>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">
                 {activeTab === 'withdraw'
-                  ? `${withdrawBalanceHuman} ${destTokenLabel}`
-                  : `${depositWalletBalance.toFixed(2)} ${selectedToken.symbol}`}
+                  ? `${withdrawBalanceHuman} ${destTokenLabelUi}`
+                  : `${depositWalletBalance.toFixed(2)} ${selectedTokenSymbolUi}`}
               </span>
               <button
                 onClick={() => {
@@ -855,252 +861,266 @@ export function DepositWithdraw({
                 {activeTab === 'deposit' ? 'Deposit' : 'Withdraw'}
               </Button>
 
-              {/* Routing via LI.FI bridge Section */}
-              <div className="border border-border rounded-xl overflow-hidden">
-                <button
-                  onClick={() => setRouteExpanded(!routeExpanded)}
-                  className=" cursor-pointer w-full px-5 py-4 flex items-center justify-center h-12 hover:bg-muted/30 transition-colors"
-                >
-                  <span className="font-semibold text-foreground text-base text-center">
-                    Routing via LI.FI bridge
-                  </span>
-                  <ChevronDown
-                    size={20}
-                    className={`text-muted-foreground transition-transform ${routeExpanded ? 'rotate-180' : ''
-                      }`}
+            {/* Routing via LI.FI bridge Section */}
+<div className="border border-border rounded-xl overflow-hidden">
+  <button
+    onClick={() => setRouteExpanded(!routeExpanded)}
+    className="cursor-pointer w-full px-5 py-4 flex items-center justify-center h-12 hover:bg-muted/30 transition-colors"
+  >
+    <span className="font-semibold text-foreground text-base text-center">
+      Routing via LI.FI bridge
+    </span>
+    <ChevronDown
+      size={20}
+      className={`text-muted-foreground transition-transform ${
+        routeExpanded ? "rotate-180" : ""
+      }`}
+    />
+  </button>
+
+  {routeExpanded &&
+    (() => {
+      const isDeposit = activeTab === "deposit";
+
+      // Deposit (always OP -> Lisk)
+      const depSrcChainName = "OP Mainnet";
+      const depSrcIcon = "/networks/op-icon.png";
+      const depSrcToken = selectedToken.symbol;
+      const depDstChainName = "Lisk";
+      const depDstIcon = "/networks/lisk.png";
+      const depDstToken = destTokenLabel;
+
+      // Withdraw (Lisk -> OP)
+      const wSrcChainName = "Lisk";
+      const wSrcIcon = "/networks/lisk.png";
+      const wSrcToken = destTokenLabel;
+
+      const wDstChainName = withdrawDest === "optimism" ? "OP Mainnet" : "Lisk";
+      const wDstIcon =
+        withdrawDest === "optimism"
+          ? "/networks/op-icon.png"
+          : "/networks/lisk.png";
+
+      // ✅ FIX: destination token on OP must be USDC/USDT (not USDCe/USDT0)
+      const wDstToken: "USDC" | "USDT" =
+        destTokenLabel === "USDT0" ? "USDT" : "USDC";
+
+      // ✅ FIX: correct icon for destination token on withdraw
+      const wDstTokenIcon =
+        wDstToken === "USDT" ? "/tokens/usdt-icon.png" : "/tokens/usdc-icon.png";
+
+      const feeToken = isDeposit ? selectedToken.symbol : wDstToken;
+      const receiveToken = isDeposit ? destTokenLabel : wDstToken;
+
+      const bridgingOnDeposit =
+        isDeposit && (destTokenLabel === "USDT0" || destTokenLabel === "USDCe");
+
+      const bridgingOnWithdraw = !isDeposit;
+
+      const protocolFee = !isDeposit && amountNum > 0 ? amountNum * 0.005 : 0;
+
+      const bridgeFee = isDeposit
+        ? bridgingOnDeposit
+          ? bridgeFeeDisplay
+          : 0
+        : bridgingOnWithdraw
+          ? withdrawBridgeFeeDisplay
+          : 0;
+
+      const totalFee = protocolFee + bridgeFee;
+
+      const receiveDisplay = (() => {
+        if (isDeposit) return receiveAmountDisplay;
+        const gross = amountNum;
+        const net = Math.max(
+          gross -
+            protocolFee -
+            (bridgingOnWithdraw ? withdrawBridgeFeeDisplay : 0),
+          0
+        );
+        return net;
+      })();
+
+      const routeLabel = (() => {
+        if (isDeposit) {
+          if (route && route !== "On-chain") return route;
+          if (bridgingOnDeposit) return "Routing via LI.FI bridge";
+          return "On-chain";
+        }
+        if (!bridgingOnWithdraw) return "On-chain";
+        return "Routing via LI.FI bridge";
+      })();
+
+      return (
+        <div className="border-t border-border px-5 py-5">
+          {/* Chain Route Visualization */}
+          <div className="flex justify-between gap-3 mb-5">
+            {/* LEFT CARD */}
+            <div className="flex-1 bg-muted rounded-xl px-4 py-3.5">
+              {/* Chain row */}
+              <div className="flex items-center gap-2.5 bg-white p-2 rounded-lg">
+                <div className="w-6 h-6 relative rounded-md overflow-hidden">
+                  <Image
+                    src={isDeposit ? depSrcIcon : wSrcIcon}
+                    alt={isDeposit ? depSrcChainName : wSrcChainName}
+                    width={24}
+                    height={24}
+                    className="rounded-none"
                   />
-                </button>
-
-                {routeExpanded && (() => {
-                  const isDeposit = activeTab === 'deposit';
-
-                  const depSrcChainName = 'OP Mainnet';
-                  const depSrcIcon = '/networks/op-icon.png';
-                  const depSrcToken = selectedToken.symbol;
-                  const depDstChainName = 'Lisk';
-                  const depDstIcon = '/networks/lisk.png';
-                  const depDstToken = destTokenLabel;
-
-                  const wSrcChainName = 'Lisk';
-                  const wSrcIcon = '/networks/lisk.png';
-                  const wSrcToken = destTokenLabel;
-                  const wDstChainName =
-                    withdrawDest === 'optimism'
-                      ? 'OP Mainnet'
-                      : 'Lisk';
-                  const wDstIcon =
-                    withdrawDest === 'optimism'
-                      ? '/networks/op-icon.png'
-                      : '/networks/lisk.png';
-                  const wDstToken = 'USDT'
-
-                  const feeToken = isDeposit ? selectedToken.symbol : wDstToken;
-                  const receiveToken = isDeposit ? destTokenLabel : wDstToken;
-
-                  const bridgingOnDeposit =
-                    isDeposit &&
-                    (destTokenLabel === 'USDT0' || destTokenLabel === 'USDCe');
-
-                  const bridgingOnWithdraw =
-                    !isDeposit;
-
-                  const protocolFee =
-                    !isDeposit && amountNum > 0 ? amountNum * 0.005 : 0;
-
-                  const bridgeFee =
-                    isDeposit
-                      ? (bridgingOnDeposit ? bridgeFeeDisplay : 0)
-                      : (bridgingOnWithdraw ? withdrawBridgeFeeDisplay : 0);
-
-                  const totalFee = protocolFee + bridgeFee;
-
-                  const receiveDisplay = (() => {
-                    if (isDeposit) return receiveAmountDisplay;
-                    const gross = amountNum;
-                    const net = Math.max(
-                      gross - protocolFee - (bridgingOnWithdraw ? withdrawBridgeFeeDisplay : 0),
-                      0,
-                    );
-                    return net;
-                  })();
-
-                  const routeLabel = (() => {
-                    if (isDeposit) {
-                      if (route && route !== 'On-chain') return route;
-                      if (bridgingOnDeposit) {
-                        return 'Routing via LI.FI bridge';
-                      }
-                      return 'On-chain';
-                    }
-                    if (!bridgingOnWithdraw) return 'On-chain';
-                    return 'Routing via LI.FI bridge';
-                  })();
-
-                  return (
-                    <div className="border-t border-border px-5 py-5">
-                      {/* Chain Route Visualization */}
-                      <div className="flex justify-between gap-3 mb-5">
-                        <div className="flex-1 bg-muted rounded-xl px-4 py-3.5">
-                          <div className="flex items-center gap-2.5 bg-white p-2 rounded-lg">
-                            <div className="w-6 h-6 relative rounded-md overflow-hidden">
-                              <Image
-                                src={isDeposit ? depSrcIcon : wSrcIcon}
-                                alt={isDeposit ? depSrcChainName : wSrcChainName}
-                                width={24}
-                                height={24}
-                                className="rounded-none"
-                              />
-                            </div>
-                            <span className="font-semibold text-sm text-foreground">
-                              {isDeposit ? depSrcChainName : wSrcChainName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2.5 mt-1.5 bg-white p-2 rounded-full">
-                            <div className="w-6 h-6 relative">
-                              <Image
-                                src={
-                                  isDeposit
-                                    ? selectedToken.icon
-                                    : (destTokenLabel === 'USDCe'
-                                      ? '/tokens/usdc-icon.png'
-                                      : '/tokens/usdt0-icon.png')
-                                }
-                                alt={isDeposit ? depSrcToken : wSrcToken}
-                                width={24}
-                                height={24}
-                                className="rounded-full"
-                              />
-                            </div>
-                            <span className="font-semibold text-sm text-foreground">
-                              {isDeposit ? depSrcToken : wSrcToken}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="">
-                          <div className="w-18 h-full rounded-xl border border-border flex items-center justify-center flex-shrink-0">
-                            <svg
-                              width="20"
-                              height="20"
-                              viewBox="0 0 20 20"
-                              fill="none"
-                              className="text-muted-foreground"
-                            >
-                              <path
-                                d="M4 10H16M16 10L10 4M16 10L10 16"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          </div>
-                        </div>
-
-                        <div className="flex-1 bg-muted rounded-xl px-4 py-3.5">
-                          <div className="flex items-center gap-2.5 bg-white p-2 rounded-lg">
-                            <div className="w-6 h-6 relative rounded-md overflow-hidden">
-                              <Image
-                                src={isDeposit ? depDstIcon : wDstIcon}
-                                alt={isDeposit ? depDstChainName : wDstChainName}
-                                width={24}
-                                height={24}
-                                className="rounded-none"
-                              />
-                            </div>
-                            <span className="font-semibold text-sm text-foreground">
-                              {isDeposit ? depDstChainName : wDstChainName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2.5 mt-1.5 bg-white p-2 rounded-full">
-                            <div className="w-6 h-6 relative">
-                              <Image
-                                src={
-                                  destTokenLabel === 'USDCe'
-                                    ? '/tokens/usdc-icon.png'
-                                    : '/tokens/usdt0-icon.png'
-                                }
-                                alt={isDeposit ? depDstToken : wDstToken}
-                                width={24}
-                                height={24}
-                                className="rounded-full"
-                              />
-                            </div>
-                            <span className="font-semibold text-sm text-foreground">
-                              {isDeposit ? depDstToken : wDstToken}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Fee Details */}
-                      <div className="border-[#E5E7EB] border rounded-xl p-4 space-y-3 text-sm">
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">
-                            {routeLabel}
-                          </span>
-                          {bridgingOnDeposit && (
-                            <div className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                              <Image
-                                src={logolifi}
-                                alt="Bridge"
-                                width={16}
-                                height={16}
-                                className="object-contain"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src =
-                                    '/protocols/morpho-icon.png';
-                                }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">
-                            Estimated bridge time:
-                          </span>
-                          <span className="font-normal text-foreground">
-                          ~5 Minutes
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">
-                            Bridge fee (estimated):
-                          </span>
-                          <span className="font-normal text-foreground">
-                            {totalFee.toFixed(4)} {feeToken}
-                          </span>
-                        </div>
-
-                        {!isDeposit && amountNum > 0 && (
-                          <div className="text-xs text-muted-foreground space-y-0.5 pl-2 border-l-2 border-muted">
-                            <div>• 0.5% vault withdraw fee</div>
-                            {bridgingOnWithdraw && (
-                              <div>• Bridge fee via LI.FI (est.)</div>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">
-                            You&apos;ll {isDeposit ? 'deposit' : 'receive'}:
-                          </span>
-                          <span className="font-normal text-foreground">
-                            {receiveDisplay.toFixed(6)} {receiveToken}
-                          </span>
-                        </div>
-
-                        {quoteError && isDeposit && (
-                          <div className="mt-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2 py-1.5 rounded">
-                            Quote error: {quoteError}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
+                </div>
+                <span className="font-semibold text-sm text-foreground">
+                  {isDeposit ? depSrcChainName : wSrcChainName}
+                </span>
               </div>
+
+              {/* Token row (source token) */}
+              <div className="flex items-center gap-2.5 mt-1.5 bg-white p-2 rounded-full">
+                <div className="w-6 h-6 relative">
+                  <Image
+                    src={
+                      isDeposit
+                        ? selectedToken.icon
+                        : destTokenLabel === "USDCe"
+                          ? "/tokens/usdc-icon.png"
+                          : "/tokens/usdt0-icon.png"
+                    }
+                    alt={isDeposit ? depSrcToken : wSrcToken}
+                    width={24}
+                    height={24}
+                    className="rounded-full"
+                  />
+                </div>
+                <span className="font-semibold text-sm text-foreground">
+                  {isDeposit ? depSrcToken : wSrcToken}
+                </span>
+              </div>
+            </div>
+
+            {/* ARROW */}
+            <div className="">
+              <div className="w-18 h-full rounded-xl border border-border flex items-center justify-center flex-shrink-0">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  className="text-muted-foreground"
+                >
+                  <path
+                    d="M4 10H16M16 10L10 4M16 10L10 16"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+
+            {/* RIGHT CARD */}
+            <div className="flex-1 bg-muted rounded-xl px-4 py-3.5">
+              {/* Chain row */}
+              <div className="flex items-center gap-2.5 bg-white p-2 rounded-lg">
+                <div className="w-6 h-6 relative rounded-md overflow-hidden">
+                  <Image
+                    src={isDeposit ? depDstIcon : wDstIcon}
+                    alt={isDeposit ? depDstChainName : wDstChainName}
+                    width={24}
+                    height={24}
+                    className="rounded-none"
+                  />
+                </div>
+                <span className="font-semibold text-sm text-foreground">
+                  {isDeposit ? depDstChainName : wDstChainName}
+                </span>
+              </div>
+
+              {/* Token row (destination token) */}
+              <div className="flex items-center gap-2.5 mt-1.5 bg-white p-2 rounded-full">
+                <div className="w-6 h-6 relative">
+                  <Image
+                    src={
+                      isDeposit
+                        ? destTokenLabel === "USDCe"
+                          ? "/tokens/usdc-icon.png"
+                          : "/tokens/usdt0-icon.png"
+                        : wDstTokenIcon
+                    }
+                    alt={isDeposit ? depDstToken : wDstToken}
+                    width={24}
+                    height={24}
+                    className="rounded-full"
+                  />
+                </div>
+                <span className="font-semibold text-sm text-foreground">
+                  {isDeposit ? depDstToken : wDstToken}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Fee Details */}
+          <div className="border-[#E5E7EB] border rounded-xl p-4 space-y-3 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">{routeLabel}</span>
+
+              {/* LI.FI icon (currently shown only for deposits; keep or expand as you wish) */}
+              {bridgingOnDeposit && (
+                <div className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                  <Image
+                    src={logolifi}
+                    alt="Bridge"
+                    width={16}
+                    height={16}
+                    className="object-contain"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src =
+                        "/protocols/morpho-icon.png";
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Estimated bridge time:</span>
+              <span className="font-normal text-foreground">~5 Minutes</span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Bridge fee (estimated):</span>
+              <span className="font-normal text-foreground">
+                {totalFee.toFixed(4)} {feeToken}
+              </span>
+            </div>
+
+            {!isDeposit && amountNum > 0 && (
+              <div className="text-xs text-muted-foreground space-y-0.5 pl-2 border-l-2 border-muted">
+                <div>• 0.5% vault withdraw fee</div>
+                {bridgingOnWithdraw && <div>• Bridge fee via LI.FI (est.)</div>}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">
+                You&apos;ll {isDeposit ? "deposit" : "receive"}:
+              </span>
+              <span className="font-normal text-foreground">
+                {receiveDisplay.toFixed(6)} {receiveToken}
+              </span>
+            </div>
+
+            {quoteError && isDeposit && (
+              <div className="mt-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2 py-1.5 rounded">
+                Quote error: {quoteError}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    })()}
+</div>
+
             </>
           )}
         </div>

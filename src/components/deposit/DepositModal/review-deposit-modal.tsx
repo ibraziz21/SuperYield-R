@@ -108,16 +108,39 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
   )
   const amountNumber = Number(amount || 0)
 
+  function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    return Promise.race([
+      p,
+      new Promise<T>((_, rej) =>
+        setTimeout(() => rej(new Error(`${label} (>${ms}ms)`)), ms),
+      ),
+    ])
+  }
+  
   /** Ensure wallet on Lisk and return a **fresh** wallet client after switch */
   const ensureLiskWalletClient = useCallback(async () => {
     if (!walletClient) throw new Error('No wallet client')
-    const before = walletClient.chain?.id
-    await switchOrAddChainStrict(walletClient, CHAINS.lisk)
-    const refreshed = (await refetchWalletClient()).data ?? walletClient
-    const after = refreshed?.chain?.id
-    console.info(TAG, 'ensureLiskWalletClient', { before, after })
-    return refreshed
+  
+    // Ask wallet to switch
+    await withTimeout(
+      switchOrAddChainStrict(walletClient, CHAINS.lisk),
+      20_000,
+      'Chain switch to Lisk timed out',
+    )
+  
+    // Refetch a few times until wagmi reflects the switch
+    for (let i = 0; i < 10; i++) {
+      const refreshed = (await withTimeout(refetchWalletClient(), 10_000, 'Refetch wallet client timed out')).data ?? walletClient
+      const chainId = refreshed?.chain?.id
+  
+      if (chainId === CHAINS.lisk.id) return refreshed
+  
+      await new Promise((r) => setTimeout(r, 400))
+    }
+  
+    throw new Error('Wallet did not switch to Lisk (chain id not updated)')
   }, [walletClient, refetchWalletClient])
+  
 
   // ---------- Focus recovery (tab hidden during bridging) ----------
   useEffect(() => {
@@ -306,23 +329,26 @@ export const DepositModal: FC<ReviewDepositModalProps> = (props) => {
       setCachedMinOut(landed)
       setStep('depositing')
 
-      // Use the strict helper so we get a fresh Lisk client
+      setBridgeOk(true)
+      setCachedMinOut(landed)
+      
+      // IMPORTANT: do NOT set `depositing` until just before the deposit call.
+      // Otherwise any hang before signing looks like "stuck depositing".
       const wc = await ensureLiskWalletClient()
-      const userLisk = wc.account!.address as `0x${string}`
-
-      const balNow = await readWalletBalance('lisk', _destAddr, userLisk).catch(
-        () => 0n,
-      )
-
-      const toDeposit = landed <= balNow ? landed : balNow
+      
+      // Prefer landed (we already detected balance delta). Avoid an extra RPC read that can hang.
+      let toDeposit = landed
       if (toDeposit <= 0n) throw new Error('Nothing to deposit on Lisk')
-
-      console.info(TAG, '[handleConfirm] deposit', {
-        toDeposit: toDeposit.toString(),
-        chainId: wc.chain?.id,
-      })
-
-      await depositMorphoOnLiskAfterBridge(snap, toDeposit, wc)
+      
+      // Now we are actually about to initiate the deposit transaction
+      setStep('depositing')
+      
+      await withTimeout(
+        depositMorphoOnLiskAfterBridge(snap, toDeposit, wc),
+        120_000,
+        'Deposit signing/submit timed out',
+      )
+      
 
       // Optional: switch back to OP Mainnet
       try {

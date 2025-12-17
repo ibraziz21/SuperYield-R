@@ -49,6 +49,15 @@ interface Props {
   user: `0x${string}`
 }
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, rej) =>
+      setTimeout(() => rej(new Error(`${label} (>${ms}ms)`)), ms),
+    ),
+  ])
+}
+
 function tokenLabelOnLisk(src: 'USDC' | 'USDT'): 'USDCe' | 'USDT0' {
   return src === 'USDC' ? 'USDCe' : 'USDT0'
 }
@@ -137,34 +146,65 @@ export const ReviewWithdrawModal: FC<Props> = ({
   /* Main Flow                                                                */
   /* ------------------------------------------------------------------------ */
 
+  async function ensureLiskClient() {
+    if (!walletClient) throw new Error('Wallet not connected')
+  
+    await withTimeout(
+      switchOrAddChain(walletClient, CHAINS.lisk),
+      20_000,
+      'Chain switch to Lisk timed out',
+    )
+  
+    for (let i = 0; i < 10; i++) {
+      const { data } = await withTimeout(
+        refetchWalletClient(),
+        10_000,
+        'Refetch wallet client timed out',
+      )
+      const wc = data ?? walletClient
+      if (wc.chain?.id === CHAINS.lisk.id) return wc
+      await new Promise((r) => setTimeout(r, 400))
+    }
+  
+    throw new Error('Wallet did not switch to Lisk (chain id not updated)')
+  }
+
+  
   async function handleConfirm() {
     if (!walletClient) throw new Error("Wallet not connected");
     setStep('withdrawing')
+  
     try {
       setErr(null)
       setWithdrawOk(false)
       setBridgableAmount(null)
-
-      await switchOrAddChain(walletClient, CHAINS.lisk)
-      const { data: freshClient } = await refetchWalletClient()
-      const wc = freshClient ?? walletClient
-
-      const pre = await publicLisk.readContract({
-        address: liskTokenAddr,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [user],
-      })
-
-      await withdrawMorphoOnLisk({
-        token: liskToken,
-        shares,
-        shareToken: snap.poolAddress,
-        underlying: liskTokenAddr as `0x${string}`,
-        to: user,
-        wallet: wc,
-      })
-
+  
+      const wc = await ensureLiskClient()
+  
+      const pre = (await withTimeout(
+        publicLisk.readContract({
+          address: liskTokenAddr,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [user],
+        }) as Promise<bigint>,
+        15_000,
+        'Pre-balance read timed out',
+      )) as bigint
+  
+      await withTimeout(
+        withdrawMorphoOnLisk({
+          token: liskToken,
+          shares,
+          shareToken: snap.poolAddress,
+          underlying: liskTokenAddr as `0x${string}`,
+          to: user,
+          wallet: wc,
+        }),
+        120_000,
+        'Withdraw signing/submit timed out',
+      )
+  
       let delta = 0n
       for (let i = 0; i < 40; i++) {
         const cur = await publicLisk.readContract({
@@ -186,17 +226,21 @@ export const ReviewWithdrawModal: FC<Props> = ({
       setBridgableAmount(delta)
 
       setStep("sign-bridge")
-      await new Promise((r) => setTimeout(r, 50))
+
+      await withTimeout(
+        bridgeWithdrawal({
+          srcVaultToken: liskToken,
+          destToken: destSymbol,
+          amount: delta,
+          to: "optimism",
+          walletClient: wc,
+        }),
+        180_000,
+        'Bridge signing/submit timed out',
+      )
+      
       setStep("bridging")
-
-      await bridgeWithdrawal({
-        srcVaultToken: liskToken,
-        destToken: destSymbol,
-        amount: delta,
-        to: "optimism",
-        walletClient: wc,
-      })
-
+      
       await switchOrAddChain(wc, CHAINS.optimism)
 
       setStep("success")
