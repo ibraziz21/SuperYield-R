@@ -15,17 +15,16 @@ import { parseAbi, encodeFunctionData } from 'viem'
 import { optimism, base, lisk } from 'viem/chains'
 import { ADAPTER_KEYS, ROUTERS, TokenAddresses } from './constants'
 import type { ChainId, TokenSymbol } from './constants'
-import {  BigNumberish } from 'ethers'
+import type { BigNumberish } from 'ethers'
 import 'dotenv/config'
-
 
 const API = process.env.LIFI_API as string
 
 export type RouterPushResult = {
   txHash: `0x${string}`              // user's bridge/send tx (if any)
   routerTxHash?: `0x${string}`       // L2 router tx that emitted Deposited
-  received?: bigint                  // <-- actual tokens router delivered to adapter/safe
-  fee?: bigint                       // optional, if you compute it
+  received?: bigint                  // actual tokens router delivered
+  fee?: bigint
 }
 
 /* ────────────────────────────────────────────────────────────────
@@ -42,7 +41,7 @@ function requiredDestForAdapter(key: `0x${string}`): 'USDT0' | 'USDCe' | 'WETH' 
     case ADAPTER_KEYS.morphoLiskUSDT0: return 'USDT0'
     case ADAPTER_KEYS.morphoLiskUSDCe: return 'USDCe'
     case ADAPTER_KEYS.morphoLiskWETH:  return 'WETH'
-    default:                           return 'USDCe' // fallback for non-morpho routes
+    default:                           return 'USDCe'
   }
 }
 
@@ -50,10 +49,8 @@ function requiredDestForAdapter(key: `0x${string}`): 'USDT0' | 'USDCe' | 'WETH' 
 function resolveSymbolForChain(token: TokenSymbol, chain: ChainId): TokenSymbol {
   if (chain === 'lisk') {
     if (token === 'USDC') return 'USDCe'
-    // Lisk has both USDT and USDT0; keep as provided
     return token
   }
-  // OP/Base cannot have USDCe/USDT0
   if (token === 'USDCe') return 'USDC'
   if (token === 'USDT0') return 'USDT'
   return token
@@ -71,6 +68,89 @@ function tokenAddress(token: TokenSymbol, chain: ChainId): `0x${string}` {
 const toHexChain = (id: number) => `0x${id.toString(16)}`
 
 /* ────────────────────────────────────────────────────────────────
+   Route parsing helpers (txHash + stage)
+   ──────────────────────────────────────────────────────────────── */
+
+type BridgeStage = 'quote' | 'signature_required' | 'submitted' | 'confirming' | 'completed' | 'failed' | 'running'
+
+function isTxHash(x: unknown): x is `0x${string}` {
+  return typeof x === 'string' && /^0x[0-9a-fA-F]{64}$/.test(x)
+}
+
+function extractTxHashFromRoute(route: any): `0x${string}` | null {
+  const steps = route?.steps
+  if (!Array.isArray(steps)) return null
+
+  for (const s of steps) {
+    const procs = s?.execution?.process
+    if (!Array.isArray(procs)) continue
+
+    for (const p of procs) {
+      const direct = p?.txHash ?? p?.transactionHash ?? p?.hash
+      if (isTxHash(direct)) return direct
+
+      const txHashes = p?.txHashes
+      if (Array.isArray(txHashes)) {
+        for (const h of txHashes) {
+          if (isTxHash(h)) return h
+        }
+      }
+    }
+  }
+  return null
+}
+
+function deriveStage(route: any): BridgeStage {
+  // Prefer execution/process status if present
+  const steps = route?.steps
+  if (!Array.isArray(steps)) return 'running'
+
+  // FAILED?
+  for (const s of steps) {
+    const sStatus = String(s?.execution?.status ?? '').toUpperCase()
+    if (sStatus === 'FAILED') return 'failed'
+    const procs = s?.execution?.process
+    if (Array.isArray(procs)) {
+      for (const p of procs) {
+        const ps = String(p?.status ?? '').toUpperCase()
+        if (ps === 'FAILED') return 'failed'
+      }
+    }
+  }
+
+  // COMPLETED?
+  const allDone = steps.length > 0 && steps.every((s: any) => String(s?.execution?.status ?? '').toUpperCase() === 'DONE')
+  if (allDone) return 'completed'
+
+  // ACTION REQUIRED? (wallet signature)
+  for (const s of steps) {
+    const procs = s?.execution?.process
+    if (!Array.isArray(procs)) continue
+    for (const p of procs) {
+      const ps = String(p?.status ?? '').toUpperCase()
+      if (ps === 'ACTION_REQUIRED') return 'signature_required'
+    }
+  }
+
+  // SUBMITTED? (has tx hash)
+  const h = extractTxHashFromRoute(route)
+  if (h) {
+    // If any process is still running/pending, treat as confirming
+    for (const s of steps) {
+      const procs = s?.execution?.process
+      if (!Array.isArray(procs)) continue
+      for (const p of procs) {
+        const ps = String(p?.status ?? '').toUpperCase()
+        if (ps === 'PENDING' || ps === 'STARTED') return 'submitted'
+      }
+    }
+    return 'confirming'
+  }
+
+  return 'running'
+}
+
+/* ────────────────────────────────────────────────────────────────
    LI.FI provider wiring (idempotent)
    ──────────────────────────────────────────────────────────────── */
 let _configured = false
@@ -79,6 +159,7 @@ let _activeWallet: WalletClient | null = null
 export function configureLifiWith(walletClient: WalletClient) {
   _activeWallet = walletClient
   if (_configured) return
+
   createConfig({
     integrator: 'superYLDR',
     apiKey: API,
@@ -99,6 +180,7 @@ export function configureLifiWith(walletClient: WalletClient) {
       }),
     ],
   })
+
   _configured = true
 }
 
@@ -106,16 +188,9 @@ export function configureLifiWith(walletClient: WalletClient) {
    Simple bridge (existing)
    ──────────────────────────────────────────────────────────────── */
 
-/**
- * Bridge in one shot (bridge+swap if needed).
- * Examples:
- *   - USDT (OP/Base) -> USDT0 (Lisk)   ✅
- *   - USDC (OP/Base) -> USDCe (Lisk)   ✅
- *   - USDT/USDC between OP/Base        ✅ (single-asset)
- */
 export async function bridgeWithdrawal(params: {
-  srcVaultToken: 'USDCe' | 'USDT0' | 'WETH'   // token you HAVE on Lisk after redeem
-  destToken:     'USDC'  | 'USDT'  | 'WETH'   // token you want to RECEIVE on OP/Base
+  srcVaultToken: 'USDCe' | 'USDT0' | 'WETH'
+  destToken: 'USDC' | 'USDT' | 'WETH'
   amount: bigint
   to: 'optimism' | 'base'
   walletClient: WalletClient
@@ -132,16 +207,12 @@ export async function bridgeWithdrawal(params: {
   const account = walletClient.account?.address as `0x${string}` | undefined
   if (!account) throw new Error('No account found on WalletClient – connect a wallet first')
 
-  // Wire LI.FI to the active wallet (auto switch supported by switchChainHook below)
   configureLifiWith(walletClient)
 
-  // Source is ALWAYS Lisk for withdrawals
-  const originChainId      = CHAIN_ID.lisk
+  const originChainId = CHAIN_ID.lisk
   const destinationChainId = CHAIN_ID[to]
 
-  // Force the source token to the exact vault token on Lisk (USDCe/USDT0/WETH)
-  const inputToken  = tokenAddress(srcVaultToken, 'lisk')
-  // Destination is the native representation on OP/Base (USDC/USDT/WETH)
+  const inputToken = tokenAddress(srcVaultToken, 'lisk')
   const outputToken = tokenAddress(destToken, to)
 
   const quote = await getQuote({
@@ -159,7 +230,11 @@ export async function bridgeWithdrawal(params: {
   const route = convertQuoteToRoute(quote)
 
   return executeRoute(route, {
-    updateRouteHook: (updated) => opts?.onUpdate?.(updated),
+    updateRouteHook: (updated) => {
+      const txHash = extractTxHashFromRoute(updated)
+      const stage = deriveStage(updated)
+      opts?.onUpdate?.({ ...updated, txHash, stage })
+    },
     switchChainHook: async (chainId) => {
       await walletClient.request({
         method: 'wallet_switchEthereumChain',
@@ -175,7 +250,7 @@ export async function bridgeWithdrawal(params: {
 }
 
 export async function bridgeTokens(
-  token: TokenSymbol,        // token you want to receive on `to`
+  token: TokenSymbol,
   amount: bigint,
   from: ChainId,
   to: ChainId,
@@ -186,49 +261,29 @@ export async function bridgeTokens(
     allowExchanges?: string[]
     onUpdate?: (route: any) => void
     onRateChange?: (nextToAmount: string) => Promise<boolean> | boolean
-    /** Force the source-side token (e.g. 'USDC', 'USDT', 'USDT0', 'USDCe') */
     sourceToken?: Extract<TokenSymbol, 'USDC' | 'USDT' | 'USDT0' | 'USDCe'>
-  }
+  },
 ) {
   const account = walletClient.account?.address as `0x${string}` | undefined
-  if (!account) {
-    throw new Error('No account found on WalletClient – connect a wallet first')
-  }
+  if (!account) throw new Error('No account found on WalletClient – connect a wallet first')
 
   configureLifiWith(walletClient)
 
-  const originChainId      = CHAIN_ID[from]
+  const originChainId = CHAIN_ID[from]
   const destinationChainId = CHAIN_ID[to]
 
-  // ---- Resolve source symbol, then map to a concrete address ----
   const sourceSymbol = opts?.sourceToken ?? token
 
   let inputToken: `0x${string}`
-
-  // Hard-enforce OP USDT0 when requested
   if (sourceSymbol === 'USDT0' && from === 'optimism') {
     inputToken = TokenAddresses.USDT0.optimism as `0x${string}`
   } else if (sourceSymbol === 'USDCe' && from === 'lisk') {
-    // example of explicit mapping if ever needed; otherwise falls back
     inputToken = TokenAddresses.USDCe.lisk as `0x${string}`
   } else {
-    // fallback to your generic resolver for all other cases
     inputToken = tokenAddress(sourceSymbol, from)
   }
 
   const outputToken = tokenAddress(token, to)
-
-  console.log('Bridging tokens with LI.FI:', {
-    originChainId,
-    destinationChainId,
-    sourceSymbol,
-    destSymbol: token,
-    from,
-    to,
-    inputToken,
-    outputToken,
-    amount: amount.toString(),
-  })
 
   const quote = await getQuote({
     fromChain: originChainId,
@@ -244,10 +299,16 @@ export async function bridgeTokens(
 
   const route = convertQuoteToRoute(quote)
 
-  console.log('LI.FI route:', JSON.stringify(route, null, 2))
+  return executeRoute(route, {
+    updateRouteHook: (updated) => {
+      const txHash = extractTxHashFromRoute(updated)
+      const stage = deriveStage(updated)
 
-  const executed = await executeRoute(route, {
-    updateRouteHook: (updated) => opts?.onUpdate?.(updated),
+      // ✅ IMPORTANT: make UI usable immediately
+      // - ACTION_REQUIRED => wallet needs signature
+      // - SUBMITTED/CONFIRMING => tx hash exists (bridge submitted)
+      opts?.onUpdate?.({ ...updated, txHash, stage })
+    },
     switchChainHook: async (chainId) => {
       await walletClient.request({
         method: 'wallet_switchEthereumChain',
@@ -260,13 +321,10 @@ export async function bridgeTokens(
       return true
     },
   })
-
-  return executed
 }
 
 /* ────────────────────────────────────────────────────────────────
-   NEW: 1-click bridge → approve router → call router.deposit(...)
-   (targets your AggregatorRouter directly on Lisk)
+   Router contract-call flows (unchanged)
    ──────────────────────────────────────────────────────────────── */
 
 const ROUTER_ABI = parseAbi([
@@ -276,13 +334,6 @@ const ERC20_ABI = parseAbi([
   'function approve(address spender, uint256 value) external returns (bool)',
 ])
 
-/**
- * One-click contract-call route:
- *  - LI.FI bridges to Lisk and makes ≥ `amount` of `destToken` available
- *  - Approves your Lisk router to spend it (USDT0 uses approve(0)->approve(amount))
- *  - Calls `AggregatorRouter.deposit(key, asset, amount, user, '0x')`
- * Router then pulls tokens from LI.FI executor and deposits via your adapter.
- */
 export async function bridgeAndDepositViaRouter(params: {
   user: `0x${string}`
   destToken: 'USDT0' | 'USDCe' | 'WETH'
@@ -296,23 +347,17 @@ export async function bridgeAndDepositViaRouter(params: {
   const { user, destToken, srcChain, srcToken, amount, adapterKey, minBps = 30, walletClient } = params
   if (!user) throw new Error('user missing')
 
-  // enforce adapter ↔ dest token match
   const must = requiredDestForAdapter(adapterKey)
   if (must !== destToken) throw new Error(`Adapter/token mismatch: adapter requires ${must}, got ${destToken}`)
 
   configureLifiWith(walletClient)
 
   const fromChainId = CHAIN_ID[srcChain]
-  const toChainId   = CHAIN_ID.lisk
-  const fromToken   = tokenAddress(srcToken, srcChain)
-  const toToken     = tokenAddress(destToken, 'lisk')
-  const routerAddr  = ROUTERS.lisk
+  const toChainId = CHAIN_ID.lisk
+  const fromToken = tokenAddress(srcToken, srcChain)
+  const toToken = tokenAddress(destToken, 'lisk')
+  const routerAddr = ROUTERS.lisk
 
-  // // BigNumberish as HEX (removes any ambiguity)
-  // const amountHex = `0x${amount.toString(16)}`
-  // const zeroHex   = '0x0'
-
-  // router.deposit(...)
   const depositCalldata = encodeFunctionData({
     abi: ROUTER_ABI,
     functionName: 'deposit',
@@ -320,21 +365,15 @@ export async function bridgeAndDepositViaRouter(params: {
   })
 
   const needsUsdtFix = destToken === 'USDT0'
-
   const contractCalls: any[] = []
 
   if (needsUsdtFix) {
-    // USDT-style allowance reset — every call includes fromAmount/fromTokenAddress/toTokenAddress
-    const approve0 = encodeFunctionData({
-      abi: ERC20_ABI, functionName: 'approve', args: [routerAddr, 0n],
-    })
-    const approveN = encodeFunctionData({
-      abi: ERC20_ABI, functionName: 'approve', args: [routerAddr, amount],
-    })
+    const approve0 = encodeFunctionData({ abi: ERC20_ABI, functionName: 'approve', args: [routerAddr, 0n] })
+    const approveN = encodeFunctionData({ abi: ERC20_ABI, functionName: 'approve', args: [routerAddr, amount] })
 
     contractCalls.push(
       {
-        fromAmount: '1000000000000000000' as BigNumberish,            // HEX BigNumberish
+        fromAmount: '1000000000000000000' as BigNumberish,
         fromTokenAddress: toToken,
         toTokenAddress: toToken,
         toContractAddress: toToken,
@@ -342,7 +381,7 @@ export async function bridgeAndDepositViaRouter(params: {
         toContractGasLimit: '80000',
       },
       {
-        fromAmount: '1000000000000000000' as BigNumberish,            // HEX BigNumberish
+        fromAmount: '1000000000000000000' as BigNumberish,
         fromTokenAddress: toToken,
         toTokenAddress: toToken,
         toContractAddress: toToken,
@@ -352,19 +391,16 @@ export async function bridgeAndDepositViaRouter(params: {
     )
   }
 
-  // The only call that actually consumes tokens
   contractCalls.push({
-    fromAmount: amount.toString() as BigNumberish,              // HEX BigNumberish
+    fromAmount: amount.toString() as BigNumberish,
     fromTokenAddress: toToken,
     toTokenAddress: toToken,
     toContractAddress: routerAddr,
     toContractCallData: depositCalldata,
     toContractGasLimit: '300000',
-    ...(needsUsdtFix ? {} : { toApprovalAddress: routerAddr }), // simple path for USDCe/WETH
+    ...(needsUsdtFix ? {} : { toApprovalAddress: routerAddr }),
   })
 
-  console.log('contractCalls sent to LI.FI:', JSON.stringify(contractCalls, null, 2))
-  // Optional: guard slack (LI.FI still enforces toAmount >= requested)
   const _min = amount - (amount * BigInt(minBps)) / 10_000n
   void _min
 
@@ -374,7 +410,7 @@ export async function bridgeAndDepositViaRouter(params: {
     fromToken,
     toChain: toChainId,
     toToken: toToken,
-    toAmount: amount.toString(),                // HEX BigNumberish is accepted too
+    toAmount: amount.toString(),
     contractCalls,
   })
 
@@ -391,6 +427,7 @@ export async function bridgeAndDepositViaRouter(params: {
     acceptExchangeRateUpdateHook: async () => true,
   })
 }
+
 const ROUTER_ABI_PUSH = parseAbi([
   'function depositFromBalance(bytes32 key, address asset, uint256 amount, address onBehalfOf, bytes data) external',
 ])
@@ -403,49 +440,46 @@ export async function bridgeAndDepositViaRouterPush(params: {
   amount: bigint
   adapterKey: `0x${string}`
   walletClient: WalletClient
-})  {
+}) {
   const { user, destToken, srcChain, srcToken, amount, adapterKey, walletClient } = params
 
   const must =
     adapterKey === ADAPTER_KEYS.morphoLiskUSDT0 ? 'USDT0' :
-    adapterKey === ADAPTER_KEYS.morphoLiskUSDCe ? 'USDCe' : 'WETH'
+      adapterKey === ADAPTER_KEYS.morphoLiskUSDCe ? 'USDCe' : 'WETH'
   if (must !== destToken) throw new Error(`Adapter/token mismatch: adapter requires ${must}, got ${destToken}`)
 
   configureLifiWith(walletClient)
 
   const fromChainId = CHAIN_ID[srcChain]
-  const toChainId   = CHAIN_ID.lisk
-  const fromToken   = tokenAddress(srcToken, srcChain)
-  const toToken     = tokenAddress(destToken, 'lisk')
-  const routerAddr  = ROUTERS.lisk
+  const toChainId = CHAIN_ID.lisk
+  const fromToken = tokenAddress(srcToken, srcChain)
+  const toToken = tokenAddress(destToken, 'lisk')
+  const routerAddr = ROUTERS.lisk
 
-  // LI.FI likes DECIMAL strings for amounts
   const amt = amount.toString(10)
 
-  // 1) executor → token: transfer(router, amount)  (consumes `amount`)
   const transferCalldata = encodeFunctionData({
     abi: parseAbi(['function transfer(address to, uint256 value) external returns (bool)']),
     functionName: 'transfer',
     args: [routerAddr, amount],
   })
 
-  // 2) executor → router: depositFromBalance(...)   (no token spend)
   const depositCalldata = encodeFunctionData({
     abi: ROUTER_ABI_PUSH,
     functionName: 'depositFromBalance',
     args: [adapterKey, toToken, amount, user, '0x'],
   })
 
-  const contractCalls:ContractCall[] = [
+  const contractCalls: ContractCall[] = [
     {
-      fromAmount: amt ,                     // spends dest token
+      fromAmount: amt,
       fromTokenAddress: toToken,
       toContractAddress: toToken,
       toContractCallData: transferCalldata,
       toContractGasLimit: '90000',
     },
     {
-      fromAmount: BigInt(1).toString() ,                     // no spend here
+      fromAmount: BigInt(1).toString(),
       fromTokenAddress: toToken,
       toContractAddress: routerAddr,
       toContractCallData: depositCalldata,
@@ -459,11 +493,9 @@ export async function bridgeAndDepositViaRouterPush(params: {
     fromToken,
     toChain: toChainId,
     toToken,
-    toAmount: amt,                         // ensure ≥ amount bridged
+    toAmount: amt,
     contractCalls,
   })
-
-
 
   const route = convertQuoteToRoute(quote)
   return executeRoute(route, {
@@ -476,9 +508,5 @@ export async function bridgeAndDepositViaRouterPush(params: {
       return walletClient
     },
     acceptExchangeRateUpdateHook: async () => true,
-  }
-
-)
+  })
 }
-
-
