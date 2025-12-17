@@ -13,7 +13,7 @@ import { ReviewWithdrawModal } from '../WithdrawModal/review-withdraw-modal';
 import logolifi from '@/public/lifi.png';
 import { useWalletClient } from 'wagmi';
 import { parseUnits } from 'viem';
-
+import { useRef } from "react";
 import type { YieldSnapshot } from '@/hooks/useYields';
 
 import { getBridgeQuote, quoteUsdceOnLisk } from '@/lib/quotes';
@@ -88,7 +88,8 @@ export function DepositWithdraw({
 
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>(initialTab);
   const [amount, setAmount] = useState('');
-
+  const quoteSeqRef = useRef(0);
+const quoteAbortRef = useRef<AbortController | null>(null);
   const [selectedToken, setSelectedToken] = useState<Token>({
     id: 'usdc',
     name: 'USD Coin',
@@ -337,123 +338,147 @@ const selectedTokenSymbolUi = uiTokenLabel(selectedToken.symbol);
     });
   }, [walletClient, snap, isUsdtFamily]);
 
-  // Quote logic – deposits always from OP now
   useEffect(() => {
-    if (!walletClient || !amount || !snap) {
+    // Reset when not quoteable
+    if (!walletClient || !snap) {
       setRoute(null);
       setFee(0n);
       setReceived(0n);
       setQuoteError(null);
       return;
     }
-    if (snap.chain !== 'lisk') {
+  
+    if (!amount || Number(amount) <= 0) {
       setRoute(null);
       setFee(0n);
       setReceived(0n);
-      setQuoteError('Only Lisk deposits are supported');
+      setQuoteError(null);
       return;
     }
-
-    const amt = parseUnits(amount, tokenDecimals);
-
-    // We always use Optimism as the source now
-    const src = 'optimism' as const;
-
-
-    if (destTokenLabel === 'USDT0') {
-      getBridgeQuote({
-        token: 'USDT0',
-        amount: amt,
-        from: src,
-        to: 'lisk',
-        fromAddress: walletClient.account!.address as `0x${string}`,
-        fromTokenSym: selectedToken.symbol,
-      })
-        .then((q) => {
-          const minOut = BigInt(q.estimate?.toAmountMin ?? '0');
-          const f = BigInt(q.bridgeFeeTotal ?? '0');
-
-          setRoute(
-            normalizeRouteLabel(q.route) ??
-            `Bridge ${selectedToken.symbol} → USDT0`,
-          );
+  
+    if (snap.chain !== "lisk") {
+      setRoute(null);
+      setFee(0n);
+      setReceived(0n);
+      setQuoteError("Only Lisk deposits are supported");
+      return;
+    }
+  
+    let amt: bigint;
+    try {
+      amt = parseUnits(amount, tokenDecimals);
+    } catch {
+      // user is typing "0." etc
+      setRoute(null);
+      setFee(0n);
+      setReceived(0n);
+      setQuoteError(null);
+      return;
+    }
+  
+    const user = walletClient.account!.address as `0x${string}`;
+    const src = "optimism" as const;
+  
+    // debounce + cancel
+    quoteAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    quoteAbortRef.current = ctrl;
+  
+    const mySeq = ++quoteSeqRef.current;
+  
+    const t = window.setTimeout(async () => {
+      try {
+        setQuoteError(null);
+  
+        // USDT0 on Lisk
+        if (destTokenLabel === "USDT0") {
+          const q = await getBridgeQuote({
+            token: "USDT0",
+            amount: amt,
+            from: src,
+            to: "lisk",
+            fromAddress: user,
+            fromTokenSym: selectedToken.symbol, // USDC | USDT | USDT0 (maps to USDT on OP inside quotes.ts)
+          });
+  
+          if (ctrl.signal.aborted || mySeq !== quoteSeqRef.current) return;
+  
+          const minOut = BigInt(q.estimate?.toAmountMin ?? "0");
+          const f = BigInt(q.bridgeFeeTotal ?? "0");
+  
+          setRoute(normalizeRouteLabel(q.route) ?? `Bridge ${selectedToken.symbol} → USDT0`);
           setFee(f);
           setReceived(minOut);
           setQuoteError(null);
-        })
-        .catch(() => {
-          setRoute(null);
-          setFee(0n);
-          setReceived(0n);
-          setQuoteError('Could not fetch bridge quote');
-        });
-
-      return;
-    }
-
-    if (destTokenLabel === 'USDCe') {
-      const opBalForQuote = opBal ?? 0n;
-      const baBalForQuote = 0n; // no Base now
-
-      quoteUsdceOnLisk({
-        amountIn: amt,
-        opBal: opBalForQuote,
-        baBal: baBalForQuote,
-        fromAddress: walletClient.account!.address as `0x${string}`,
-      })
-        .then((q) => {
-          setRoute(normalizeRouteLabel(q.route) ?? `Bridge → ${uiTokenLabel('USDCe')}`);
+          return;
+        }
+  
+        // USDCe on Lisk
+        if (destTokenLabel === "USDCe") {
+          const q = await quoteUsdceOnLisk({
+            amountIn: amt,
+            opBal: opBal ?? 0n,
+            baBal: 0n,
+            fromAddress: user,
+          });
+  
+          if (ctrl.signal.aborted || mySeq !== quoteSeqRef.current) return;
+  
+          setRoute(normalizeRouteLabel(q.route) ?? `Bridge → ${uiTokenLabel("USDCe")}`);
           setFee(q.bridgeFee ?? 0n);
           setReceived(q.bridgeOutUSDCe ?? 0n);
           setQuoteError(null);
-        })
-        .catch(() => {
-          setRoute(null);
-          setFee(0n);
-          setReceived(0n);
-          setQuoteError('Could not fetch bridge quote');
+          return;
+        }
+  
+        // fallback
+        const q = await getBridgeQuote({
+          token: destTokenLabel,
+          amount: amt,
+          from: src,
+          to: "lisk",
+          fromAddress: user,
+          fromTokenSym: selectedToken.symbol,
         });
-      return;
-    }
-
-    // Fallback (e.g. WETH vaults) – treat as bridged via LI.FI as well
-    getBridgeQuote({
-      token: destTokenLabel,
-      amount: amt,
-      from: src,
-      to: 'lisk',
-      fromAddress: walletClient.account!.address as `0x${string}`,
-      fromTokenSym: selectedToken.symbol,
-    })
-      .then((q) => {
-        const minOut = BigInt(q.estimate?.toAmountMin ?? '0');
-        const f = BigInt(q.bridgeFeeTotal ?? '0');
-
-        setRoute(
-          normalizeRouteLabel(q.route) ??
-          `Bridge ${selectedToken.symbol} → ${destTokenLabel}`,
-        );
+  
+        if (ctrl.signal.aborted || mySeq !== quoteSeqRef.current) return;
+  
+        const minOut = BigInt(q.estimate?.toAmountMin ?? "0");
+        const f = BigInt(q.bridgeFeeTotal ?? "0");
+  
+        setRoute(normalizeRouteLabel(q.route) ?? `Bridge ${selectedToken.symbol} → ${destTokenLabel}`);
         setFee(f);
         setReceived(minOut);
         setQuoteError(null);
-      })
-      .catch(() => {
+      } catch (e: any) {
+        if (ctrl.signal.aborted || mySeq !== quoteSeqRef.current) return;
+  
         setRoute(null);
         setFee(0n);
         setReceived(0n);
-        setQuoteError('Could not fetch bridge quote');
-      });
+  
+        // If LI.FI is rate limiting, show something actionable
+        const msg = String(e?.message ?? e);
+        setQuoteError(msg.toLowerCase().includes("too many") || msg.includes("429")
+          ? "Quote rate-limited. Please wait a moment and try again."
+          : "Could not fetch bridge quote");
+      }
+    }, 650);
+  
+    return () => {
+      window.clearTimeout(t);
+      ctrl.abort();
+    };
   }, [
-    amount,
     walletClient,
-    tokenDecimals,
     snap,
+    amount,
+    tokenDecimals,
     destTokenLabel,
-    opBal,
-    liBal,
-    liBalUSDT0,
     selectedToken.symbol,
+    opBal, // ok to keep; but DO NOT include liBal/liBalUSDT0 here
   ]);
+  
 
   const amountNum = Number.parseFloat(amount) || 0;
   const handleDepositSuccess = (data: any) => {
